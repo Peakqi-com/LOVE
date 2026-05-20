@@ -1328,6 +1328,8 @@
             <label class="mode-chip"><input type="checkbox" data-mode="flowField" /><span><strong>Flow field</strong><em>particles riding noise currents</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="curlNoise" /><span><strong>Curl noise</strong><em>絲滑流場 · smoke-like organic flow</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="attractor" /><span><strong>Attractor</strong><em>奇異吸引子 · chaotic strange curves</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="substrate" /><span><strong>Substrate</strong><em>結晶生長 · branching crack lines</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="reaction" /><span><strong>Reaction</strong><em>反應擴散 · Turing patterns</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="mandalaRings" /><span><strong>Mandala rings</strong><em>expanding concentric pulse</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="waveform" /><span><strong>Waveform</strong><em>audio-driven horizon line</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="constellation" /><span><strong>Constellation</strong><em>dots wired to neighbors</em></span></label>
@@ -1938,7 +1940,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-18r · curl-noise + strange-attractor modes');
+console.log('[IW] script booting · build 2026-05-18s · + substrate + reaction-diffusion');
 
 // Click diagnostics — log every click so we can see where they reach.
 // Capture phase so we see clicks BEFORE any interceptor swallows them.
@@ -2116,6 +2118,8 @@ const state = {
     flowField:    false,   // noise-following particles with trails
     curlNoise:    false,   // silky curl-noise flow field (smoke / vapor feel)
     attractor:    false,   // strange attractor — chaotic 2D iterated map
+    substrate:    false,   // branching cracks growing into city / vein patterns
+    reaction:     false,   // Gray-Scott reaction-diffusion (Turing patterns)
     mandalaRings: false,   // expanding concentric rings
     waveform:     false,   // audio waveform across screen
     constellation:false,   // dots connected to neighbors
@@ -2964,6 +2968,10 @@ document.getElementById('reset').addEventListener('click', ()=>{
     modeState.petals = [];
     modeState.curl.length = 0;
     modeState.attractor.x = 0.1; modeState.attractor.y = 0.0; modeState.attractor._last = -1;
+    modeState.substrate.cracks.length = 0;
+    modeState.substrate.grid = null;
+    modeState.substrate.fillCount = 0;
+    if(modeState.rdLow.u){ modeState.rdLow.u = null; }
     modeState.ringTimer = 0;
     modeState.rippleTimer = 0;
   }
@@ -4480,6 +4488,10 @@ const modeState = {
   curl: [],
   // Strange-attractor accumulator (single moving point that leaves a trail)
   attractor: { x: 0.1, y: 0.0, type: 0, _last: -1 },
+  // Substrate cracks (Tarbell-style branching growth)
+  substrate: { cracks: [], grid: null, gridW: 0, gridH: 0, fillCount: 0, capacity: 0 },
+  // Reaction-diffusion (Gray-Scott) low-res buffers
+  rdLow: { u: null, v: null, _newU: null, _newV: null, w: 0, h: 0, canvas: null, ctx: null, imageData: null },
 };
 
 function ensureFlow(){
@@ -4686,6 +4698,198 @@ function drawAttractor(g, dt, T){
     g.fillStyle = `hsla(${h}, ${dom.sat}%, ${dom.light+18}%, ${al})`;
     g.fillRect(px, py, 1, 1);
   }
+  g.restore();
+}
+
+// ─── Substrate (Tarbell-style branching growth) ───────────────────────────
+// Lines grow from seed points, hit each other perpendicularly and spawn
+// children. Looks like leaf-veins / city map / crystal lattice. Pure 2D.
+function _spawnSubstrateCrack(parent){
+  const s = modeState.substrate;
+  if(s.cracks.length >= 220) return;
+  const dom = dominantEmo();
+  let x, y, a;
+  if(parent){
+    x = parent.x; y = parent.y;
+    a = parent.a + (Math.random() < 0.5 ? Math.PI/2 : -Math.PI/2);
+    a += (Math.random() - 0.5) * 0.15;
+  } else {
+    x = Math.random() * W;
+    y = Math.random() * H;
+    a = Math.random() * TAU;
+  }
+  s.cracks.push({
+    x, y, px: x, py: y, a,
+    hue: lerp(dom.hue[0], dom.hue[1], Math.random()),
+    sat: dom.sat,
+    lit: dom.light + (Math.random()*20 - 10),
+  });
+}
+function ensureSubstrate(){
+  const s = modeState.substrate;
+  if(!s.grid){
+    s.gridW = Math.max(80, Math.floor(W/6));
+    s.gridH = Math.max(45, Math.floor(H/6));
+    s.grid = new Uint8Array(s.gridW * s.gridH);
+    s.capacity = s.gridW * s.gridH;
+    s.fillCount = 0;
+    for(let i=0;i<3;i++) _spawnSubstrateCrack(null);
+  }
+}
+function drawSubstrate(g, dt, T){
+  ensureSubstrate();
+  const s = modeState.substrate;
+  const mScale = (window._songMood && window._songMood.intensityScale) || 1;
+  const stepLen = (1.5 + state.motionSpeed*0.8 + (reactor.vol||0)*1.0) * mScale * SCALE;
+  // When canvas fills up, soft-reset for cyclic regrowth
+  if(s.fillCount > s.capacity * 0.62){
+    s.grid.fill(0); s.fillCount = 0; s.cracks.length = 0;
+    for(let i=0;i<3;i++) _spawnSubstrateCrack(null);
+    return;
+  }
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  for(let i = s.cracks.length-1; i>=0; i--){
+    const c = s.cracks[i];
+    c.px = c.x; c.py = c.y;
+    c.x += Math.cos(c.a) * stepLen;
+    c.y += Math.sin(c.a) * stepLen;
+    const gx = Math.floor(c.x / W * s.gridW);
+    const gy = Math.floor(c.y / H * s.gridH);
+    if(gx < 0 || gx >= s.gridW || gy < 0 || gy >= s.gridH){
+      s.cracks.splice(i, 1);
+      const n = Math.random() < 0.6 ? 1 : (Math.random() < 0.6 ? 2 : 0);
+      for(let k=0;k<n;k++) _spawnSubstrateCrack(c);
+      continue;
+    }
+    const gIdx = gy * s.gridW + gx;
+    if(s.grid[gIdx]){
+      s.cracks.splice(i, 1);
+      const n = Math.random() < 0.65 ? 1 : (Math.random() < 0.55 ? 2 : 0);
+      for(let k=0;k<n;k++) _spawnSubstrateCrack(c);
+      continue;
+    }
+    s.grid[gIdx] = 1; s.fillCount++;
+    const a = 0.45 + state.glow * 0.35;
+    g.strokeStyle = `hsla(${c.hue}, ${c.sat}%, ${c.lit}%, ${a})`;
+    g.lineWidth = 1.0 + state.bloom * 0.7;
+    g.beginPath(); g.moveTo(c.px, c.py); g.lineTo(c.x, c.y); g.stroke();
+    // subtle sand-edge texture
+    if(Math.random() < 0.35){
+      const perpA = c.a + Math.PI/2;
+      const off = (Math.random() - 0.5) * 3;
+      g.fillStyle = `hsla(${c.hue}, ${c.sat}%, ${c.lit-12}%, ${a*0.35})`;
+      g.fillRect(c.x + Math.cos(perpA)*off, c.y + Math.sin(perpA)*off, 1, 1);
+    }
+  }
+  g.restore();
+  if(s.cracks.length === 0){
+    for(let i=0;i<3;i++) _spawnSubstrateCrack(null);
+  }
+}
+
+// ─── Reaction-Diffusion (Gray-Scott) ──────────────────────────────────────
+// Low-res (192×108) buffer simulation → upscale to canvas.
+// Produces Turing patterns: coral, leopard spots, mitosis cell-division.
+function _hslToRgbInt(h, s, l){
+  h = ((h % 360) + 360) % 360 / 360;
+  s = s / 100; l = l / 100;
+  const c = (1 - Math.abs(2*l - 1)) * s;
+  const x = c * (1 - Math.abs((h*6) % 2 - 1));
+  const m = l - c/2;
+  let r, gg, b;
+  if(h < 1/6){ r=c; gg=x; b=0; }
+  else if(h < 2/6){ r=x; gg=c; b=0; }
+  else if(h < 3/6){ r=0; gg=c; b=x; }
+  else if(h < 4/6){ r=0; gg=x; b=c; }
+  else if(h < 5/6){ r=x; gg=0; b=c; }
+  else { r=c; gg=0; b=x; }
+  return [(r+m)*255, (gg+m)*255, (b+m)*255];
+}
+function ensureRD(){
+  const s = modeState.rdLow;
+  const wantW = 192, wantH = 108;
+  if(!s.u || s.w !== wantW){
+    s.w = wantW; s.h = wantH;
+    s.u = new Float32Array(wantW * wantH); s.u.fill(1);
+    s.v = new Float32Array(wantW * wantH);
+    s._newU = new Float32Array(wantW * wantH);
+    s._newV = new Float32Array(wantW * wantH);
+    for(let k=0;k<6;k++){
+      const cx = 10 + Math.floor(Math.random()*(wantW-20));
+      const cy = 10 + Math.floor(Math.random()*(wantH-20));
+      const r = 5;
+      for(let dy=-r;dy<=r;dy++) for(let dx=-r;dx<=r;dx++){
+        if(dx*dx+dy*dy <= r*r) s.v[(cy+dy)*wantW + (cx+dx)] = 1;
+      }
+    }
+    if(!s.canvas){
+      s.canvas = document.createElement('canvas');
+      s.ctx = s.canvas.getContext('2d');
+    }
+    s.canvas.width = wantW; s.canvas.height = wantH;
+    s.imageData = s.ctx.createImageData(wantW, wantH);
+  }
+}
+function drawRD(g, dt, T){
+  ensureRD();
+  const s = modeState.rdLow;
+  const W2 = s.w, H2 = s.h;
+  const u = s.u, v = s.v, nU = s._newU, nV = s._newV;
+  const dom = dominantEmo();
+  const mScale = (window._songMood && window._songMood.intensityScale) || 1;
+  const Du = 1.0, Dv = 0.5;
+  const F = 0.045 + (reactor.bass||0) * 0.015;
+  const K = 0.062 + (reactor.treble||0) * 0.004;
+  const steps = mScale < 0.5 ? 1 : 2;
+  for(let step=0; step<steps; step++){
+    for(let y=0;y<H2;y++){
+      const yp = (y+H2-1)%H2;
+      const yn = (y+1)%H2;
+      const ip = yp*W2, ic = y*W2, ino = yn*W2;
+      for(let x=0;x<W2;x++){
+        const xp = (x+W2-1)%W2;
+        const xn = (x+1)%W2;
+        const i = ic + x;
+        const lapU = u[ip+x] + u[ino+x] + u[ic+xp] + u[ic+xn] - 4*u[i];
+        const lapV = v[ip+x] + v[ino+x] + v[ic+xp] + v[ic+xn] - 4*v[i];
+        const uvv = u[i] * v[i] * v[i];
+        nU[i] = u[i] + (Du*lapU - uvv + F*(1-u[i]));
+        nV[i] = v[i] + (Dv*lapV + uvv - (F+K)*v[i]);
+      }
+    }
+    u.set(nU); v.set(nV);
+  }
+  // Beat-triggered seed drops to keep patterns evolving
+  if((reactor.bass||0) > 0.5 && state.beatFlash > 0.4 && Math.random() < 0.12){
+    const cx = Math.floor(Math.random()*W2);
+    const cy = Math.floor(Math.random()*H2);
+    const r = 4;
+    for(let dy=-r;dy<=r;dy++) for(let dx=-r;dx<=r;dx++){
+      if(dx*dx+dy*dy <= r*r){
+        const ix = ((cy+dy+H2)%H2)*W2 + ((cx+dx+W2)%W2);
+        v[ix] = Math.min(1, v[ix] + 0.6);
+      }
+    }
+  }
+  const data = s.imageData.data;
+  const c0 = _hslToRgbInt(dom.hue[0], dom.sat, dom.light);
+  const c1 = _hslToRgbInt(dom.hue[1], dom.sat, dom.light + 22);
+  for(let i=0;i<v.length;i++){
+    const vv = Math.min(1, v[i] * 1.5);
+    const o = i*4;
+    data[o]   = c0[0] + (c1[0] - c0[0]) * vv;
+    data[o+1] = c0[1] + (c1[1] - c0[1]) * vv;
+    data[o+2] = c0[2] + (c1[2] - c0[2]) * vv;
+    data[o+3] = Math.floor(vv * 210);
+  }
+  s.ctx.putImageData(s.imageData, 0, 0);
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  g.imageSmoothingEnabled = true;
+  g.imageSmoothingQuality = 'high';
+  g.globalAlpha = 0.65 + state.glow * 0.3;
+  g.drawImage(s.canvas, 0, 0, W, H);
   g.restore();
 }
 
@@ -5696,7 +5900,7 @@ function drawEva(g, dt, T){
 // ============================================================
 // Auto-cycle: detect music sections and rotate enabled modes
 // ============================================================
-const CYCLE_MODES = ['lineTrace','flowField','curlNoise','attractor','mandalaRings','waveform','constellation','spiral','ripples','crystals','ribbons','tunnel','halftone','petals','aurora','inkWash','popArt','polygon','matrix','glitch','eva'];
+const CYCLE_MODES = ['lineTrace','flowField','curlNoise','attractor','substrate','reaction','mandalaRings','waveform','constellation','spiral','ripples','crystals','ribbons','tunnel','halftone','petals','aurora','inkWash','popArt','polygon','matrix','glitch','eva'];
 let _cycleIdx = 0;
 function maybeAutoCycle(now){
   if(!state.autoCycle) return;
@@ -5734,6 +5938,8 @@ window._drawModes = function(g, dt, T){
   if(state.modes.flowField)     drawFlowField(g, dt, T);
   if(state.modes.curlNoise)     drawCurlNoise(g, dt, T);
   if(state.modes.attractor)     drawAttractor(g, dt, T);
+  if(state.modes.substrate)     drawSubstrate(g, dt, T);
+  if(state.modes.reaction)      drawRD(g, dt, T);
   if(state.modes.mandalaRings)  drawMandalaRings(g, dt, T);
   if(state.modes.waveform)      drawWaveform(g, dt, T);
   if(state.modes.constellation) drawConstellation(g, dt, T);
@@ -6440,6 +6646,10 @@ function randomizeAll(){
     modeState.petals = [];
     modeState.curl.length = 0;
     modeState.attractor.x = 0.1; modeState.attractor.y = 0.0; modeState.attractor._last = -1;
+    modeState.substrate.cracks.length = 0;
+    modeState.substrate.grid = null;
+    modeState.substrate.fillCount = 0;
+    if(modeState.rdLow.u){ modeState.rdLow.u = null; }
     modeState.ringTimer = 0;
     modeState.rippleTimer = 0;
   }
@@ -6499,7 +6709,7 @@ function randomizeAll(){
   const MODE_COST = {
     lineTrace:1, constellation:1, waveform:1, mandalaRings:1, ripples:1, petals:1,
     flowField:2, ribbons:2, aurora:2, spiral:2, crystals:2, tunnel:2, halftone:2, polygon:2,
-    curlNoise:2, attractor:3,
+    curlNoise:2, attractor:3, substrate:2, reaction:4,
     inkWash:3, matrix:3, eva:3,
     popArt:4, glitch:4,
     pixel8:5,
@@ -6509,16 +6719,16 @@ function randomizeAll(){
   const budget = budgetBase + Math.floor(hot * 2);  // hot music allowed a little more chaos
 
   // In lightMode (white canvas) bright-content modes vanish — pool MUST favor dark/contrasted content.
-  const lightFriendly = ['inkWash','polygon','popArt','glitch','eva','halftone','lineTrace','constellation','spiral','crystals','tunnel','attractor'];
+  const lightFriendly = ['inkWash','polygon','popArt','glitch','eva','halftone','lineTrace','constellation','spiral','crystals','tunnel','attractor','substrate'];
   const lightHostile  = new Set(['matrix','aurora','ribbons','petals']);  // these wash out on cream bg
 
   let hotModes, coolModes;
   if(state.lightMode){
-    hotModes  = ['popArt','glitch','polygon','eva','halftone','spiral','crystals','tunnel','inkWash','attractor'];
-    coolModes = ['lineTrace','flowField','constellation','inkWash','polygon','halftone','waveform','curlNoise','attractor'];
+    hotModes  = ['popArt','glitch','polygon','eva','halftone','spiral','crystals','tunnel','inkWash','attractor','substrate'];
+    coolModes = ['lineTrace','flowField','constellation','inkWash','polygon','halftone','waveform','curlNoise','attractor','substrate','reaction'];
   } else {
-    hotModes  = ['crystals','ripples','spiral','tunnel','mandalaRings','halftone','popArt','glitch','polygon','matrix','eva','pixel8','attractor'];
-    coolModes = ['lineTrace','flowField','constellation','ribbons','petals','aurora','waveform','inkWash','polygon','matrix','curlNoise','attractor'];
+    hotModes  = ['crystals','ripples','spiral','tunnel','mandalaRings','halftone','popArt','glitch','polygon','matrix','eva','pixel8','attractor','substrate'];
+    coolModes = ['lineTrace','flowField','constellation','ribbons','petals','aurora','waveform','inkWash','polygon','matrix','curlNoise','attractor','substrate','reaction'];
   }
   const maxModes = 3;
   const targetN = Math.min(maxModes, 1 + Math.floor(Math.random()*(1 + hot*2.2)));
