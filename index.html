@@ -1421,6 +1421,7 @@
             <label class="mode-chip"><input type="checkbox" data-imode="pixelSort" /><span><strong>Pixel Sort</strong><em>像素排序 · vaporwave glitch</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-imode="ascii" /><span><strong>ASCII</strong><em>字元化 · brightness → chars</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-imode="chromaShift" /><span><strong>Chroma Shift</strong><em>RGB 通道分離</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-imode="shake" /><span><strong>Shake / 搖晃</strong><em>jiggle 抖動 · audio-reactive</em></span></label>
           </div>
         </div>
 
@@ -1954,7 +1955,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-18x · stretch-to-fill toggle (opt-in VJ distortion)');
+console.log('[IW] script booting · build 2026-05-18y · image shake + GIF native support');
 
 // Click diagnostics — log every click so we can see where they reach.
 // Capture phase so we see clicks BEFORE any interceptor swallows them.
@@ -7254,6 +7255,7 @@ const imgState = {
     nihilist: false, romantic: false, occult: false, glitch: false,
     shatter: false, kaleido: false, melt: false,
     pixelSort: false, ascii: false, chromaShift: false,
+    shake: false,
   },
   stretchToFill: false,  // VJ option: ignore native aspect ratio
   t0: performance.now(),
@@ -7270,8 +7272,9 @@ const imgListEl = document.getElementById('imgList');
 function addImage(file){
   const url = URL.createObjectURL(file);
   const img = new Image();
+  const isGif = file && (file.type === 'image/gif' || /\.gif$/i.test(file.name || ''));
   img.onload = ()=>{
-    imgState.images.push({ img, url });
+    imgState.images.push({ img, url, isGif });
     const idx = imgState.images.length - 1;
     // auto-select newly uploaded image
     imgState.selected.push(idx);
@@ -7741,10 +7744,33 @@ function applyImageEffects(dt, t, customImg){
   if(imgState.modes.shatter)    fxShatter(g, dt, t, fx);
   if(imgState.modes.kaleido)    fxImgKaleido(g, dt, t, fx);
   if(imgState.modes.melt)       fxMelt(g, dt, t, fx);
-  if(imgState.modes.pixelSort)  fxPixelSort(g, dt, t, fx);
-  if(imgState.modes.ascii)      fxAscii(g, dt, t, fx);
-  if(imgState.modes.chromaShift)fxChromaShift(g, dt, t, fx);
+  // GIF source: skip per-pixel FX (they tank framerate while the GIF needs
+  // a fresh fitImageToCanvas every frame). User can still use the lighter
+  // transform-based FX (ripple/kaleido/shatter/shake).
+  const _curImg = imgState.images[imgState.active];
+  const _isGif = _curImg && _curImg.isGif;
+  if(!_isGif){
+    if(imgState.modes.pixelSort)  fxPixelSort(g, dt, t, fx);
+    if(imgState.modes.ascii)      fxAscii(g, dt, t, fx);
+    if(imgState.modes.chromaShift)fxChromaShift(g, dt, t, fx);
+  }
   return imgPipe;
+}
+
+// ─── Shake helper (render-time transform, not pixel FX) ──────────────────
+// Returns small dx/dy/rot to wobble the image. Audio-reactive intensity.
+function computeImgShake(){
+  if(!imgState.modes.shake) return { dx: 0, dy: 0, rot: 0 };
+  const t = state.t * 0.001;
+  const bass = reactor.bass || 0;
+  const vol = reactor.vol || 0;
+  const fx = imgState.effectStrength;
+  const intensity = (0.4 + bass*2.5 + vol*1.5) * fx;
+  return {
+    dx: Math.sin(t * 21.3) * 14 * intensity + (Math.random()-0.5) * bass * 28,
+    dy: Math.cos(t * 17.7) * 14 * intensity + (Math.random()-0.5) * bass * 28,
+    rot: Math.sin(t * 9.1) * 0.045 * intensity + (Math.random()-0.5) * bass * 0.08,
+  };
 }
 
 // ─── Pixel Sort (vaporwave glitch) ────────────────────────────────────────
@@ -7870,11 +7896,12 @@ function drawImageArrangement(g, dt){
   // helper to draw a single image instance at (x,y) with size, rotation, alpha
   // uses cached imgPipe for the active image (or a per-call image)
   function drawAt(x, y, size, rot, alpha, imgEntry){
+    const sh = computeImgShake();
     g.save();
     g.globalAlpha = imgState.opacity * alpha;
     g.globalCompositeOperation = imgState.blend;
-    g.translate(x, y);
-    g.rotate(rot);
+    g.translate(x + sh.dx, y + sh.dy);
+    g.rotate(rot + sh.rot);
     if(imgEntry){
       const oldActive = imgState.active;
       imgState.active = imgEntry;
@@ -8094,10 +8121,12 @@ window._drawImageTop = function(g, dt){
     if(sel.length === 1){
       const pipe = applyImageEffects(dt, state.t);
       if(!pipe) return;
+      const sh = computeImgShake();
       g.save();
       g.globalAlpha = imgState.opacity;
       g.globalCompositeOperation = imgState.blend;
-      g.drawImage(pipe, 0, 0, W, H);
+      if(sh.rot){ g.translate(CX, CY); g.rotate(sh.rot); g.translate(-CX, -CY); }
+      g.drawImage(pipe, sh.dx, sh.dy, W, H);
       g.restore();
     } else {
       // multi-selected: tile horizontally
