@@ -1334,6 +1334,8 @@
             <label class="mode-chip"><input type="checkbox" data-mode="opart" /><span><strong>Op Art</strong><em>歐普藝術 · stripes/rings/checker</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="lissajous" /><span><strong>Lissajous</strong><em>振盪曲線 · oscilloscope curves</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="voronoi" /><span><strong>Voronoi</strong><em>細胞分割 · cellular tessellation</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="beatStrobe" /><span><strong>Beat Strobe</strong><em>節拍頻閃 · flash on every beat</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="bpmKaleido" /><span><strong>BPM Kaleido</strong><em>節拍鎖定 · auto-cycle kaleido on BPM</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="mandalaRings" /><span><strong>Mandala rings</strong><em>expanding concentric pulse</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="waveform" /><span><strong>Waveform</strong><em>audio-driven horizon line</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="constellation" /><span><strong>Constellation</strong><em>dots wired to neighbors</em></span></label>
@@ -1416,6 +1418,9 @@
             <label class="mode-chip"><input type="checkbox" data-imode="shatter" /><span><strong>Shatter</strong><em>break into fragments</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-imode="kaleido" /><span><strong>Image kaleidoscope</strong><em>radial mirror through image</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-imode="melt" /><span><strong>Melt / 化水</strong><em>vertical drip distortion</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-imode="pixelSort" /><span><strong>Pixel Sort</strong><em>像素排序 · vaporwave glitch</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-imode="ascii" /><span><strong>ASCII</strong><em>字元化 · brightness → chars</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-imode="chromaShift" /><span><strong>Chroma Shift</strong><em>RGB 通道分離</em></span></label>
           </div>
         </div>
 
@@ -1795,6 +1800,7 @@
                 <button data-anim="charBurst">Char Burst<em>單字爆出 隨機大小</em></button>
                 <button data-anim="sizeShake">Shake<em>抖動 忽大忽小</em></button>
                 <button data-anim="marquee">Marquee<em>跑馬燈</em></button>
+                <button data-anim="extrude3d">3D Extrude<em>立體擠出</em></button>
               </div>
             </div>
             <details style="background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.07);border-radius:9px;padding:8px 10px">
@@ -1944,7 +1950,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-18u · +sumie/opart/lissajous/voronoi + auto-trails for accumulators');
+console.log('[IW] script booting · build 2026-05-18v · BeatStrobe + BPM Kaleido + 3D Extrude + PixelSort/ASCII/ChromaShift');
 
 // Click diagnostics — log every click so we can see where they reach.
 // Capture phase so we see clicks BEFORE any interceptor swallows them.
@@ -2128,6 +2134,8 @@ const state = {
     opart:        false,   // Op Art moiré / Bridget Riley stripes & rings
     lissajous:    false,   // oscilloscope Lissajous curves
     voronoi:      false,   // cellular tessellation
+    beatStrobe:   false,   // full-screen flash on every detected beat
+    bpmKaleido:   false,   // kaleido segments auto-cycle synced to BPM
     mandalaRings: false,   // expanding concentric rings
     waveform:     false,   // audio waveform across screen
     constellation:false,   // dots connected to neighbors
@@ -2682,6 +2690,9 @@ function frame(now){
   }
   // auto-cycle visual modes based on music sections
   if(window._maybeAutoCycle) window._maybeAutoCycle(now);
+
+  // BPM-synced kaleido cycler (only does work if mode is enabled)
+  if(typeof tickBpmKaleido === 'function') tickBpmKaleido(now);
 
   // ── Song mood detector ────────────────────────────────────────────────
   // Watches audio energy over a long window to detect "slow / ambient" songs.
@@ -5159,6 +5170,57 @@ function drawVoronoi(g, dt, T){
   g.restore();
 }
 
+// ─── Beat Strobe ──────────────────────────────────────────────────────────
+// Full-screen flash sync'd to detected beats. Uses state.beatFlash which is
+// driven by reactor.bass envelope. Subtle white in dark mode, dark in light.
+function drawBeatStrobe(g, dt, T){
+  const f = state.beatFlash;
+  if(f < 0.12) return;
+  const dom = dominantEmo();
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  // Choose flash color: emotion-tinted white in dark, near-black in light
+  if(state.lightMode){
+    g.fillStyle = `rgba(20,18,28,${Math.min(0.85, f*0.65)})`;
+  } else {
+    const h = lerp(dom.hue[0], dom.hue[1], 0.5);
+    g.fillStyle = `hsla(${h}, ${Math.max(0, dom.sat-20)}%, ${Math.min(96, dom.light+45)}%, ${Math.min(0.95, f*0.9)})`;
+  }
+  g.fillRect(0, 0, W, H);
+  g.restore();
+}
+
+// ─── BPM Kaleido (state mutation, called from frame loop) ─────────────────
+// Cycles state.kaleido through [0,4,6,8,12] segments every N beats.
+// Saves and restores user's kaleido when toggled off.
+function tickBpmKaleido(now){
+  if(!state.modes.bpmKaleido){
+    // Restore on disable
+    if(state._bpmKaleidoOriginal != null){
+      state.kaleido = state._bpmKaleidoOriginal;
+      state._bpmKaleidoOriginal = null;
+    }
+    return;
+  }
+  // Save original on first activation
+  if(state._bpmKaleidoOriginal == null){
+    state._bpmKaleidoOriginal = state.kaleido;
+    state._bpmKaleidoBeats = 0;
+  }
+  // Detect beat edge via beatFlash rising. Add cooldown so 60fps doesn't
+  // double-count one beat.
+  if(state.beatFlash > 0.45 && now - (state._bpmKaleidoLastBeat || 0) > 180){
+    state._bpmKaleidoLastBeat = now;
+    state._bpmKaleidoBeats = (state._bpmKaleidoBeats || 0) + 1;
+    // Cycle every 4 beats (1 bar in 4/4)
+    if(state._bpmKaleidoBeats % 4 === 0){
+      const opts = [0, 4, 6, 8, 12, 16];
+      const idx = Math.floor(state._bpmKaleidoBeats / 4) % opts.length;
+      state.kaleido = opts[idx];
+    }
+  }
+}
+
 function drawMandalaRings(g, dt, T){
   modeState.ringTimer += dt;
   const interval = 60000 / Math.max(40, state.bpm * (state.musicOn || reactor.mode!=='off' ? 1 : 0.6));
@@ -6210,6 +6272,7 @@ window._drawModes = function(g, dt, T){
   if(state.modes.opart)         drawOpArt(g, dt, T);
   if(state.modes.lissajous)     drawLissajous(g, dt, T);
   if(state.modes.voronoi)       drawVoronoi(g, dt, T);
+  if(state.modes.beatStrobe)    drawBeatStrobe(g, dt, T);
   if(state.modes.mandalaRings)  drawMandalaRings(g, dt, T);
   if(state.modes.waveform)      drawWaveform(g, dt, T);
   if(state.modes.constellation) drawConstellation(g, dt, T);
@@ -6985,6 +7048,7 @@ function randomizeAll(){
     flowField:2, ribbons:2, aurora:2, spiral:2, crystals:2, tunnel:2, halftone:2, polygon:2,
     curlNoise:2, attractor:3, substrate:2, reaction:4,
     sumie:3, opart:2, lissajous:2, voronoi:3,
+    beatStrobe:1, bpmKaleido:0,
     inkWash:3, matrix:3, eva:3,
     popArt:4, glitch:4,
     pixel8:5,
@@ -7078,7 +7142,7 @@ function randomizeAll(){
 
   // 10. Type tab — randomize typography params (only when typography is on AND unlocked)
   if(state.modes.typography && typeof typo !== 'undefined'){
-    const animPool = ['breathe','flow','wave','popIn','glitch','drift','scalePulse','rotate','shimmer','comic','strobe','flipStyle','charBurst','sizeShake','marquee'];
+    const animPool = ['breathe','flow','wave','popIn','glitch','drift','scalePulse','rotate','shimmer','comic','strobe','flipStyle','charBurst','sizeShake','marquee','extrude3d'];
     typo.anim = animPool[Math.floor(Math.random()*animPool.length)];
     const stylePool = ['solid','outline','mix','split'];
     typo.style = stylePool[Math.floor(Math.random()*stylePool.length)];
@@ -7184,6 +7248,7 @@ const imgState = {
     ripple: false, oil: false, gothic: false, mannerist: false,
     nihilist: false, romantic: false, occult: false, glitch: false,
     shatter: false, kaleido: false, melt: false,
+    pixelSort: false, ascii: false, chromaShift: false,
   },
   t0: performance.now(),
 };
@@ -7659,7 +7724,118 @@ function applyImageEffects(dt, t, customImg){
   if(imgState.modes.shatter)    fxShatter(g, dt, t, fx);
   if(imgState.modes.kaleido)    fxImgKaleido(g, dt, t, fx);
   if(imgState.modes.melt)       fxMelt(g, dt, t, fx);
+  if(imgState.modes.pixelSort)  fxPixelSort(g, dt, t, fx);
+  if(imgState.modes.ascii)      fxAscii(g, dt, t, fx);
+  if(imgState.modes.chromaShift)fxChromaShift(g, dt, t, fx);
   return imgPipe;
+}
+
+// ─── Pixel Sort (vaporwave glitch) ────────────────────────────────────────
+// For each horizontal row, sort a band of pixels by brightness. Audio
+// modulates band start/length so the glitch moves with the music.
+function fxPixelSort(g, dt, t, fx){
+  const w = imgPipe.width, h = imgPipe.height;
+  if(w === 0 || h === 0) return;
+  const id = g.getImageData(0, 0, w, h);
+  const d = id.data;
+  const bandThreshold = 0.4 + (reactor.bass||0) * 0.15;  // brightness threshold
+  const stepY = Math.max(1, Math.floor(2 - fx));         // skip rows for perf
+  for(let y=0; y<h; y+=stepY){
+    let runStart = -1;
+    for(let x=0; x<w; x++){
+      const i = (y*w + x)*4;
+      const lum = (d[i] + d[i+1] + d[i+2]) / 765;  // 0..1
+      const inBand = lum > bandThreshold;
+      if(inBand && runStart < 0) runStart = x;
+      if((!inBand || x === w-1) && runStart >= 0){
+        const end = inBand ? x+1 : x;
+        // Collect pixels in band, sort by brightness
+        const len = end - runStart;
+        if(len > 3){
+          const buf = new Array(len);
+          for(let k=0;k<len;k++){
+            const ii = (y*w + (runStart+k))*4;
+            buf[k] = [d[ii], d[ii+1], d[ii+2], d[ii+3], d[ii]+d[ii+1]+d[ii+2]];
+          }
+          buf.sort((a,b) => a[4] - b[4]);
+          for(let k=0;k<len;k++){
+            const ii = (y*w + (runStart+k))*4;
+            d[ii] = buf[k][0]; d[ii+1] = buf[k][1]; d[ii+2] = buf[k][2]; d[ii+3] = buf[k][3];
+          }
+        }
+        runStart = -1;
+      }
+    }
+  }
+  g.putImageData(id, 0, 0);
+}
+
+// ─── ASCII art ────────────────────────────────────────────────────────────
+// Replace the image with a grid of characters whose density matches the pixel
+// brightness. Pure canvas 2D. Cell size auto-scales with effect strength.
+function fxAscii(g, dt, t, fx){
+  const w = imgPipe.width, h = imgPipe.height;
+  if(w === 0 || h === 0) return;
+  const cell = Math.max(6, Math.round(16 - fx*8));  // smaller cell = more detail
+  const id = g.getImageData(0, 0, w, h);
+  const d = id.data;
+  // Sample the average brightness per cell first (avoid reading from same buffer we draw)
+  const cw = Math.floor(w/cell), ch = Math.floor(h/cell);
+  const bright = new Float32Array(cw * ch);
+  for(let cy=0; cy<ch; cy++){
+    for(let cx=0; cx<cw; cx++){
+      // sample center pixel
+      const px = cx*cell + (cell>>1), py = cy*cell + (cell>>1);
+      const i = (py*w + px)*4;
+      bright[cy*cw + cx] = (d[i] + d[i+1] + d[i+2]) / 765;
+    }
+  }
+  // Clear and redraw as chars
+  g.fillStyle = state.lightMode ? '#f5edde' : '#0a0a14';
+  g.fillRect(0, 0, w, h);
+  const chars = ' .,:;i+*#@';  // sparse → dense
+  const dom = dominantEmo();
+  g.font = `${cell}px ui-monospace,monospace`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  for(let cy=0; cy<ch; cy++){
+    for(let cx=0; cx<cw; cx++){
+      const b = bright[cy*cw + cx];
+      const charIdx = Math.min(chars.length-1, Math.floor(b * chars.length));
+      const ch2 = chars[charIdx];
+      const h2 = lerp(dom.hue[0], dom.hue[1], b);
+      g.fillStyle = `hsl(${h2}, ${dom.sat}%, ${state.lightMode ? 20 + b*15 : 50 + b*30}%)`;
+      g.fillText(ch2, cx*cell + (cell>>1), cy*cell + (cell>>1));
+    }
+  }
+}
+
+// ─── Chromatic shift (RGB channel separation) ─────────────────────────────
+// Cheap psychedelic / glitch staple — draw R/G/B with offset.
+function fxChromaShift(g, dt, t, fx){
+  const w = imgPipe.width, h = imgPipe.height;
+  if(w === 0 || h === 0) return;
+  const id = g.getImageData(0, 0, w, h);
+  const d = id.data;
+  const offset = Math.round((4 + fx*16) * (1 + (reactor.bass||0)*1.5));
+  const angle = state.t * 0.0003;
+  const dx = Math.round(Math.cos(angle) * offset);
+  const dy = Math.round(Math.sin(angle) * offset);
+  // Working copy for R/B sampling
+  const src = new Uint8ClampedArray(d);
+  for(let y=0; y<h; y++){
+    for(let x=0; x<w; x++){
+      const i = (y*w + x)*4;
+      // Red shifted +dx,+dy, blue shifted -dx,-dy, green stays
+      const rx = Math.min(w-1, Math.max(0, x + dx));
+      const ry = Math.min(h-1, Math.max(0, y + dy));
+      const bx = Math.min(w-1, Math.max(0, x - dx));
+      const by = Math.min(h-1, Math.max(0, y - dy));
+      d[i]   = src[(ry*w + rx)*4];
+      d[i+2] = src[(by*w + bx)*4 + 2];
+    }
+  }
+  g.putImageData(id, 0, 0);
 }
 
 // ============================================================
@@ -10020,7 +10196,30 @@ function drawTypography(g, dt, T){
       g.stroke();
       g.restore();
     }
-    if(typo.anim === 'charBurst'){
+    if(typo.anim === 'extrude3d'){
+      // Draw the text N times with diagonal offset to fake 3D depth
+      const layers = 14;
+      const offsetMag = _renderSize * 0.018;
+      // Back-to-front so top layer (the user's color) wins
+      for(let L = layers; L >= 0; L--){
+        const ox = -L * offsetMag;
+        const oy = L * offsetMag * 0.6;
+        const layerT = L / layers;
+        // Dark to bright gradient on the extruded sides
+        const darken = 1 - layerT * 0.72;
+        const layerAlpha = alpha * (L === 0 ? 1 : (0.55 + 0.35*(1-layerT)));
+        g.globalAlpha = Math.max(0, layerAlpha);
+        // Shift color via darkening — parse the hsl-ish or use opacity trick
+        // (cheapest: lower alpha on back layers, top stays original)
+        if(L === 0){
+          g.fillStyle = w.color;
+        } else {
+          g.fillStyle = w.color;
+          g.globalAlpha *= darken;
+        }
+        renderStyledText(g, w.text, ox, oy, _renderSize, w.color, w.outlineSpawn);
+      }
+    } else if(typo.anim === 'charBurst'){
       // Draw each character at a per-char offset + scale, derived from a stable
       // per-word/per-char hash so positions don't flicker each frame.
       const chars = Array.from(w.text);
