@@ -1955,7 +1955,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-18y · image shake + GIF native support');
+console.log('[IW] script booting · build 2026-05-18z · GIF DOM-attached for reliable frame advance');
 
 // Click diagnostics — log every click so we can see where they reach.
 // Capture phase so we see clicks BEFORE any interceptor swallows them.
@@ -7273,6 +7273,13 @@ function addImage(file){
   const url = URL.createObjectURL(file);
   const img = new Image();
   const isGif = file && (file.type === 'image/gif' || /\.gif$/i.test(file.name || ''));
+  if(isGif){
+    // Chrome doesn't reliably animate GIF frames in DETACHED <img> elements.
+    // Attach off-screen so the browser keeps advancing the GIF frames; the
+    // canvas drawImage() will then capture whichever frame is current.
+    img.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none';
+    document.body.appendChild(img);
+  }
   img.onload = ()=>{
     imgState.images.push({ img, url, isGif });
     const idx = imgState.images.length - 1;
@@ -7300,6 +7307,8 @@ function renderImgList(){
       if(e.target.classList.contains('x')){
         e.stopPropagation();
         URL.revokeObjectURL(entry.url);
+        // Clean up the off-screen GIF source img we attached to body
+        if(entry.isGif && entry.img && entry.img.parentNode) entry.img.parentNode.removeChild(entry.img);
         imgState.images.splice(i,1);
         imgState.selected = imgState.selected.filter(s => s !== i).map(s => s > i ? s-1 : s);
         if(imgState.active >= imgState.images.length) imgState.active = Math.max(0, imgState.images.length-1);
