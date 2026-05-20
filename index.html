@@ -1940,7 +1940,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-18s · + substrate + reaction-diffusion');
+console.log('[IW] script booting · build 2026-05-18t · pumped visibility on 4 new modes');
 
 // Click diagnostics — log every click so we can see where they reach.
 // Capture phase so we see clicks BEFORE any interceptor swallows them.
@@ -4600,11 +4600,11 @@ function drawFlowField(g, dt, T){
 // Inspired by Bridson 2007 + classic creative-coding implementations.
 function ensureCurl(){
   if(modeState.curl.length === 0){
-    const N = 220;
+    const N = 420;  // denser field
     for(let i=0;i<N;i++){
       modeState.curl.push({
         x: Math.random()*W, y: Math.random()*H,
-        px: 0, py: 0, life: Math.random(), hueOffset: Math.random()*40-20,
+        px: 0, py: 0, life: Math.random(), hueOffset: Math.random()*60-30,
       });
     }
   }
@@ -4636,10 +4636,10 @@ function drawCurlNoise(g, dt, T){
       p.x = Math.random()*W; p.y = Math.random()*H;
       p.px = p.x; p.py = p.y; p.life = 0;
     }
-    const a = Math.sin(p.life*Math.PI) * 0.5 * state.glow;
+    const a = Math.sin(p.life*Math.PI) * 0.85 * (0.5 + state.glow*0.6);
     const h = lerp(dom.hue[0], dom.hue[1], (p.life + state.t*0.00008)%1) + p.hueOffset;
-    g.strokeStyle = `hsla(${h}, ${dom.sat}%, ${dom.light+14}%, ${a})`;
-    g.lineWidth = 0.7 + (reactor.mid||0)*1.6 + state.bloom*0.6;
+    g.strokeStyle = `hsla(${h}, ${dom.sat+5}%, ${dom.light+22}%, ${a})`;
+    g.lineWidth = 1.4 + (reactor.mid||0)*2.2 + state.bloom*1.2;
     g.beginPath(); g.moveTo(p.px, p.py); g.lineTo(p.x, p.y); g.stroke();
   }
   g.restore();
@@ -4669,10 +4669,10 @@ function drawAttractor(g, dt, T){
   const C = 1.0 + Math.sin(ph*0.7)*0.2;
   const D = 0.7 + Math.cos(ph*0.9)*0.2;
   // Center+scale to canvas
-  const scale = Math.min(W, H) * 0.22;
+  const scale = Math.min(W, H) * 0.32;  // larger figure
   g.save();
   g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
-  const pointsPerFrame = Math.floor(1800 * mScale * (0.6 + state.motionSpeed*0.6));
+  const pointsPerFrame = Math.floor(3500 * mScale * (0.6 + state.motionSpeed*0.6));
   for(let i=0;i<pointsPerFrame;i++){
     let nx, ny;
     if(a.type === 0){
@@ -4694,9 +4694,10 @@ function drawAttractor(g, dt, T){
     const py = CY + ny * scale;
     if(px < 0 || px >= W || py < 0 || py >= H) continue;
     const h = lerp(dom.hue[0], dom.hue[1], (i / pointsPerFrame));
-    const al = 0.06 + 0.04*state.glow + (reactor.treble||0)*0.08;
-    g.fillStyle = `hsla(${h}, ${dom.sat}%, ${dom.light+18}%, ${al})`;
-    g.fillRect(px, py, 1, 1);
+    const al = 0.12 + 0.08*state.glow + (reactor.treble||0)*0.15;
+    g.fillStyle = `hsla(${h}, ${dom.sat+5}%, ${dom.light+25}%, ${al})`;
+    const sz = 1 + Math.floor(state.bloom * 1.5);
+    g.fillRect(px, py, sz, sz);
   }
   g.restore();
 }
@@ -4770,9 +4771,9 @@ function drawSubstrate(g, dt, T){
       continue;
     }
     s.grid[gIdx] = 1; s.fillCount++;
-    const a = 0.45 + state.glow * 0.35;
-    g.strokeStyle = `hsla(${c.hue}, ${c.sat}%, ${c.lit}%, ${a})`;
-    g.lineWidth = 1.0 + state.bloom * 0.7;
+    const a = 0.7 + state.glow * 0.3;
+    g.strokeStyle = `hsla(${c.hue}, ${c.sat+5}%, ${c.lit+10}%, ${a})`;
+    g.lineWidth = 1.6 + state.bloom * 1.2 + (reactor.bass||0)*1.5;
     g.beginPath(); g.moveTo(c.px, c.py); g.lineTo(c.x, c.y); g.stroke();
     // subtle sand-edge texture
     if(Math.random() < 0.35){
@@ -4876,19 +4877,19 @@ function drawRD(g, dt, T){
   const c0 = _hslToRgbInt(dom.hue[0], dom.sat, dom.light);
   const c1 = _hslToRgbInt(dom.hue[1], dom.sat, dom.light + 22);
   for(let i=0;i<v.length;i++){
-    const vv = Math.min(1, v[i] * 1.5);
+    const vv = Math.min(1, v[i] * 2.2);  // boost contrast
     const o = i*4;
     data[o]   = c0[0] + (c1[0] - c0[0]) * vv;
     data[o+1] = c0[1] + (c1[1] - c0[1]) * vv;
     data[o+2] = c0[2] + (c1[2] - c0[2]) * vv;
-    data[o+3] = Math.floor(vv * 210);
+    data[o+3] = Math.floor(vv * 255);  // full alpha for sharper pattern
   }
   s.ctx.putImageData(s.imageData, 0, 0);
   g.save();
   g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
   g.imageSmoothingEnabled = true;
   g.imageSmoothingQuality = 'high';
-  g.globalAlpha = 0.65 + state.glow * 0.3;
+  g.globalAlpha = 0.9 + state.glow * 0.1;
   g.drawImage(s.canvas, 0, 0, W, H);
   g.restore();
 }
