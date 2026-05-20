@@ -1954,7 +1954,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-18w · fix image aspect ratio in arrangement modes');
+console.log('[IW] script booting · build 2026-05-18x · stretch-to-fill toggle (opt-in VJ distortion)');
 
 // Click diagnostics — log every click so we can see where they reach.
 // Capture phase so we see clicks BEFORE any interceptor swallows them.
@@ -6849,6 +6849,7 @@ function syncAllUI(){
   // toggles
   const cycEl = document.getElementById('imgCycle'); if(cycEl) cycEl.checked = imgState.cycle;
   const allEl = document.getElementById('imgUseAll'); if(allEl) allEl.checked = imgState.useAllImages;
+  const stEl = document.getElementById('imgStretchFill'); if(stEl) stEl.checked = !!imgState.stretchToFill;
 
   updateReadout();
 }
@@ -7411,13 +7412,17 @@ if(_imgStretchEl){
 // ============================================================
 
 function fitImageToCanvas(img){
-  // size pipe to canvas, draw image scaled and centered (full size)
   imgPipe.width = cv.width;
   imgPipe.height = cv.height;
   const g = imgPipeCtx;
   g.setTransform(state.pixelRatio, 0, 0, state.pixelRatio, 0, 0);
   g.clearRect(0, 0, W, H);
-  // fit-contain with state-controlled scale
+  if(imgState.stretchToFill){
+    // Fill the whole frame, distorting AR (VJ mode)
+    g.drawImage(img, 0, 0, W * imgState.scale, H * imgState.scale);
+    return imgPipe;
+  }
+  // Fit-contain preserving aspect
   const ar = img.width / img.height;
   const tar = W / H;
   let dw, dh;
