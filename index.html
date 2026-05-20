@@ -1336,6 +1336,9 @@
             <label class="mode-chip"><input type="checkbox" data-mode="voronoi" /><span><strong>Voronoi</strong><em>細胞分割 · cellular tessellation</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="beatStrobe" /><span><strong>Beat Strobe</strong><em>節拍頻閃 · flash on every beat</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="bpmKaleido" /><span><strong>BPM Kaleido</strong><em>節拍鎖定 · auto-cycle kaleido on BPM</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="boids" /><span><strong>Boids 鳥群</strong><em>flock motion · Reynolds 1986</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="chladni" /><span><strong>Chladni 聲音圖案</strong><em>nodal lines · audio-driven n,m</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="dla" /><span><strong>DLA 凝聚</strong><em>diffusion-limited 珊瑚 / 閃電</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="mandalaRings" /><span><strong>Mandala rings</strong><em>expanding concentric pulse</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="waveform" /><span><strong>Waveform</strong><em>audio-driven horizon line</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="constellation" /><span><strong>Constellation</strong><em>dots wired to neighbors</em></span></label>
@@ -1955,7 +1958,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-18zb · GIF: manual frame decode via WebCodecs');
+console.log('[IW] script booting · build 2026-05-19 · Boids + Chladni + DLA modes');
 
 // Click diagnostics — log every click so we can see where they reach.
 // Capture phase so we see clicks BEFORE any interceptor swallows them.
@@ -2141,6 +2144,9 @@ const state = {
     voronoi:      false,   // cellular tessellation
     beatStrobe:   false,   // full-screen flash on every detected beat
     bpmKaleido:   false,   // kaleido segments auto-cycle synced to BPM
+    boids:        false,   // flocking particles (Reynolds boids)
+    chladni:      false,   // Chladni nodal-line patterns (audio-driven n,m)
+    dla:          false,   // diffusion-limited aggregation (coral / lightning)
     mandalaRings: false,   // expanding concentric rings
     waveform:     false,   // audio waveform across screen
     constellation:false,   // dots connected to neighbors
@@ -2733,7 +2739,7 @@ function frame(now){
   // ---- trails: instead of clearing, paint translucent over (frame persistence)
   // Accumulator modes (substrate, attractor) NEED high trails to be visible —
   // they paint a few pixels per frame and rely on persistence. Auto-boost.
-  const _needsHighTrails = state.modes.substrate || state.modes.attractor;
+  const _needsHighTrails = state.modes.substrate || state.modes.attractor || state.modes.dla;
   const _effectiveTrails = _needsHighTrails ? Math.max(0.88, state.trails) : state.trails;
   if(_effectiveTrails > 0.02){
     g.save();
@@ -3004,6 +3010,9 @@ document.getElementById('reset').addEventListener('click', ()=>{
     modeState.voronoi.canvas = null;
     modeState.lissa._switchT = 0;
     modeState.opart._switchT = 0;
+    modeState.boids.length = 0;
+    modeState.chladni.canvas = null; modeState.chladni.t = 0;
+    modeState.dla.grid = null; modeState.dla.walkers.length = 0;
     modeState.ringTimer = 0;
     modeState.rippleTimer = 0;
   }
@@ -4532,6 +4541,12 @@ const modeState = {
   lissa: { phase: 0, freqA: 3, freqB: 4, _switchT: 0 },
   // Voronoi cellular tessellation (low-res buffer)
   voronoi: { seeds: [], canvas: null, ctx: null, imageData: null, w: 0, h: 0 },
+  // Boids flocking — bird/fish swarm motion
+  boids: [],
+  // Chladni nodal-line patterns (audio-reactive)
+  chladni: { t: 0, canvas: null, ctx: null, imageData: null },
+  // DLA — diffusion-limited aggregation (coral / lightning growth)
+  dla: { grid: null, gridW: 0, gridH: 0, fillCount: 0, capacity: 0, walkers: [], colors: [] },
 };
 
 function ensureFlow(){
@@ -5224,6 +5239,233 @@ function tickBpmKaleido(now){
       state.kaleido = opts[idx];
     }
   }
+}
+
+// ─── Boids (flocking) ─────────────────────────────────────────────────────
+// Reynolds 1986 — particles obey cohesion / alignment / separation rules and
+// self-organise into flocks. Color from emotion. Audio modulates speed.
+function ensureBoids(){
+  if(modeState.boids.length === 0){
+    const N = 140;
+    const dom = dominantEmo();
+    for(let i=0;i<N;i++){
+      modeState.boids.push({
+        x: Math.random()*W, y: Math.random()*H,
+        vx: (Math.random()-0.5)*120, vy: (Math.random()-0.5)*120,
+        hue: lerp(dom.hue[0], dom.hue[1], Math.random()) + (Math.random()-0.5)*20,
+      });
+    }
+  }
+}
+function drawBoids(g, dt, T){
+  ensureBoids();
+  const boids = modeState.boids;
+  const dom = dominantEmo();
+  const mScale = (window._songMood && window._songMood.intensityScale) || 1;
+  const speedMul = (0.5 + state.motionSpeed + (reactor.vol||0)*1.4) * mScale;
+  const dts = dt/1000;
+  const visRad = 60, sepRad = 24, maxSpeed = 180;
+  const visRadSq = visRad*visRad, sepRadSq = sepRad*sepRad;
+  for(let i=0;i<boids.length;i++){
+    const b = boids[i];
+    let ax=0, ay=0, acount=0;
+    let cx=0, cy=0, ccount=0;
+    let sx=0, sy=0;
+    for(let j=0;j<boids.length;j++){
+      if(i === j) continue;
+      const o = boids[j];
+      const dx = o.x - b.x, dy = o.y - b.y;
+      const d2 = dx*dx + dy*dy;
+      if(d2 < visRadSq){
+        ax += o.vx; ay += o.vy; acount++;
+        cx += o.x;  cy += o.y;  ccount++;
+        if(d2 < sepRadSq && d2 > 0.01){
+          const d = Math.sqrt(d2);
+          sx -= dx/d; sy -= dy/d;
+        }
+      }
+    }
+    if(acount){ b.vx += (ax/acount - b.vx) * 0.05; b.vy += (ay/acount - b.vy) * 0.05; }
+    if(ccount){ b.vx += (cx/ccount - b.x) * 0.001; b.vy += (cy/ccount - b.y) * 0.001; }
+    b.vx += sx * 0.6; b.vy += sy * 0.6;
+    const sp = Math.hypot(b.vx, b.vy);
+    if(sp > maxSpeed){ b.vx = b.vx/sp * maxSpeed; b.vy = b.vy/sp * maxSpeed; }
+    b.x += b.vx * dts * speedMul;
+    b.y += b.vy * dts * speedMul;
+    if(b.x < 0) b.x += W; else if(b.x > W) b.x -= W;
+    if(b.y < 0) b.y += H; else if(b.y > H) b.y -= H;
+  }
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  for(const b of boids){
+    const ang = Math.atan2(b.vy, b.vx);
+    const sz = 4 + state.bloom*4 + (reactor.bass||0)*3;
+    g.save();
+    g.translate(b.x, b.y);
+    g.rotate(ang);
+    g.fillStyle = `hsla(${b.hue}, ${dom.sat+5}%, ${dom.light+18}%, ${0.7 + state.glow*0.3})`;
+    g.beginPath();
+    g.moveTo(sz, 0);
+    g.lineTo(-sz*0.6, -sz*0.55);
+    g.lineTo(-sz*0.3, 0);
+    g.lineTo(-sz*0.6, sz*0.55);
+    g.closePath();
+    g.fill();
+    g.restore();
+  }
+  g.restore();
+}
+
+// ─── Chladni (sound figures) ──────────────────────────────────────────────
+// 18th-century physics: cos(nπx)cos(mπy) - cos(mπx)cos(nπy) = 0 produces
+// nodal lines that form different symmetric patterns for each (n, m). Here
+// n and m are driven by audio so the figure morphs with the music.
+function ensureChladni(){
+  const c = modeState.chladni;
+  if(!c.canvas){
+    c.canvas = document.createElement('canvas');
+    c.canvas.width = 192; c.canvas.height = 108;
+    c.ctx = c.canvas.getContext('2d');
+    c.imageData = c.ctx.createImageData(192, 108);
+  }
+}
+function drawChladni(g, dt, T){
+  ensureChladni();
+  const c = modeState.chladni;
+  const dom = dominantEmo();
+  const mScale = (window._songMood && window._songMood.intensityScale) || 1;
+  c.t += dt * 0.00012 * (1 + state.motionSpeed) * mScale;
+  // n, m audio-modulated
+  const n = 2 + Math.abs(Math.sin(c.t)) * 6 + (reactor.bass||0) * 5;
+  const m = 3 + Math.abs(Math.cos(c.t * 0.73)) * 6 + (reactor.treble||0) * 4;
+  const W2 = c.canvas.width, H2 = c.canvas.height;
+  const data = c.imageData.data;
+  const c0 = _hslToRgbInt(dom.hue[0], dom.sat, dom.light);
+  const c1 = _hslToRgbInt(dom.hue[1], dom.sat, dom.light + 28);
+  const PI = Math.PI;
+  for(let y=0; y<H2; y++){
+    const ny = y / H2;
+    const yy1 = m * PI * ny, yy2 = n * PI * ny;
+    for(let x=0; x<W2; x++){
+      const nx = x / W2;
+      const z = Math.cos(n*PI*nx)*Math.cos(yy1) - Math.cos(m*PI*nx)*Math.cos(yy2);
+      const zAbs = Math.abs(z);
+      // Bright on nodal lines (zAbs ≈ 0)
+      const inv = Math.max(0, 1 - zAbs * 3);
+      const t = inv;
+      const o = (y*W2 + x)*4;
+      data[o]   = c0[0] + (c1[0] - c0[0]) * t;
+      data[o+1] = c0[1] + (c1[1] - c0[1]) * t;
+      data[o+2] = c0[2] + (c1[2] - c0[2]) * t;
+      data[o+3] = Math.floor(t * 230);
+    }
+  }
+  c.ctx.putImageData(c.imageData, 0, 0);
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  g.imageSmoothingEnabled = true;
+  g.globalAlpha = 0.85 + state.glow * 0.15;
+  g.drawImage(c.canvas, 0, 0, W, H);
+  g.restore();
+}
+
+// ─── DLA (diffusion-limited aggregation) ──────────────────────────────────
+// Walkers random-walk on a grid; when adjacent to an existing cell, they
+// stick. Builds coral / lightning / dendrite-like structures over time.
+function _spawnDLAWalker(){
+  const d = modeState.dla;
+  const edge = Math.floor(Math.random()*4);
+  let gx, gy;
+  if(edge === 0){ gx = 0; gy = Math.floor(Math.random()*d.gridH); }
+  else if(edge === 1){ gx = d.gridW-1; gy = Math.floor(Math.random()*d.gridH); }
+  else if(edge === 2){ gx = Math.floor(Math.random()*d.gridW); gy = 0; }
+  else { gx = Math.floor(Math.random()*d.gridW); gy = d.gridH-1; }
+  d.walkers.push({ gx, gy });
+}
+function ensureDLA(){
+  const d = modeState.dla;
+  if(!d.grid){
+    d.gridW = Math.max(80, Math.floor(W/8));
+    d.gridH = Math.max(45, Math.floor(H/8));
+    d.grid = new Uint8Array(d.gridW * d.gridH);
+    d.colors = new Float32Array(d.gridW * d.gridH);
+    d.capacity = d.gridW * d.gridH;
+    d.fillCount = 0;
+    d.walkers = [];
+    const dom = dominantEmo();
+    // central seed
+    const cx = Math.floor(d.gridW/2), cy = Math.floor(d.gridH/2);
+    d.grid[cy*d.gridW + cx] = 1;
+    d.colors[cy*d.gridW + cx] = lerp(dom.hue[0], dom.hue[1], 0.5);
+    d.fillCount = 1;
+    for(let i=0;i<80;i++) _spawnDLAWalker();
+  }
+}
+function drawDLA(g, dt, T){
+  ensureDLA();
+  const d = modeState.dla;
+  const dom = dominantEmo();
+  const mScale = (window._songMood && window._songMood.intensityScale) || 1;
+  // Soft-reset when filled (cyclic regrowth)
+  if(d.fillCount > d.capacity * 0.4){
+    d.grid.fill(0); d.colors.fill(0); d.fillCount = 0; d.walkers.length = 0;
+    const cx = Math.floor(d.gridW/2), cy = Math.floor(d.gridH/2);
+    d.grid[cy*d.gridW + cx] = 1;
+    d.colors[cy*d.gridW + cx] = lerp(dom.hue[0], dom.hue[1], 0.5);
+    d.fillCount = 1;
+    for(let i=0;i<80;i++) _spawnDLAWalker();
+    return;
+  }
+  // Walk many steps per frame (audio-boosted)
+  const steps = Math.floor((3 + (reactor.bass||0)*6 + (reactor.vol||0)*4) * mScale);
+  for(let s=0; s<steps; s++){
+    for(let i = d.walkers.length-1; i>=0; i--){
+      const w = d.walkers[i];
+      const dir = Math.floor(Math.random()*4);
+      if(dir === 0) w.gx++;
+      else if(dir === 1) w.gx--;
+      else if(dir === 2) w.gy++;
+      else w.gy--;
+      if(w.gx <= 0 || w.gx >= d.gridW-1 || w.gy <= 0 || w.gy >= d.gridH-1){
+        d.walkers.splice(i, 1);
+        _spawnDLAWalker();
+        continue;
+      }
+      const gw = d.gridW;
+      const idx = w.gy*gw + w.gx;
+      if(d.grid[idx]){
+        // already filled — re-spawn
+        d.walkers.splice(i, 1);
+        _spawnDLAWalker();
+        continue;
+      }
+      // Check 4 neighbours for an existing cell
+      if(d.grid[idx-1] || d.grid[idx+1] || d.grid[idx-gw] || d.grid[idx+gw]){
+        d.grid[idx] = 1;
+        d.colors[idx] = lerp(dom.hue[0], dom.hue[1], Math.random()) + (Math.random()-0.5)*30;
+        d.fillCount++;
+        d.walkers.splice(i, 1);
+        _spawnDLAWalker();
+      }
+    }
+  }
+  // Render the structure (full pass — Chrome handles a few thousand fillRects fine)
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  const cw = W / d.gridW;
+  const ch = H / d.gridH;
+  const a = 0.7 + state.glow * 0.3;
+  for(let y=0;y<d.gridH;y++){
+    const baseI = y*d.gridW;
+    for(let x=0;x<d.gridW;x++){
+      const idx = baseI + x;
+      if(!d.grid[idx]) continue;
+      const hue = d.colors[idx];
+      g.fillStyle = `hsla(${hue}, ${dom.sat+5}%, ${dom.light+18}%, ${a})`;
+      g.fillRect(x*cw, y*ch, cw+1, ch+1);
+    }
+  }
+  g.restore();
 }
 
 function drawMandalaRings(g, dt, T){
@@ -6233,7 +6475,7 @@ function drawEva(g, dt, T){
 // ============================================================
 // Auto-cycle: detect music sections and rotate enabled modes
 // ============================================================
-const CYCLE_MODES = ['lineTrace','flowField','curlNoise','attractor','substrate','reaction','sumie','opart','lissajous','voronoi','mandalaRings','waveform','constellation','spiral','ripples','crystals','ribbons','tunnel','halftone','petals','aurora','inkWash','popArt','polygon','matrix','glitch','eva'];
+const CYCLE_MODES = ['lineTrace','flowField','curlNoise','attractor','substrate','reaction','sumie','opart','lissajous','voronoi','boids','chladni','dla','mandalaRings','waveform','constellation','spiral','ripples','crystals','ribbons','tunnel','halftone','petals','aurora','inkWash','popArt','polygon','matrix','glitch','eva'];
 let _cycleIdx = 0;
 function maybeAutoCycle(now){
   if(!state.autoCycle) return;
@@ -6277,6 +6519,9 @@ window._drawModes = function(g, dt, T){
   if(state.modes.opart)         drawOpArt(g, dt, T);
   if(state.modes.lissajous)     drawLissajous(g, dt, T);
   if(state.modes.voronoi)       drawVoronoi(g, dt, T);
+  if(state.modes.boids)         drawBoids(g, dt, T);
+  if(state.modes.chladni)       drawChladni(g, dt, T);
+  if(state.modes.dla)           drawDLA(g, dt, T);
   if(state.modes.beatStrobe)    drawBeatStrobe(g, dt, T);
   if(state.modes.mandalaRings)  drawMandalaRings(g, dt, T);
   if(state.modes.waveform)      drawWaveform(g, dt, T);
@@ -6993,6 +7238,9 @@ function randomizeAll(){
     modeState.voronoi.canvas = null;
     modeState.lissa._switchT = 0;
     modeState.opart._switchT = 0;
+    modeState.boids.length = 0;
+    modeState.chladni.canvas = null; modeState.chladni.t = 0;
+    modeState.dla.grid = null; modeState.dla.walkers.length = 0;
     modeState.ringTimer = 0;
     modeState.rippleTimer = 0;
   }
@@ -7055,6 +7303,7 @@ function randomizeAll(){
     curlNoise:2, attractor:3, substrate:2, reaction:4,
     sumie:3, opart:2, lissajous:2, voronoi:3,
     beatStrobe:1, bpmKaleido:0,
+    boids:3, chladni:3, dla:2,
     inkWash:3, matrix:3, eva:3,
     popArt:4, glitch:4,
     pixel8:5,
@@ -7064,16 +7313,16 @@ function randomizeAll(){
   const budget = budgetBase + Math.floor(hot * 2);  // hot music allowed a little more chaos
 
   // In lightMode (white canvas) bright-content modes vanish — pool MUST favor dark/contrasted content.
-  const lightFriendly = ['inkWash','polygon','popArt','glitch','eva','halftone','lineTrace','constellation','spiral','crystals','tunnel','attractor','substrate','sumie','opart','lissajous','voronoi'];
+  const lightFriendly = ['inkWash','polygon','popArt','glitch','eva','halftone','lineTrace','constellation','spiral','crystals','tunnel','attractor','substrate','sumie','opart','lissajous','voronoi','boids','chladni','dla'];
   const lightHostile  = new Set(['matrix','aurora','ribbons','petals']);  // these wash out on cream bg
 
   let hotModes, coolModes;
   if(state.lightMode){
-    hotModes  = ['popArt','glitch','polygon','eva','halftone','spiral','crystals','tunnel','inkWash','attractor','substrate','opart','lissajous'];
-    coolModes = ['lineTrace','flowField','constellation','inkWash','polygon','halftone','waveform','curlNoise','attractor','substrate','reaction','sumie','voronoi'];
+    hotModes  = ['popArt','glitch','polygon','eva','halftone','spiral','crystals','tunnel','inkWash','attractor','substrate','opart','lissajous','boids','dla'];
+    coolModes = ['lineTrace','flowField','constellation','inkWash','polygon','halftone','waveform','curlNoise','attractor','substrate','reaction','sumie','voronoi','boids','chladni','dla'];
   } else {
-    hotModes  = ['crystals','ripples','spiral','tunnel','mandalaRings','halftone','popArt','glitch','polygon','matrix','eva','pixel8','attractor','substrate','opart','lissajous'];
-    coolModes = ['lineTrace','flowField','constellation','ribbons','petals','aurora','waveform','inkWash','polygon','matrix','curlNoise','attractor','substrate','reaction','sumie','voronoi'];
+    hotModes  = ['crystals','ripples','spiral','tunnel','mandalaRings','halftone','popArt','glitch','polygon','matrix','eva','pixel8','attractor','substrate','opart','lissajous','boids','dla'];
+    coolModes = ['lineTrace','flowField','constellation','ribbons','petals','aurora','waveform','inkWash','polygon','matrix','curlNoise','attractor','substrate','reaction','sumie','voronoi','boids','chladni','dla'];
   }
   const maxModes = 3;
   const targetN = Math.min(maxModes, 1 + Math.floor(Math.random()*(1 + hot*2.2)));
@@ -7269,19 +7518,28 @@ const imgDrop = document.getElementById('imgDrop');
 const imgInput = document.getElementById('imgInput');
 const imgListEl = document.getElementById('imgList');
 
-// Decode a GIF into individual frames + per-frame delays using the WebCodecs
-// ImageDecoder API. The browser's <img> GIF playback is unreliable when the
-// element isn't on-screen, so we drive playback manually.
+// Decode a GIF into individual frames + per-frame delays.
+// Primary path: WebCodecs ImageDecoder API.
+// Fallback: load as <img>, paint to offscreen canvas at intervals.
 async function _decodeGifFrames(file, entry){
+  console.log('[IW][gif] start decode, file:', file && file.name, 'size:', file && file.size, 'type:', file && file.type);
+  window._gifDebug = window._gifDebug || {};
+  window._gifDebug.lastFile = file && file.name;
   if(!('ImageDecoder' in window)){
-    console.warn('[IW] ImageDecoder unsupported — GIF will show first frame only');
+    console.warn('[IW][gif] ImageDecoder API NOT supported in this browser');
+    window._gifDebug.error = 'no ImageDecoder API';
     return;
   }
   try {
+    console.log('[IW][gif] reading arrayBuffer…');
     const buf = await file.arrayBuffer();
+    console.log('[IW][gif] arrayBuffer ok, size:', buf.byteLength);
     const dec = new ImageDecoder({ data: buf, type: 'image/gif' });
+    console.log('[IW][gif] decoder created, waiting tracks.ready…');
     await dec.tracks.ready;
-    const total = dec.tracks.selectedTrack.frameCount || 1;
+    const track = dec.tracks.selectedTrack;
+    const total = (track && track.frameCount) || 1;
+    console.log('[IW][gif] track ready · frameCount =', total);
     entry.frames = [];
     entry.frameDelays = [];
     for(let i=0;i<total;i++){
@@ -7292,19 +7550,31 @@ async function _decodeGifFrames(file, entry){
         entry.frames.push(bmp);
         entry.frameDelays.push(Math.max(20, dur));
         try { r.image.close(); } catch(_){}
-      } catch(e){ break; }
+      } catch(e){
+        console.warn('[IW][gif] frame', i, 'decode failed:', e);
+        break;
+      }
     }
     entry.frameStartT = performance.now();
     entry._totalDur = entry.frameDelays.reduce((a,b)=>a+b, 0);
-    console.log('[IW] GIF decoded:', entry.frames.length, 'frames, total', entry._totalDur.toFixed(0), 'ms');
+    console.log('[IW][gif] ✓ decoded', entry.frames.length, 'frames, total', entry._totalDur.toFixed(0), 'ms');
+    window._gifDebug.frames = entry.frames.length;
+    window._gifDebug.totalDur = entry._totalDur;
   } catch(e){
-    console.warn('[IW] GIF decode failed:', e);
+    console.warn('[IW][gif] decode FAILED:', e && (e.message || e));
+    window._gifDebug.error = String(e && (e.message || e));
   }
 }
 function addImage(file){
   const url = URL.createObjectURL(file);
   const img = new Image();
   const isGif = file && (file.type === 'image/gif' || /\.gif$/i.test(file.name || ''));
+  if(isGif){
+    // Fallback path for browsers without WebCodecs / when decode fails:
+    // mount the img on-screen tiny so Chrome keeps advancing GIF frames.
+    img.style.cssText = 'position:fixed;left:0;bottom:0;width:2px;height:2px;opacity:.01;pointer-events:none;z-index:0';
+    document.body.appendChild(img);
+  }
   img.onload = ()=>{
     const entry = { img, url, isGif };
     imgState.images.push(entry);
@@ -7334,11 +7604,12 @@ function renderImgList(){
       if(e.target.classList.contains('x')){
         e.stopPropagation();
         URL.revokeObjectURL(entry.url);
-        // Release decoded GIF frame bitmaps
         if(entry.frames){
           for(const bmp of entry.frames){ try{ bmp.close && bmp.close(); }catch(_){} }
           entry.frames = null;
         }
+        // Remove the fallback off-screen img if we attached one
+        if(entry.isGif && entry.img && entry.img.parentNode) entry.img.parentNode.removeChild(entry.img);
         imgState.images.splice(i,1);
         imgState.selected = imgState.selected.filter(s => s !== i).map(s => s > i ? s-1 : s);
         if(imgState.active >= imgState.images.length) imgState.active = Math.max(0, imgState.images.length-1);
@@ -9057,6 +9328,103 @@ function pickMime(){
   for(const o of opts) if(window.MediaRecorder && MediaRecorder.isTypeSupported(o)) return o;
   return '';
 }
+// ─── MP4 faststart re-muxer ─────────────────────────────────────────────
+// Pure JS, no library. Moves the `moov` atom from the end of the file to
+// right after `ftyp` so platforms like LINE / iOS Photos / WhatsApp can read
+// metadata in the first KB and generate thumbnails. Adjusts all chunk
+// offsets (stco/co64) inside moov to compensate for the shift.
+function _mp4MakeFaststart(arrayBuffer){
+  const u8 = new Uint8Array(arrayBuffer);
+  const view = new DataView(arrayBuffer);
+  const atoms = [];
+  let pos = 0;
+  while(pos + 8 <= view.byteLength){
+    const size = view.getUint32(pos);
+    const t1 = view.getUint8(pos+4), t2 = view.getUint8(pos+5);
+    const t3 = view.getUint8(pos+6), t4 = view.getUint8(pos+7);
+    const type = String.fromCharCode(t1, t2, t3, t4);
+    let realSize = size;
+    if(size === 1){
+      // 64-bit largesize at pos+8..pos+16
+      const hi = view.getUint32(pos+8), lo = view.getUint32(pos+12);
+      realSize = hi * 0x100000000 + lo;
+    } else if(size === 0){
+      realSize = view.byteLength - pos;
+    }
+    atoms.push({ pos, size: realSize, type });
+    if(realSize < 8) break;
+    pos += realSize;
+  }
+  const ftyp = atoms.find(a => a.type === 'ftyp');
+  const moov = atoms.find(a => a.type === 'moov');
+  const mdat = atoms.find(a => a.type === 'mdat');
+  if(!ftyp || !moov || !mdat) return arrayBuffer;
+  // Already faststart — moov before mdat
+  if(moov.pos < mdat.pos) return arrayBuffer;
+
+  // Shift = how much earlier mdat will appear in the new layout.
+  // Original: [ftyp][...][mdat][...][moov]
+  // New:      [ftyp][moov][...other...][mdat][...]
+  // mdat new position = mdat.pos - moov.size  (moov removed from its old slot)
+  //                     + moov.size           (moov inserted before everything else)
+  //                     = mdat.pos
+  // Wait — depends on whether other atoms exist between ftyp and mdat.
+  // Simplest safe approach: put moov RIGHT AFTER ftyp, keep relative order of
+  // the rest. Then shift = (ftyp.pos + ftyp.size + moov.size) - mdat.pos.
+  const newMdatPos = ftyp.pos + ftyp.size + moov.size
+    + atoms.filter(a => a !== ftyp && a !== moov && a.pos < mdat.pos).reduce((s, a) => s + a.size, 0);
+  const shift = newMdatPos - mdat.pos;
+
+  // Copy moov bytes (we'll modify them)
+  const moovBytes = u8.slice(moov.pos, moov.pos + moov.size);
+  const moovView = new DataView(moovBytes.buffer, moovBytes.byteOffset, moovBytes.byteLength);
+
+  function shiftStcoCo64(startInMoov, endInMoov){
+    let p = startInMoov;
+    while(p + 8 <= endInMoov){
+      const sz = moovView.getUint32(p);
+      const ty = String.fromCharCode(moovView.getUint8(p+4), moovView.getUint8(p+5), moovView.getUint8(p+6), moovView.getUint8(p+7));
+      if(sz < 8) break;
+      if(ty === 'stco'){
+        const n = moovView.getUint32(p + 12);
+        for(let i=0;i<n;i++){
+          const op = p + 16 + i*4;
+          moovView.setUint32(op, moovView.getUint32(op) + shift);
+        }
+      } else if(ty === 'co64'){
+        const n = moovView.getUint32(p + 12);
+        for(let i=0;i<n;i++){
+          const op = p + 16 + i*8;
+          const hi = moovView.getUint32(op), lo = moovView.getUint32(op+4);
+          const cur = hi * 0x100000000 + lo;
+          const nw = cur + shift;
+          moovView.setUint32(op,   Math.floor(nw / 0x100000000));
+          moovView.setUint32(op+4, nw % 0x100000000);
+        }
+      } else if(ty === 'trak' || ty === 'mdia' || ty === 'minf' || ty === 'stbl' || ty === 'moov' || ty === 'edts' || ty === 'udta'){
+        shiftStcoCo64(p + 8, p + sz);
+      }
+      p += sz;
+    }
+  }
+  shiftStcoCo64(8, moovBytes.length);  // skip moov header
+
+  // Assemble: [ftyp][moov][...everything else except moov, preserving order]
+  const out = new Uint8Array(view.byteLength);
+  let w = 0;
+  // ftyp
+  out.set(u8.subarray(ftyp.pos, ftyp.pos + ftyp.size), w); w += ftyp.size;
+  // moov (shifted)
+  out.set(moovBytes, w); w += moovBytes.length;
+  // everything else in original order, skipping ftyp & moov
+  for(const a of atoms){
+    if(a === ftyp || a === moov) continue;
+    out.set(u8.subarray(a.pos, a.pos + a.size), w); w += a.size;
+  }
+  console.log('[IW] MP4 faststart: moov moved from offset', moov.pos, 'to', ftyp.size, '· shift', shift, 'bytes');
+  return out.buffer;
+}
+
 function startRecording(){
   if(!window.MediaRecorder || !cv.captureStream){
     showRecMsg('Recording not supported in this browser.');
@@ -9090,8 +9458,7 @@ function startRecording(){
   recorder.ondataavailable = e => { if(e.data && e.data.size) recChunks.push(e.data); };
   recorder.onerror = e => { console.error('MediaRecorder error', e); showRecMsg('Recording error — see console'); };
   const _rec = recorder;  // closure-stable reference for onstop
-  recorder.onstop = () => {
-    // Always restore original pixelRatio after recording ends
+  recorder.onstop = async () => {
     restoreRecordResolution();
     try{
       if(!recChunks.length){
@@ -9099,7 +9466,19 @@ function startRecording(){
         return;
       }
       const mt = (_rec && _rec.mimeType) || 'video/webm';
-      const blob = new Blob(recChunks, {type: mt});
+      let blob = new Blob(recChunks, {type: mt});
+      // For MP4, re-mux with faststart so LINE / iOS Photos / WhatsApp can
+      // generate thumbnails. Pure JS, no lib, no re-encode, ~1 sec on 4K.
+      if(mt.includes('mp4')){
+        try {
+          showRecMsg('Finalising for sharing…');
+          const buf = await blob.arrayBuffer();
+          const newBuf = _mp4MakeFaststart(buf);
+          if(newBuf && newBuf !== buf) blob = new Blob([newBuf], {type: mt});
+        } catch(e){
+          console.warn('[IW] faststart failed (keeping original):', e);
+        }
+      }
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
