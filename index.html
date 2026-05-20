@@ -1339,6 +1339,9 @@
             <label class="mode-chip"><input type="checkbox" data-mode="boids" /><span><strong>Boids 鳥群</strong><em>flock motion · Reynolds 1986</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="chladni" /><span><strong>Chladni 聲音圖案</strong><em>nodal lines · audio-driven n,m</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="dla" /><span><strong>DLA 凝聚</strong><em>diffusion-limited 珊瑚 / 閃電</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="spectro" /><span><strong>Spectrogram 頻譜瀑布</strong><em>FFT vs time waterfall</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="meta" /><span><strong>Metaballs 熔岩燈</strong><em>blobs that merge · lava lamp</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="synth" /><span><strong>Synthwave Grid</strong><em>80s 復古地面 + sun</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="mandalaRings" /><span><strong>Mandala rings</strong><em>expanding concentric pulse</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="waveform" /><span><strong>Waveform</strong><em>audio-driven horizon line</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="constellation" /><span><strong>Constellation</strong><em>dots wired to neighbors</em></span></label>
@@ -1958,7 +1961,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-19 · Boids + Chladni + DLA modes');
+console.log('[IW] script booting · build 2026-05-19a · Spectrogram + Metaballs + Synthwave Grid');
 
 // Click diagnostics — log every click so we can see where they reach.
 // Capture phase so we see clicks BEFORE any interceptor swallows them.
@@ -2147,6 +2150,9 @@ const state = {
     boids:        false,   // flocking particles (Reynolds boids)
     chladni:      false,   // Chladni nodal-line patterns (audio-driven n,m)
     dla:          false,   // diffusion-limited aggregation (coral / lightning)
+    spectro:      false,   // FFT spectrogram waterfall
+    meta:         false,   // metaballs / lava lamp
+    synth:        false,   // synthwave / vaporwave grid + sun
     mandalaRings: false,   // expanding concentric rings
     waveform:     false,   // audio waveform across screen
     constellation:false,   // dots connected to neighbors
@@ -3013,6 +3019,9 @@ document.getElementById('reset').addEventListener('click', ()=>{
     modeState.boids.length = 0;
     modeState.chladni.canvas = null; modeState.chladni.t = 0;
     modeState.dla.grid = null; modeState.dla.walkers.length = 0;
+    modeState.spectro.canvas = null;
+    modeState.meta.balls.length = 0;
+    modeState.synth.t = 0;
     modeState.ringTimer = 0;
     modeState.rippleTimer = 0;
   }
@@ -4547,6 +4556,12 @@ const modeState = {
   chladni: { t: 0, canvas: null, ctx: null, imageData: null },
   // DLA — diffusion-limited aggregation (coral / lightning growth)
   dla: { grid: null, gridW: 0, gridH: 0, fillCount: 0, capacity: 0, walkers: [], colors: [] },
+  // Spectrogram waterfall (FFT scrolling)
+  spectro: { canvas: null, ctx: null, _freqBuf: null },
+  // Metaballs (lava lamp)
+  meta: { balls: [] },
+  // Synthwave / vaporwave grid + sun
+  synth: { t: 0 },
 };
 
 function ensureFlow(){
@@ -5464,6 +5479,152 @@ function drawDLA(g, dt, T){
       g.fillStyle = `hsla(${hue}, ${dom.sat+5}%, ${dom.light+18}%, ${a})`;
       g.fillRect(x*cw, y*ch, cw+1, ch+1);
     }
+  }
+  g.restore();
+}
+
+// ─── Spectrogram waterfall ────────────────────────────────────────────────
+// FFT line per frame, scrolls up. Direct visualisation of audio over time.
+function ensureSpectrogram(){
+  const s = modeState.spectro;
+  if(!s.canvas){
+    s.canvas = document.createElement('canvas');
+    s.canvas.width  = 320;
+    s.canvas.height = 200;
+    s.ctx = s.canvas.getContext('2d');
+  }
+}
+function drawSpectrogram(g, dt, T){
+  ensureSpectrogram();
+  const s = modeState.spectro;
+  if(!reactor.analyser) return;
+  const N = reactor.analyser.frequencyBinCount;
+  if(!s._freqBuf || s._freqBuf.length !== N) s._freqBuf = new Uint8Array(N);
+  reactor.analyser.getByteFrequencyData(s._freqBuf);
+  const dom = dominantEmo();
+  const cw = s.canvas.width, ch = s.canvas.height;
+  // Scroll up by 1 px (drawImage onto itself with -1 offset)
+  s.ctx.drawImage(s.canvas, 0, -1);
+  // Clear bottom row and paint new spectrum
+  s.ctx.clearRect(0, ch-1, cw, 1);
+  const usableBins = Math.floor(N * 0.6); // skip very-high noise
+  for(let x = 0; x < cw; x++){
+    // Logarithmic frequency mapping (more low-end detail)
+    const t = x / cw;
+    const binIdx = Math.floor(Math.pow(t, 2.2) * usableBins);
+    const v = s._freqBuf[binIdx] / 255;
+    if(v < 0.05) continue;
+    const hue = lerp(dom.hue[0], dom.hue[1], v) + (1-t)*30;
+    s.ctx.fillStyle = `hsla(${hue}, ${dom.sat+10}%, ${30+v*50}%, ${Math.min(1, v*1.3)})`;
+    s.ctx.fillRect(x, ch-1, 1, 1);
+  }
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  g.globalAlpha = 0.85 + state.glow*0.15;
+  g.imageSmoothingEnabled = true;
+  g.drawImage(s.canvas, 0, 0, W, H);
+  g.restore();
+}
+
+// ─── Metaballs (lava lamp) ────────────────────────────────────────────────
+// N moving radial gradients merge visually via additive blending.
+function ensureMeta(){
+  const m = modeState.meta;
+  if(m.balls.length === 0){
+    const dom = dominantEmo();
+    for(let i=0;i<7;i++){
+      m.balls.push({
+        x: Math.random()*W, y: Math.random()*H,
+        vx: (Math.random()-0.5)*80, vy: (Math.random()-0.5)*80,
+        r: Math.min(W,H) * (0.08 + Math.random()*0.10),
+        hue: lerp(dom.hue[0], dom.hue[1], Math.random()) + (Math.random()-0.5)*40,
+      });
+    }
+  }
+}
+function drawMetaballs(g, dt, T){
+  ensureMeta();
+  const balls = modeState.meta.balls;
+  const dom = dominantEmo();
+  const dts = dt/1000;
+  const mScale = (window._songMood && window._songMood.intensityScale) || 1;
+  const speedMul = (0.4 + state.motionSpeed*0.8 + (reactor.vol||0)*1.3) * mScale;
+  for(const b of balls){
+    b.x += b.vx * dts * speedMul;
+    b.y += b.vy * dts * speedMul;
+    if(b.x < b.r){ b.x = b.r; b.vx = -b.vx; }
+    if(b.x > W-b.r){ b.x = W-b.r; b.vx = -b.vx; }
+    if(b.y < b.r){ b.y = b.r; b.vy = -b.vy; }
+    if(b.y > H-b.r){ b.y = H-b.r; b.vy = -b.vy; }
+  }
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  const bassPump = 1 + (reactor.bass||0)*0.7;
+  for(const b of balls){
+    const r = b.r * bassPump;
+    const grad = g.createRadialGradient(b.x, b.y, 0, b.x, b.y, r);
+    grad.addColorStop(0,   `hsla(${b.hue}, ${dom.sat+15}%, ${dom.light+28}%, ${0.9 + state.glow*0.1})`);
+    grad.addColorStop(0.4, `hsla(${b.hue}, ${dom.sat+10}%, ${dom.light+18}%, 0.45)`);
+    grad.addColorStop(1,   `hsla(${b.hue}, ${dom.sat}%, ${dom.light}%, 0)`);
+    g.fillStyle = grad;
+    g.beginPath(); g.arc(b.x, b.y, r, 0, TAU); g.fill();
+  }
+  g.restore();
+}
+
+// ─── Synthwave Grid (80s vector floor + sun) ──────────────────────────────
+function drawSynthwave(g, dt, T){
+  const dom = dominantEmo();
+  const mScale = (window._songMood && window._songMood.intensityScale) || 1;
+  const sy = modeState.synth;
+  sy.t += dt * 0.001 * (1 + (reactor.bass||0)*0.6) * mScale;
+  const horizonY = H * 0.55;
+  // Sun
+  const sunR = Math.min(W, H) * 0.18;
+  const sunY = horizonY - sunR * 0.35 + Math.sin(sy.t*0.7) * 8;
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  // Sun gradient (half disc above horizon)
+  const sunGrad = g.createLinearGradient(W/2, sunY - sunR, W/2, sunY + sunR);
+  const h1 = lerp(dom.hue[0], dom.hue[1], 0.15);
+  const h2 = lerp(dom.hue[0], dom.hue[1], 0.85);
+  sunGrad.addColorStop(0, `hsla(${h1}, ${dom.sat+15}%, ${dom.light+25}%, 0.95)`);
+  sunGrad.addColorStop(1, `hsla(${h2}, ${dom.sat+15}%, ${dom.light}%,    0.95)`);
+  g.fillStyle = sunGrad;
+  g.beginPath();
+  g.arc(W/2, sunY, sunR, Math.PI, 0, false);
+  g.lineTo(W/2 - sunR, sunY);
+  g.closePath();
+  g.fill();
+  // Sun retro stripes (cut into the disc)
+  g.fillStyle = state.lightMode ? '#f5edde' : '#0a0a14';
+  for(let i=0;i<6;i++){
+    const sH = sunR / 9;
+    const yy = sunY - sunR*0.7 + (i/5) * sunR * 0.95;
+    g.fillRect(W/2 - sunR, yy, sunR*2, sH);
+  }
+  // Grid lines (horizontal, perspective toward horizon)
+  const lineCol = `hsla(${lerp(dom.hue[0], dom.hue[1], 0.6)}, ${dom.sat+10}%, ${dom.light+22}%, ${0.7 + state.glow*0.3})`;
+  g.strokeStyle = lineCol;
+  g.lineWidth = 1.4 + state.bloom*0.8;
+  const nH = 18;
+  const scroll = (sy.t * 0.4) % 1;
+  for(let i=0; i<nH; i++){
+    const f = (i + scroll) / nH;
+    const y = horizonY + Math.pow(f, 2.2) * (H - horizonY) * 1.2;
+    if(y > H) continue;
+    if(y < horizonY) continue;
+    g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke();
+  }
+  // Grid lines (vertical, fan out from vanishing point)
+  const vx = W/2;
+  const nV = 24;
+  for(let i = -nV; i <= nV; i++){
+    const xAtBottom = vx + (i / nV) * W * 0.95;
+    g.beginPath();
+    g.moveTo(vx, horizonY);
+    g.lineTo(xAtBottom, H);
+    g.stroke();
   }
   g.restore();
 }
@@ -6475,7 +6636,7 @@ function drawEva(g, dt, T){
 // ============================================================
 // Auto-cycle: detect music sections and rotate enabled modes
 // ============================================================
-const CYCLE_MODES = ['lineTrace','flowField','curlNoise','attractor','substrate','reaction','sumie','opart','lissajous','voronoi','boids','chladni','dla','mandalaRings','waveform','constellation','spiral','ripples','crystals','ribbons','tunnel','halftone','petals','aurora','inkWash','popArt','polygon','matrix','glitch','eva'];
+const CYCLE_MODES = ['lineTrace','flowField','curlNoise','attractor','substrate','reaction','sumie','opart','lissajous','voronoi','boids','chladni','dla','spectro','meta','synth','mandalaRings','waveform','constellation','spiral','ripples','crystals','ribbons','tunnel','halftone','petals','aurora','inkWash','popArt','polygon','matrix','glitch','eva'];
 let _cycleIdx = 0;
 function maybeAutoCycle(now){
   if(!state.autoCycle) return;
@@ -6522,6 +6683,9 @@ window._drawModes = function(g, dt, T){
   if(state.modes.boids)         drawBoids(g, dt, T);
   if(state.modes.chladni)       drawChladni(g, dt, T);
   if(state.modes.dla)           drawDLA(g, dt, T);
+  if(state.modes.spectro)       drawSpectrogram(g, dt, T);
+  if(state.modes.meta)          drawMetaballs(g, dt, T);
+  if(state.modes.synth)         drawSynthwave(g, dt, T);
   if(state.modes.beatStrobe)    drawBeatStrobe(g, dt, T);
   if(state.modes.mandalaRings)  drawMandalaRings(g, dt, T);
   if(state.modes.waveform)      drawWaveform(g, dt, T);
@@ -7241,6 +7405,9 @@ function randomizeAll(){
     modeState.boids.length = 0;
     modeState.chladni.canvas = null; modeState.chladni.t = 0;
     modeState.dla.grid = null; modeState.dla.walkers.length = 0;
+    modeState.spectro.canvas = null;
+    modeState.meta.balls.length = 0;
+    modeState.synth.t = 0;
     modeState.ringTimer = 0;
     modeState.rippleTimer = 0;
   }
@@ -7304,6 +7471,7 @@ function randomizeAll(){
     sumie:3, opart:2, lissajous:2, voronoi:3,
     beatStrobe:1, bpmKaleido:0,
     boids:3, chladni:3, dla:2,
+    spectro:2, meta:2, synth:2,
     inkWash:3, matrix:3, eva:3,
     popArt:4, glitch:4,
     pixel8:5,
@@ -7313,16 +7481,16 @@ function randomizeAll(){
   const budget = budgetBase + Math.floor(hot * 2);  // hot music allowed a little more chaos
 
   // In lightMode (white canvas) bright-content modes vanish — pool MUST favor dark/contrasted content.
-  const lightFriendly = ['inkWash','polygon','popArt','glitch','eva','halftone','lineTrace','constellation','spiral','crystals','tunnel','attractor','substrate','sumie','opart','lissajous','voronoi','boids','chladni','dla'];
+  const lightFriendly = ['inkWash','polygon','popArt','glitch','eva','halftone','lineTrace','constellation','spiral','crystals','tunnel','attractor','substrate','sumie','opart','lissajous','voronoi','boids','chladni','dla','spectro','synth'];
   const lightHostile  = new Set(['matrix','aurora','ribbons','petals']);  // these wash out on cream bg
 
   let hotModes, coolModes;
   if(state.lightMode){
-    hotModes  = ['popArt','glitch','polygon','eva','halftone','spiral','crystals','tunnel','inkWash','attractor','substrate','opart','lissajous','boids','dla'];
-    coolModes = ['lineTrace','flowField','constellation','inkWash','polygon','halftone','waveform','curlNoise','attractor','substrate','reaction','sumie','voronoi','boids','chladni','dla'];
+    hotModes  = ['popArt','glitch','polygon','eva','halftone','spiral','crystals','tunnel','inkWash','attractor','substrate','opart','lissajous','boids','dla','synth','spectro'];
+    coolModes = ['lineTrace','flowField','constellation','inkWash','polygon','halftone','waveform','curlNoise','attractor','substrate','reaction','sumie','voronoi','boids','chladni','dla','meta','synth'];
   } else {
-    hotModes  = ['crystals','ripples','spiral','tunnel','mandalaRings','halftone','popArt','glitch','polygon','matrix','eva','pixel8','attractor','substrate','opart','lissajous','boids','dla'];
-    coolModes = ['lineTrace','flowField','constellation','ribbons','petals','aurora','waveform','inkWash','polygon','matrix','curlNoise','attractor','substrate','reaction','sumie','voronoi','boids','chladni','dla'];
+    hotModes  = ['crystals','ripples','spiral','tunnel','mandalaRings','halftone','popArt','glitch','polygon','matrix','eva','pixel8','attractor','substrate','opart','lissajous','boids','dla','synth','spectro','meta'];
+    coolModes = ['lineTrace','flowField','constellation','ribbons','petals','aurora','waveform','inkWash','polygon','matrix','curlNoise','attractor','substrate','reaction','sumie','voronoi','boids','chladni','dla','meta','synth'];
   }
   const maxModes = 3;
   const targetN = Math.min(maxModes, 1 + Math.floor(Math.random()*(1 + hot*2.2)));
