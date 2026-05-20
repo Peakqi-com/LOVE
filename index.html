@@ -1485,6 +1485,10 @@
             <input type="checkbox" id="imgUseAll" />
             <span><strong>Mix all images</strong><em>arrangements pull from full library</em></span>
           </label>
+          <label class="mode-chip" style="margin-top:6px">
+            <input type="checkbox" id="imgStretchFill" />
+            <span><strong>Stretch / 強迫變形</strong><em>fills frame · ignores aspect ratio (VJ distortion)</em></span>
+          </label>
         </div>
       </section>
 
@@ -7250,6 +7254,7 @@ const imgState = {
     shatter: false, kaleido: false, melt: false,
     pixelSort: false, ascii: false, chromaShift: false,
   },
+  stretchToFill: false,  // VJ option: ignore native aspect ratio
   t0: performance.now(),
 };
 
@@ -7391,6 +7396,13 @@ wireSlider('imgRate','imgRateFill','imgRateThumb','imgRateVal',
 document.getElementById('imgUseAll').addEventListener('change', e=>{
   imgState.useAllImages = e.target.checked;
 });
+// Stretch / 強迫變形 toggle — ignores native aspect ratio in renders
+const _imgStretchEl = document.getElementById('imgStretchFill');
+if(_imgStretchEl){
+  _imgStretchEl.addEventListener('change', e=>{
+    imgState.stretchToFill = e.target.checked;
+  });
+}
 
 // ============================================================
 // IMAGE EFFECT RENDERERS
@@ -7864,26 +7876,27 @@ function drawImageArrangement(g, dt){
       applyImageEffects(dt, t);
       imgState.active = oldActive;
     }
-    // Preserve native aspect ratio of the source image (NOT canvas aspect)
-    // so portrait / landscape uploads don't get squished into a square.
-    const srcImg = imgState.images[imgState.active] && imgState.images[imgState.active].img;
-    const ar = srcImg ? (srcImg.width / Math.max(1, srcImg.height)) : 1;
-    let dw, dh;
-    if(ar >= 1){ dw = size; dh = size / ar; }
-    else       { dh = size; dw = size * ar; }
-    // Pipe is canvas-sized with the source centered + letterboxed. We need to
-    // crop out just the letterboxed region of the pipe so the instance shows
-    // tight image content (no letterbox bars around it).
-    const pipeW = imgPipe.width / state.pixelRatio;
-    const pipeH = imgPipe.height / state.pixelRatio;
-    const tar = pipeW / pipeH;
-    let sw, sh;
-    if(ar > tar){ sw = pipeW * imgState.scale; sh = sw / ar; }
-    else        { sh = pipeH * imgState.scale; sw = sh * ar; }
-    const sx = (pipeW - sw) / 2;
-    const sy = (pipeH - sh) / 2;
-    g.drawImage(imgPipe, sx*state.pixelRatio, sy*state.pixelRatio, sw*state.pixelRatio, sh*state.pixelRatio,
-                         -dw/2, -dh/2, dw, dh);
+    if(imgState.stretchToFill){
+      // VJ stretch mode: ignore aspect ratio, fill square instance
+      g.drawImage(imgPipe, -size/2, -size/2, size, size);
+    } else {
+      // Preserve native aspect ratio
+      const srcImg = imgState.images[imgState.active] && imgState.images[imgState.active].img;
+      const ar = srcImg ? (srcImg.width / Math.max(1, srcImg.height)) : 1;
+      let dw, dh;
+      if(ar >= 1){ dw = size; dh = size / ar; }
+      else       { dh = size; dw = size * ar; }
+      const pipeW = imgPipe.width / state.pixelRatio;
+      const pipeH = imgPipe.height / state.pixelRatio;
+      const tar = pipeW / pipeH;
+      let sw, sh;
+      if(ar > tar){ sw = pipeW * imgState.scale; sh = sw / ar; }
+      else        { sh = pipeH * imgState.scale; sw = sh * ar; }
+      const sx = (pipeW - sw) / 2;
+      const sy = (pipeH - sh) / 2;
+      g.drawImage(imgPipe, sx*state.pixelRatio, sy*state.pixelRatio, sw*state.pixelRatio, sh*state.pixelRatio,
+                           -dw/2, -dh/2, dw, dh);
+    }
     g.restore();
   }
 
