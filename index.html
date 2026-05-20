@@ -1950,7 +1950,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-18v · BeatStrobe + BPM Kaleido + 3D Extrude + PixelSort/ASCII/ChromaShift');
+console.log('[IW] script booting · build 2026-05-18w · fix image aspect ratio in arrangement modes');
 
 // Click diagnostics — log every click so we can see where they reach.
 // Capture phase so we see clicks BEFORE any interceptor swallows them.
@@ -7858,18 +7858,32 @@ function drawImageArrangement(g, dt){
     g.globalCompositeOperation = imgState.blend;
     g.translate(x, y);
     g.rotate(rot);
-    // pipe contains processed image at full canvas size; we want a centered small version
-    // so we scale based on size relative to full canvas
-    const drawSize = size;
-    g.translate(-drawSize/2, -drawSize/2);
     if(imgEntry){
-      // use a different image — apply effects to it temporarily
       const oldActive = imgState.active;
       imgState.active = imgEntry;
       applyImageEffects(dt, t);
       imgState.active = oldActive;
     }
-    g.drawImage(imgPipe, 0, 0, drawSize, drawSize);
+    // Preserve native aspect ratio of the source image (NOT canvas aspect)
+    // so portrait / landscape uploads don't get squished into a square.
+    const srcImg = imgState.images[imgState.active] && imgState.images[imgState.active].img;
+    const ar = srcImg ? (srcImg.width / Math.max(1, srcImg.height)) : 1;
+    let dw, dh;
+    if(ar >= 1){ dw = size; dh = size / ar; }
+    else       { dh = size; dw = size * ar; }
+    // Pipe is canvas-sized with the source centered + letterboxed. We need to
+    // crop out just the letterboxed region of the pipe so the instance shows
+    // tight image content (no letterbox bars around it).
+    const pipeW = imgPipe.width / state.pixelRatio;
+    const pipeH = imgPipe.height / state.pixelRatio;
+    const tar = pipeW / pipeH;
+    let sw, sh;
+    if(ar > tar){ sw = pipeW * imgState.scale; sh = sw / ar; }
+    else        { sh = pipeH * imgState.scale; sw = sh * ar; }
+    const sx = (pipeW - sw) / 2;
+    const sy = (pipeH - sh) / 2;
+    g.drawImage(imgPipe, sx*state.pixelRatio, sy*state.pixelRatio, sw*state.pixelRatio, sh*state.pixelRatio,
+                         -dw/2, -dh/2, dw, dh);
     g.restore();
   }
 
