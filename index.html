@@ -1330,6 +1330,10 @@
             <label class="mode-chip"><input type="checkbox" data-mode="attractor" /><span><strong>Attractor</strong><em>奇異吸引子 · chaotic strange curves</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="substrate" /><span><strong>Substrate</strong><em>結晶生長 · branching crack lines</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="reaction" /><span><strong>Reaction</strong><em>反應擴散 · Turing patterns</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="sumie" /><span><strong>Sumi-e</strong><em>水墨潑灑 · generative ink wash</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="opart" /><span><strong>Op Art</strong><em>歐普藝術 · stripes/rings/checker</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="lissajous" /><span><strong>Lissajous</strong><em>振盪曲線 · oscilloscope curves</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="voronoi" /><span><strong>Voronoi</strong><em>細胞分割 · cellular tessellation</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="mandalaRings" /><span><strong>Mandala rings</strong><em>expanding concentric pulse</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="waveform" /><span><strong>Waveform</strong><em>audio-driven horizon line</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="constellation" /><span><strong>Constellation</strong><em>dots wired to neighbors</em></span></label>
@@ -1940,7 +1944,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-18t · pumped visibility on 4 new modes');
+console.log('[IW] script booting · build 2026-05-18u · +sumie/opart/lissajous/voronoi + auto-trails for accumulators');
 
 // Click diagnostics — log every click so we can see where they reach.
 // Capture phase so we see clicks BEFORE any interceptor swallows them.
@@ -2120,6 +2124,10 @@ const state = {
     attractor:    false,   // strange attractor — chaotic 2D iterated map
     substrate:    false,   // branching cracks growing into city / vein patterns
     reaction:     false,   // Gray-Scott reaction-diffusion (Turing patterns)
+    sumie:        false,   // generative ink wash 水墨潑灑
+    opart:        false,   // Op Art moiré / Bridget Riley stripes & rings
+    lissajous:    false,   // oscilloscope Lissajous curves
+    voronoi:      false,   // cellular tessellation
     mandalaRings: false,   // expanding concentric rings
     waveform:     false,   // audio waveform across screen
     constellation:false,   // dots connected to neighbors
@@ -2707,12 +2715,16 @@ function frame(now){
   const g = srcCtx;
 
   // ---- trails: instead of clearing, paint translucent over (frame persistence)
-  if(state.trails > 0.02){
+  // Accumulator modes (substrate, attractor) NEED high trails to be visible —
+  // they paint a few pixels per frame and rely on persistence. Auto-boost.
+  const _needsHighTrails = state.modes.substrate || state.modes.attractor;
+  const _effectiveTrails = _needsHighTrails ? Math.max(0.88, state.trails) : state.trails;
+  if(_effectiveTrails > 0.02){
     g.save();
     g.globalCompositeOperation = 'source-over';
     g.fillStyle = state.lightMode
-      ? `rgba(245,237,224,${(1 - state.trails) * 0.6})`
-      : `rgba(5,5,10,${(1 - state.trails) * 0.6})`;
+      ? `rgba(245,237,224,${(1 - _effectiveTrails) * 0.6})`
+      : `rgba(5,5,10,${(1 - _effectiveTrails) * 0.6})`;
     g.fillRect(0,0,W,H);
     g.restore();
   } else {
@@ -2972,6 +2984,10 @@ document.getElementById('reset').addEventListener('click', ()=>{
     modeState.substrate.grid = null;
     modeState.substrate.fillCount = 0;
     if(modeState.rdLow.u){ modeState.rdLow.u = null; }
+    modeState.sumie.strokes.length = 0;
+    modeState.voronoi.canvas = null;
+    modeState.lissa._switchT = 0;
+    modeState.opart._switchT = 0;
     modeState.ringTimer = 0;
     modeState.rippleTimer = 0;
   }
@@ -4492,6 +4508,14 @@ const modeState = {
   substrate: { cracks: [], grid: null, gridW: 0, gridH: 0, fillCount: 0, capacity: 0 },
   // Reaction-diffusion (Gray-Scott) low-res buffers
   rdLow: { u: null, v: null, _newU: null, _newV: null, w: 0, h: 0, canvas: null, ctx: null, imageData: null },
+  // Sumi-e generative ink-wash strokes
+  sumie: { strokes: [], _spawnT: 0 },
+  // Op Art (Bridget Riley) — phase counter for moving stripes/circles
+  opart: { phase: 0, mode: 0, _switchT: 0 },
+  // Lissajous oscilloscope curves
+  lissa: { phase: 0, freqA: 3, freqB: 4, _switchT: 0 },
+  // Voronoi cellular tessellation (low-res buffer)
+  voronoi: { seeds: [], canvas: null, ctx: null, imageData: null, w: 0, h: 0 },
 };
 
 function ensureFlow(){
@@ -4891,6 +4915,247 @@ function drawRD(g, dt, T){
   g.imageSmoothingQuality = 'high';
   g.globalAlpha = 0.9 + state.glow * 0.1;
   g.drawImage(s.canvas, 0, 0, W, H);
+  g.restore();
+}
+
+// ─── Sumi-e (generative 水墨) ─────────────────────────────────────────────
+// Brush strokes spawn at random spots, drift with pressure-tapered radius,
+// bleed via soft radial gradients, age out. Bass = ink splashes. Treble = fine
+// dots. Light mode → black ink on cream. Dark mode → glowy emotion ink.
+function _makeSumieStroke(dom, isSplash){
+  const cx = Math.random() * W;
+  const cy = Math.random() * H;
+  const dir = Math.random() * TAU;
+  const segments = isSplash ? 3 : 6 + Math.floor(Math.random()*12);
+  const segLen = isSplash ? rand(8, 24) : rand(14, 36);
+  const points = [];
+  let x = cx, y = cy, curDir = dir;
+  for(let i=0;i<segments;i++){
+    points.push({
+      x, y,
+      r: rand(8, 32) * (1 - i/segments*0.55) * (isSplash ? 1.4 : 1),
+    });
+    curDir += (Math.random() - 0.5) * 0.55;
+    x += Math.cos(curDir) * segLen;
+    y += Math.sin(curDir) * segLen;
+  }
+  return {
+    points,
+    hue: lerp(dom.hue[0], dom.hue[1], Math.random()),
+    sat: state.lightMode ? 10 : (dom.sat - 15 + Math.random()*30),
+    lit: state.lightMode ? 10 + Math.random()*15 : (dom.light + Math.random()*15),
+    life: 0,
+    maxLife: rand(2200, 5500),
+  };
+}
+function drawSumie(g, dt, T){
+  const s = modeState.sumie;
+  const dom = dominantEmo();
+  const mScale = (window._songMood && window._songMood.intensityScale) || 1;
+  // Spawn rate scales with audio + motion
+  const rate = (1 + state.motionSpeed*3 + (reactor.vol||0)*3) * mScale;
+  s._spawnT += dt;
+  if(s._spawnT > 1000/Math.max(0.5, rate)){
+    s._spawnT = 0;
+    s.strokes.push(_makeSumieStroke(dom, false));
+    // Big bass → splash burst
+    if((reactor.bass||0) > 0.55 && Math.random() < 0.6){
+      for(let k=0;k<5;k++) s.strokes.push(_makeSumieStroke(dom, true));
+    }
+  }
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  for(let i = s.strokes.length-1; i>=0; i--){
+    const st = s.strokes[i];
+    st.life += dt;
+    const t01 = st.life / st.maxLife;
+    if(t01 > 1){ s.strokes.splice(i, 1); continue; }
+    // Quick fade-in (first 5%), long body, slow fade-out
+    const alpha = (t01 < 0.05 ? t01*20 : (1 - t01)*0.85) * (0.55 + state.glow*0.5);
+    for(const p of st.points){
+      const r = p.r * (1 - t01*0.25);
+      const grad = g.createRadialGradient(p.x, p.y, 0, p.x, p.y, r*2.2);
+      grad.addColorStop(0, `hsla(${st.hue}, ${st.sat}%, ${st.lit}%, ${alpha})`);
+      grad.addColorStop(0.6, `hsla(${st.hue}, ${st.sat}%, ${st.lit}%, ${alpha*0.45})`);
+      grad.addColorStop(1, `hsla(${st.hue}, ${st.sat}%, ${st.lit}%, 0)`);
+      g.fillStyle = grad;
+      g.beginPath(); g.arc(p.x, p.y, r*2.2, 0, TAU); g.fill();
+    }
+  }
+  g.restore();
+  while(s.strokes.length > 80) s.strokes.shift();
+}
+
+// ─── Op Art (Bridget Riley moiré) ─────────────────────────────────────────
+// Hard high-contrast bands — concentric circles or vertical stripes with
+// sin warp. Switches between modes on big bass hits. Strong VJ presence.
+function drawOpArt(g, dt, T){
+  const op = modeState.opart;
+  const dom = dominantEmo();
+  const mScale = (window._songMood && window._songMood.intensityScale) || 1;
+  op.phase += dt * 0.0009 * (1 + state.motionSpeed*0.6 + (reactor.bass||0)*0.7) * mScale;
+  // Switch mode every 8-12 sec or on hard bass
+  op._switchT += dt;
+  if(op._switchT > rand(8000, 13000) || ((reactor.bass||0) > 0.7 && state.beatFlash > 0.5 && op._switchT > 3000)){
+    op.mode = (op.mode + 1) % 3;
+    op._switchT = 0;
+  }
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  if(op.mode === 0){
+    // Concentric circles drifting from offset center
+    const cx = CX + Math.sin(op.phase*0.7) * W*0.25;
+    const cy = CY + Math.cos(op.phase*0.5) * H*0.2;
+    const rings = 36;
+    const maxR = Math.hypot(W, H) * 0.65;
+    const lw = maxR/rings * 0.9;
+    for(let i=0; i<rings; i++){
+      const r = ((i + (op.phase%1)) / rings) * maxR;
+      const h = lerp(dom.hue[0], dom.hue[1], i/rings);
+      g.strokeStyle = i%2 === 0
+        ? `hsla(${h}, ${dom.sat+10}%, ${dom.light+18}%, 0.9)`
+        : `hsla(${h}, 0%, ${state.lightMode? 18:92}%, 0.55)`;
+      g.lineWidth = lw;
+      g.beginPath(); g.arc(cx, cy, r, 0, TAU); g.stroke();
+    }
+  } else if(op.mode === 1){
+    // Vertical zebra stripes with sin warp
+    const stripes = 28;
+    const sw = W/stripes;
+    for(let i=0; i<stripes; i++){
+      const x = ((i + (op.phase%1)) % stripes) * sw;
+      const h = lerp(dom.hue[0], dom.hue[1], i/stripes);
+      g.fillStyle = i%2 === 0
+        ? `hsla(${h}, ${dom.sat+10}%, ${dom.light+18}%, 0.9)`
+        : `hsla(${h}, 0%, ${state.lightMode? 18:92}%, 0.55)`;
+      const warp = Math.sin(state.t*0.0011 + i*0.4) * 24;
+      g.fillRect(x + warp, 0, sw + 1, H);
+    }
+  } else {
+    // Checkerboard pulse
+    const cols = 14, rows = Math.floor(14 * H/W);
+    const cw = W/cols, rh = H/rows;
+    for(let r=0; r<rows; r++){
+      for(let c=0; c<cols; c++){
+        const phase = (r+c+op.phase) % 2;
+        const h = lerp(dom.hue[0], dom.hue[1], (r+c)/(rows+cols));
+        if(phase < 1){
+          g.fillStyle = `hsla(${h}, ${dom.sat+10}%, ${dom.light+18}%, 0.92)`;
+        } else {
+          g.fillStyle = `hsla(${h}, 0%, ${state.lightMode? 18:92}%, 0.55)`;
+        }
+        g.fillRect(c*cw, r*rh, cw+1, rh+1);
+      }
+    }
+  }
+  g.restore();
+}
+
+// ─── Lissajous oscilloscope ───────────────────────────────────────────────
+// Two sin waves at different frequencies → closed curve traced as dots.
+// Trails 0.9+ accumulates intricate webs. Frequency ratio cycles → new shapes.
+function drawLissajous(g, dt, T){
+  const l = modeState.lissa;
+  const dom = dominantEmo();
+  const mScale = (window._songMood && window._songMood.intensityScale) || 1;
+  // Cycle frequency ratio
+  l._switchT += dt;
+  if(l._switchT > rand(16000, 28000)){
+    const ratios = [[3,2],[3,4],[5,4],[5,6],[7,6],[5,7],[4,3],[7,5],[9,7],[7,8]];
+    const r = ratios[Math.floor(Math.random()*ratios.length)];
+    l.freqA = r[0]; l.freqB = r[1];
+    l._switchT = 0;
+  }
+  l.phase += dt * 0.0006 * (1 + state.motionSpeed*0.4) * mScale;
+  const cx = CX, cy = CY;
+  const R = Math.min(W, H) * 0.42;
+  const samples = 720;
+  const phaseShift = l.phase + (reactor.bass||0)*0.6;
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  for(let i=0; i<samples; i++){
+    const tt = i / samples * TAU * 2;
+    const x = cx + Math.sin(tt * l.freqA + l.phase) * R;
+    const y = cy + Math.sin(tt * l.freqB + phaseShift) * R;
+    const h = lerp(dom.hue[0], dom.hue[1], (i/samples + state.t*0.00015)%1);
+    const a = 0.35 + 0.45*state.glow + (reactor.treble||0)*0.3;
+    g.fillStyle = `hsla(${h}, ${dom.sat+10}%, ${dom.light+22}%, ${a})`;
+    const sz = 1.5 + state.bloom*1.5;
+    g.fillRect(x - sz/2, y - sz/2, sz, sz);
+  }
+  g.restore();
+}
+
+// ─── Voronoi (cellular tessellation) ──────────────────────────────────────
+// Low-res buffer brute-force: each pixel goes to its nearest seed. Seeds drift.
+function ensureVoronoi(){
+  const v = modeState.voronoi;
+  if(!v.canvas){
+    v.w = 120; v.h = 68;
+    v.canvas = document.createElement('canvas');
+    v.canvas.width = v.w; v.canvas.height = v.h;
+    v.ctx = v.canvas.getContext('2d');
+    v.imageData = v.ctx.createImageData(v.w, v.h);
+    v.seeds = [];
+    const dom = dominantEmo();
+    for(let i=0; i<16; i++){
+      const h = lerp(dom.hue[0], dom.hue[1], Math.random());
+      v.seeds.push({
+        x: Math.random(), y: Math.random(),
+        vx: (Math.random()-0.5)*0.00015,
+        vy: (Math.random()-0.5)*0.00015,
+        color: _hslToRgbInt(h, dom.sat+5, dom.light + 5 + Math.random()*22),
+      });
+    }
+  }
+}
+function drawVoronoi(g, dt, T){
+  ensureVoronoi();
+  const v = modeState.voronoi;
+  const mScale = (window._songMood && window._songMood.intensityScale) || 1;
+  for(const s of v.seeds){
+    s.x += s.vx * dt * mScale * (1 + (reactor.vol||0));
+    s.y += s.vy * dt * mScale * (1 + (reactor.vol||0));
+    if(s.x < 0){ s.x = 0; s.vx = -s.vx; }
+    if(s.x > 1){ s.x = 1; s.vx = -s.vx; }
+    if(s.y < 0){ s.y = 0; s.vy = -s.vy; }
+    if(s.y > 1){ s.y = 1; s.vy = -s.vy; }
+  }
+  const data = v.imageData.data;
+  const sds = v.seeds;
+  const t0 = state.t*0.0008;
+  for(let y=0; y<v.h; y++){
+    const ny = y / v.h;
+    for(let x=0; x<v.w; x++){
+      const nx = x / v.w;
+      let minD = 999, secondD = 999;
+      let nearest = sds[0];
+      for(let k=0;k<sds.length;k++){
+        const s = sds[k];
+        const dx = nx - s.x, dy = ny - s.y;
+        const d = dx*dx + dy*dy;
+        if(d < minD){ secondD = minD; minD = d; nearest = s; }
+        else if(d < secondD){ secondD = d; }
+      }
+      // Edge: when the two nearest are equidistant, darken
+      const edgeDist = secondD - minD;
+      const edgeStrength = edgeDist < 0.001 ? 0.25 : (edgeDist < 0.004 ? 0.5 + edgeDist*125 : 1);
+      const pulse = 0.85 + 0.15*Math.sin(t0 + minD*30);
+      const k = edgeStrength * pulse;
+      const o = (y*v.w + x)*4;
+      data[o]   = nearest.color[0] * k;
+      data[o+1] = nearest.color[1] * k;
+      data[o+2] = nearest.color[2] * k;
+      data[o+3] = Math.floor((0.7 + state.glow*0.3) * 240);
+    }
+  }
+  v.ctx.putImageData(v.imageData, 0, 0);
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  g.imageSmoothingEnabled = true;
+  g.imageSmoothingQuality = 'high';
+  g.globalAlpha = 0.85 + state.glow * 0.15;
+  g.drawImage(v.canvas, 0, 0, W, H);
   g.restore();
 }
 
@@ -5901,7 +6166,7 @@ function drawEva(g, dt, T){
 // ============================================================
 // Auto-cycle: detect music sections and rotate enabled modes
 // ============================================================
-const CYCLE_MODES = ['lineTrace','flowField','curlNoise','attractor','substrate','reaction','mandalaRings','waveform','constellation','spiral','ripples','crystals','ribbons','tunnel','halftone','petals','aurora','inkWash','popArt','polygon','matrix','glitch','eva'];
+const CYCLE_MODES = ['lineTrace','flowField','curlNoise','attractor','substrate','reaction','sumie','opart','lissajous','voronoi','mandalaRings','waveform','constellation','spiral','ripples','crystals','ribbons','tunnel','halftone','petals','aurora','inkWash','popArt','polygon','matrix','glitch','eva'];
 let _cycleIdx = 0;
 function maybeAutoCycle(now){
   if(!state.autoCycle) return;
@@ -5941,6 +6206,10 @@ window._drawModes = function(g, dt, T){
   if(state.modes.attractor)     drawAttractor(g, dt, T);
   if(state.modes.substrate)     drawSubstrate(g, dt, T);
   if(state.modes.reaction)      drawRD(g, dt, T);
+  if(state.modes.sumie)         drawSumie(g, dt, T);
+  if(state.modes.opart)         drawOpArt(g, dt, T);
+  if(state.modes.lissajous)     drawLissajous(g, dt, T);
+  if(state.modes.voronoi)       drawVoronoi(g, dt, T);
   if(state.modes.mandalaRings)  drawMandalaRings(g, dt, T);
   if(state.modes.waveform)      drawWaveform(g, dt, T);
   if(state.modes.constellation) drawConstellation(g, dt, T);
@@ -6651,6 +6920,10 @@ function randomizeAll(){
     modeState.substrate.grid = null;
     modeState.substrate.fillCount = 0;
     if(modeState.rdLow.u){ modeState.rdLow.u = null; }
+    modeState.sumie.strokes.length = 0;
+    modeState.voronoi.canvas = null;
+    modeState.lissa._switchT = 0;
+    modeState.opart._switchT = 0;
     modeState.ringTimer = 0;
     modeState.rippleTimer = 0;
   }
@@ -6711,6 +6984,7 @@ function randomizeAll(){
     lineTrace:1, constellation:1, waveform:1, mandalaRings:1, ripples:1, petals:1,
     flowField:2, ribbons:2, aurora:2, spiral:2, crystals:2, tunnel:2, halftone:2, polygon:2,
     curlNoise:2, attractor:3, substrate:2, reaction:4,
+    sumie:3, opart:2, lissajous:2, voronoi:3,
     inkWash:3, matrix:3, eva:3,
     popArt:4, glitch:4,
     pixel8:5,
@@ -6720,16 +6994,16 @@ function randomizeAll(){
   const budget = budgetBase + Math.floor(hot * 2);  // hot music allowed a little more chaos
 
   // In lightMode (white canvas) bright-content modes vanish — pool MUST favor dark/contrasted content.
-  const lightFriendly = ['inkWash','polygon','popArt','glitch','eva','halftone','lineTrace','constellation','spiral','crystals','tunnel','attractor','substrate'];
+  const lightFriendly = ['inkWash','polygon','popArt','glitch','eva','halftone','lineTrace','constellation','spiral','crystals','tunnel','attractor','substrate','sumie','opart','lissajous','voronoi'];
   const lightHostile  = new Set(['matrix','aurora','ribbons','petals']);  // these wash out on cream bg
 
   let hotModes, coolModes;
   if(state.lightMode){
-    hotModes  = ['popArt','glitch','polygon','eva','halftone','spiral','crystals','tunnel','inkWash','attractor','substrate'];
-    coolModes = ['lineTrace','flowField','constellation','inkWash','polygon','halftone','waveform','curlNoise','attractor','substrate','reaction'];
+    hotModes  = ['popArt','glitch','polygon','eva','halftone','spiral','crystals','tunnel','inkWash','attractor','substrate','opart','lissajous'];
+    coolModes = ['lineTrace','flowField','constellation','inkWash','polygon','halftone','waveform','curlNoise','attractor','substrate','reaction','sumie','voronoi'];
   } else {
-    hotModes  = ['crystals','ripples','spiral','tunnel','mandalaRings','halftone','popArt','glitch','polygon','matrix','eva','pixel8','attractor','substrate'];
-    coolModes = ['lineTrace','flowField','constellation','ribbons','petals','aurora','waveform','inkWash','polygon','matrix','curlNoise','attractor','substrate','reaction'];
+    hotModes  = ['crystals','ripples','spiral','tunnel','mandalaRings','halftone','popArt','glitch','polygon','matrix','eva','pixel8','attractor','substrate','opart','lissajous'];
+    coolModes = ['lineTrace','flowField','constellation','ribbons','petals','aurora','waveform','inkWash','polygon','matrix','curlNoise','attractor','substrate','reaction','sumie','voronoi'];
   }
   const maxModes = 3;
   const targetN = Math.min(maxModes, 1 + Math.floor(Math.random()*(1 + hot*2.2)));
