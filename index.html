@@ -758,6 +758,18 @@
   .setlist-slot .sl-actions button:hover{background:rgba(255,255,255,.08);color:var(--ink)}
   .setlist-slot .sl-actions .save{color:#9bd3a7}
   .setlist-slot .sl-actions .clear{color:rgba(255,180,180,.7)}
+  /* Setlist library row */
+  .setlist-lib-row{
+    display:flex;align-items:center;gap:8px;padding:7px 10px;
+    background:rgba(255,255,255,.03);border:1px solid var(--hairline);border-radius:8px;cursor:pointer;
+    transition:background .12s;
+  }
+  .setlist-lib-row:hover{background:rgba(255,255,255,.07)}
+  .setlist-lib-row.active{border-color:rgba(155,211,167,.45);background:rgba(155,211,167,.08)}
+  .setlist-lib-row .ln{flex:1;font-family:var(--sans);font-size:12px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .setlist-lib-row .lc{font-family:ui-monospace,monospace;font-size:10px;color:var(--ink-faint)}
+  .setlist-lib-row .lx{background:none;border:none;color:rgba(255,180,180,.55);cursor:pointer;font-size:14px;padding:0 4px}
+  .setlist-lib-row .lx:hover{color:rgba(255,180,180,1)}
   .audio-row .grow{flex:1}
   .audio-note{font-family:var(--serif);font-style:italic;font-size:11.5px;color:var(--ink-faint);line-height:1.45}
   .audio-levels{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:4px}
@@ -2012,10 +2024,14 @@ return {
           <h3 class="section-title">Setlist <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">演唱會 · 20 slots · 快捷鍵切換</em></h3>
           <div class="phrase-row">
             <input id="setlistName" type="text" placeholder="setlist 名稱 (e.g. tour 2026)" />
-            <button id="setlistExport">↧ Export</button>
-            <label class="audio-btn" for="setlistImportFile" style="text-align:center;cursor:pointer">↥ Import</label>
+            <button id="setlistSaveLib" title="Save this setlist into your library so you can switch between shows">★ Save to library</button>
+          </div>
+          <div class="phrase-row" style="margin-top:6px">
+            <button id="setlistExport" style="flex:1">↧ Export JSON</button>
+            <label class="audio-btn" for="setlistImportFile" style="flex:1;text-align:center;cursor:pointer">↥ Import JSON</label>
             <input id="setlistImportFile" type="file" accept=".json,application/json" style="display:none" />
           </div>
+          <div id="setlistLibrary" style="margin-top:8px;display:flex;flex-direction:column;gap:4px"></div>
           <div class="type-tip" style="margin-top:6px">
             <strong>每格存一個完整視覺狀態</strong>（情緒、視覺 modes、字型、所有 slider）。
             演出時按快捷鍵直接切換。預設快捷鍵 <code>1-9 0 Q W E R T Y U I O P</code>。
@@ -2042,7 +2058,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-19k · 4 GitHub-inspired Type anims + 20-slot SETLIST');
+console.log('[IW] script booting · build 2026-05-19L · Setlist Library — multiple saved setlists');
 
 // Click diagnostics — log every click so we can see where they reach.
 // Capture phase so we see clicks BEFORE any interceptor swallows them.
@@ -12956,8 +12972,104 @@ window.addEventListener('keydown', (e) => {
     if(card){ card.classList.add('flash'); setTimeout(()=>card.classList.remove('flash'), 400); }
   }
 }, true);
+// ─── Setlist Library — multiple named setlists saved locally ──────────────
+const SETLIST_LIB_KEY = 'inner-weather-setlist-library-v1';
+let setlistLibrary = [];
+let _activeLibId = null;  // currently-loaded library entry id
+try { setlistLibrary = JSON.parse(localStorage.getItem(SETLIST_LIB_KEY) || '[]'); } catch(_){ setlistLibrary = []; }
+function _libPersist(){
+  try { localStorage.setItem(SETLIST_LIB_KEY, JSON.stringify(setlistLibrary)); } catch(_){}
+}
+function _renderSetlistLibrary(){
+  const host = document.getElementById('setlistLibrary');
+  if(!host) return;
+  host.innerHTML = '';
+  if(setlistLibrary.length === 0){
+    const empty = document.createElement('div');
+    empty.style.cssText = 'font-family:var(--serif);font-style:italic;font-size:11.5px;color:var(--ink-faint);padding:6px 0;line-height:1.5';
+    empty.textContent = '尚無已存歌單。給目前的 setlist 取個名字（左上輸入框）然後按 ★ Save to library 收進來。之後可以隨時點下方任一筆切換回來。';
+    host.appendChild(empty);
+    return;
+  }
+  for(const entry of setlistLibrary){
+    const row = document.createElement('div');
+    row.className = 'setlist-lib-row' + (entry.id === _activeLibId ? ' active' : '');
+    const ln = document.createElement('div');
+    ln.className = 'ln';
+    ln.textContent = entry.name || '(untitled)';
+    const lc = document.createElement('div');
+    lc.className = 'lc';
+    const filled = (entry.slots || []).filter(s => s && s.snapshot).length;
+    lc.textContent = `${filled}/${SETLIST_SLOT_COUNT}`;
+    const lx = document.createElement('button');
+    lx.className = 'lx';
+    lx.textContent = '✕';
+    lx.title = 'Delete this saved setlist';
+    lx.addEventListener('click', e => {
+      e.stopPropagation();
+      if(!confirm(`Delete saved setlist "${entry.name}"?`)) return;
+      const idx = setlistLibrary.indexOf(entry);
+      if(idx >= 0) setlistLibrary.splice(idx, 1);
+      if(_activeLibId === entry.id) _activeLibId = null;
+      _libPersist();
+      _renderSetlistLibrary();
+    });
+    row.appendChild(ln); row.appendChild(lc); row.appendChild(lx);
+    row.addEventListener('click', () => {
+      // Load this library entry into current setlist
+      setlist.name = entry.name || '';
+      const incoming = entry.slots || [];
+      for(let i=0;i<SETLIST_SLOT_COUNT;i++){
+        const src = incoming[i];
+        setlist.slots[i] = src
+          ? { name: src.name||'', hotkey: src.hotkey || SETLIST_DEFAULT_KEYS[i], snapshot: src.snapshot||null }
+          : { name:'', hotkey:SETLIST_DEFAULT_KEYS[i], snapshot:null };
+      }
+      _activeLibId = entry.id;
+      _setlistPersist();
+      _renderSetlist();
+      _renderSetlistLibrary();
+    });
+    host.appendChild(row);
+  }
+}
+// "Save to library" button — clones current setlist into the library
+const _slSaveLibBtn = document.getElementById('setlistSaveLib');
+if(_slSaveLibBtn){
+  _slSaveLibBtn.addEventListener('click', () => {
+    const name = (setlist.name || '').trim();
+    if(!name){
+      const nameEl = document.getElementById('setlistName');
+      if(nameEl) nameEl.focus();
+      alert('請先給這個 setlist 取個名字（左上輸入框）');
+      return;
+    }
+    // If a library entry with same name exists, update it (not duplicate)
+    const existingIdx = setlistLibrary.findIndex(e => (e.name||'') === name);
+    const entry = {
+      id: existingIdx >= 0 ? setlistLibrary[existingIdx].id : ('s-' + Date.now() + '-' + Math.random().toString(36).slice(2,7)),
+      name,
+      savedAt: Date.now(),
+      slots: JSON.parse(JSON.stringify(setlist.slots)),
+    };
+    if(existingIdx >= 0){
+      if(!confirm(`已有同名「${name}」的歌單，要覆蓋嗎？`)) return;
+      setlistLibrary[existingIdx] = entry;
+    } else {
+      setlistLibrary.unshift(entry);
+      if(setlistLibrary.length > 50) setlistLibrary.length = 50;
+    }
+    _activeLibId = entry.id;
+    _libPersist();
+    _renderSetlistLibrary();
+    // Brief visual feedback
+    _slSaveLibBtn.textContent = '✓ Saved';
+    setTimeout(() => { _slSaveLibBtn.textContent = '★ Save to library'; }, 1200);
+  });
+}
 // Initial render
 _renderSetlist();
+_renderSetlistLibrary();
 
 /* —————————————————————————————————————————————————————————————————————
    Custom typography effects (user-defined animation functions).
