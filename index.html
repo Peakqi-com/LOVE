@@ -1354,6 +1354,9 @@
             <label class="mode-chip"><input type="checkbox" data-mode="pendulum" /><span><strong>雙擺 Pendulum</strong><em>chaotic 物理軌跡</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="galaxy" /><span><strong>Galaxy 星系</strong><em>對數螺旋 · 旋臂</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="penrose" /><span><strong>Penrose 密鋪</strong><em>五重非週期 · 準晶體</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="pwave" /><span><strong>Newton's Wave</strong><em>多擺波動 · 標準裝置</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="mandel" /><span><strong>Mandelbrot</strong><em>碎形縮放 · 無限細節</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="wireworld" /><span><strong>Wireworld</strong><em>電路 CA · 電子流動</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="mandalaRings" /><span><strong>Mandala rings</strong><em>expanding concentric pulse</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="waveform" /><span><strong>Waveform</strong><em>audio-driven horizon line</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="constellation" /><span><strong>Constellation</strong><em>dots wired to neighbors</em></span></label>
@@ -1973,7 +1976,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-19f · Double Pendulum + Galaxy + Penrose');
+console.log('[IW] script booting · build 2026-05-19g · Pendulum Wave + Mandelbrot + Wireworld');
 
 // Click diagnostics — log every click so we can see where they reach.
 // Capture phase so we see clicks BEFORE any interceptor swallows them.
@@ -2177,6 +2180,9 @@ const state = {
     pendulum:     false,   // chaotic double pendulum trail
     galaxy:       false,   // logarithmic spiral galaxy
     penrose:      false,   // Penrose P2 5-fold aperiodic tiling
+    pwave:        false,   // Newton's pendulum wave
+    mandel:       false,   // Mandelbrot fractal zoom
+    wireworld:    false,   // Wireworld 4-state circuit CA
     mandalaRings: false,   // expanding concentric rings
     waveform:     false,   // audio waveform across screen
     constellation:false,   // dots connected to neighbors
@@ -3058,6 +3064,8 @@ document.getElementById('reset').addEventListener('click', ()=>{
     modeState.pendulum.state = null; modeState.pendulum.trail.length = 0;
     modeState.galaxy.stars.length = 0;
     modeState.penrose.triangles = null;
+    modeState.mandel.canvas = null; modeState.mandel._t = 0;
+    modeState.wireworld.grid = null;
     modeState.ringTimer = 0;
     modeState.rippleTimer = 0;
   }
@@ -4622,6 +4630,12 @@ const modeState = {
   galaxy: { stars: [] },
   // Penrose tiling (Robinson triangle deflation)
   penrose: { triangles: null, depth: 0 },
+  // Newton's pendulum wave (multiple pendulums with different periods)
+  pwave: {},
+  // Mandelbrot fractal (low-res buffer + slow zoom/pan)
+  mandel: { canvas: null, ctx: null, imageData: null, _t: 0 },
+  // Wireworld (4-state CA: empty/head/tail/conductor)
+  wireworld: { grid: null, next: null, w: 0, h: 0, _t: 0 },
 };
 
 function ensureFlow(){
@@ -6418,6 +6432,175 @@ function drawPenrose(g, dt, T){
   g.restore();
 }
 
+// ─── Newton's Pendulum Wave ───────────────────────────────────────────────
+function drawPendulumWave(g, dt, T){
+  const dom = dominantEmo();
+  const mScale = (window._songMood && window._songMood.intensityScale) || 1;
+  const t = state.t * 0.001 * mScale * (1 + (reactor.bass||0)*0.4);
+  const n = 17;
+  const Y0 = H * 0.22;
+  const span = W * 0.78;
+  const spacing = span / (n-1);
+  const startX = (W - span) / 2;
+  const length = Math.min(W, H) * 0.45;
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  for(let i=0;i<n;i++){
+    // Each pendulum has a unique frequency — Newton's wave demonstration
+    const cps = (50 + i) / 60;
+    const angle = Math.sin(t * cps * Math.PI * 2) * (Math.PI * 0.32);
+    const x = startX + i * spacing;
+    const x2 = x + Math.sin(angle) * length;
+    const y2 = Y0 + Math.cos(angle) * length;
+    const hue = lerp(dom.hue[0], dom.hue[1], i/n);
+    g.strokeStyle = `hsla(${hue}, ${dom.sat+5}%, ${dom.light+18}%, ${0.5 + state.glow*0.3})`;
+    g.lineWidth = 1.4;
+    g.beginPath(); g.moveTo(x, Y0); g.lineTo(x2, y2); g.stroke();
+    // Ball
+    const r = 8 + state.bloom*4 + (reactor.bass||0)*4;
+    g.fillStyle = `hsla(${hue}, ${dom.sat+15}%, ${Math.min(95, dom.light+30)}%, ${0.85 + state.glow*0.15})`;
+    g.beginPath(); g.arc(x2, y2, r, 0, TAU); g.fill();
+  }
+  g.restore();
+}
+
+// ─── Mandelbrot 碎形 ──────────────────────────────────────────────────────
+function drawMandelbrot(g, dt, T){
+  const m = modeState.mandel;
+  const dom = dominantEmo();
+  const W2 = 240, H2 = 135;
+  if(!m.canvas){
+    m.canvas = document.createElement('canvas');
+    m.canvas.width = W2; m.canvas.height = H2;
+    m.ctx = m.canvas.getContext('2d');
+    m.imageData = m.ctx.createImageData(W2, H2);
+  }
+  m._t += dt * 0.0001 * (1 + (reactor.bass||0)*0.5);
+  const zoomBase = 0.7 + (Math.sin(m._t*0.7) * 0.5 + 0.5) * 1.5;
+  const cx = -0.5 + Math.cos(m._t*0.4) * 0.25;
+  const cy = Math.sin(m._t*0.55) * 0.15;
+  const maxIter = 56;
+  const data = m.imageData.data;
+  const c0 = _hslToRgbInt(dom.hue[0], dom.sat, dom.light);
+  const c1 = _hslToRgbInt(dom.hue[1], dom.sat, dom.light+28);
+  const c2 = _hslToRgbInt(lerp(dom.hue[0], dom.hue[1], 0.5) + 60, dom.sat, dom.light+8);
+  for(let py=0;py<H2;py++){
+    const ny = cy + (py - H2/2) / H2 * 2 / zoomBase;
+    for(let px=0;px<W2;px++){
+      const nx = cx + (px - W2/2) / H2 * 2 / zoomBase;
+      let zx = 0, zy = 0;
+      let iter = 0;
+      while(iter < maxIter){
+        const zx2 = zx*zx, zy2 = zy*zy;
+        if(zx2 + zy2 > 4) break;
+        const newZx = zx2 - zy2 + nx;
+        zy = 2*zx*zy + ny;
+        zx = newZx;
+        iter++;
+      }
+      const o = (py*W2+px)*4;
+      if(iter === maxIter){
+        data[o]=10; data[o+1]=10; data[o+2]=20; data[o+3]=180;
+      } else {
+        const t01 = iter / maxIter;
+        const t2 = (t01 + m._t * 0.3) % 1;
+        const r = t2 < 0.5 ? lerp(c0[0], c1[0], t2*2) : lerp(c1[0], c2[0], (t2-0.5)*2);
+        const gg = t2 < 0.5 ? lerp(c0[1], c1[1], t2*2) : lerp(c1[1], c2[1], (t2-0.5)*2);
+        const b = t2 < 0.5 ? lerp(c0[2], c1[2], t2*2) : lerp(c1[2], c2[2], (t2-0.5)*2);
+        data[o]=r; data[o+1]=gg; data[o+2]=b; data[o+3]=235;
+      }
+    }
+  }
+  m.ctx.putImageData(m.imageData, 0, 0);
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  g.imageSmoothingEnabled = true;
+  g.globalAlpha = 0.88 + state.glow*0.12;
+  g.drawImage(m.canvas, 0, 0, W, H);
+  g.restore();
+}
+
+// ─── Wireworld (4-state circuit CA) ───────────────────────────────────────
+// 0=empty 1=head 2=tail 3=conductor. Auto-seeds a simple loop circuit.
+function ensureWireworld(){
+  const wd = modeState.wireworld;
+  if(!wd.grid){
+    wd.w = 80; wd.h = 45;
+    wd.grid = new Uint8Array(wd.w * wd.h);
+    wd.next = new Uint8Array(wd.w * wd.h);
+    // Seed circuits: 3 concentric loops with electron heads
+    const cx = Math.floor(wd.w/2), cy = Math.floor(wd.h/2);
+    function drawLoop(r){
+      for(let a=0; a<360; a+=4){
+        const ang = a * Math.PI/180;
+        const x = Math.round(cx + Math.cos(ang) * r);
+        const y = Math.round(cy + Math.sin(ang) * r);
+        if(x>=0 && x<wd.w && y>=0 && y<wd.h) wd.grid[y*wd.w + x] = 3;
+      }
+    }
+    drawLoop(8); drawLoop(14); drawLoop(20);
+    // Add 4 electrons (head+tail pairs) on each loop
+    function seedElectron(r, startAng){
+      const angH = startAng * Math.PI/180;
+      const angT = (startAng-4) * Math.PI/180;
+      const hx = Math.round(cx + Math.cos(angH) * r), hy = Math.round(cy + Math.sin(angH) * r);
+      const tx = Math.round(cx + Math.cos(angT) * r), ty = Math.round(cy + Math.sin(angT) * r);
+      if(hx>=0 && hx<wd.w && hy>=0 && hy<wd.h) wd.grid[hy*wd.w + hx] = 1;
+      if(tx>=0 && tx<wd.w && ty>=0 && ty<wd.h) wd.grid[ty*wd.w + tx] = 2;
+    }
+    seedElectron(8, 0); seedElectron(8, 180);
+    seedElectron(14, 90); seedElectron(14, 270);
+    seedElectron(20, 45); seedElectron(20, 225);
+  }
+}
+function drawWireworld(g, dt, T){
+  ensureWireworld();
+  const wd = modeState.wireworld;
+  const dom = dominantEmo();
+  const mScale = (window._songMood && window._songMood.intensityScale) || 1;
+  wd._t += dt;
+  const stepMs = 90 / (1 + (reactor.bass||0)*1.2) / mScale;
+  if(wd._t > stepMs){
+    wd._t = 0;
+    const w = wd.w, h = wd.h;
+    for(let y=0;y<h;y++){
+      for(let x=0;x<w;x++){
+        const i = y*w + x;
+        const c = wd.grid[i];
+        if(c === 0) wd.next[i] = 0;
+        else if(c === 1) wd.next[i] = 2;
+        else if(c === 2) wd.next[i] = 3;
+        else { // conductor — becomes head if 1 or 2 neighbours are heads
+          let n = 0;
+          for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+            if(dx===0 && dy===0) continue;
+            const nx = (x+dx+w)%w, ny = (y+dy+h)%h;
+            if(wd.grid[ny*w+nx] === 1) n++;
+          }
+          wd.next[i] = (n === 1 || n === 2) ? 1 : 3;
+        }
+      }
+    }
+    const tmp = wd.grid; wd.grid = wd.next; wd.next = tmp;
+  }
+  // Render
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  const cw = W / wd.w, ch = H / wd.h;
+  const headCol = `hsla(${dom.hue[0]+40}, ${dom.sat+15}%, ${Math.min(95, dom.light+35)}%, ${0.9 + state.glow*0.1})`;
+  const tailCol = `hsla(${dom.hue[1]}, ${dom.sat+5}%, ${dom.light+15}%, 0.7)`;
+  const condCol = `hsla(${lerp(dom.hue[0], dom.hue[1], 0.5)}, ${dom.sat-10}%, ${dom.light-5}%, 0.35)`;
+  for(let y=0;y<wd.h;y++){
+    for(let x=0;x<wd.w;x++){
+      const c = wd.grid[y*wd.w+x];
+      if(c === 0) continue;
+      g.fillStyle = c === 1 ? headCol : (c === 2 ? tailCol : condCol);
+      g.fillRect(x*cw, y*ch, cw+1, ch+1);
+    }
+  }
+  g.restore();
+}
+
 function drawMandalaRings(g, dt, T){
   modeState.ringTimer += dt;
   const interval = 60000 / Math.max(40, state.bpm * (state.musicOn || reactor.mode!=='off' ? 1 : 0.6));
@@ -7425,7 +7608,7 @@ function drawEva(g, dt, T){
 // ============================================================
 // Auto-cycle: detect music sections and rotate enabled modes
 // ============================================================
-const CYCLE_MODES = ['lineTrace','flowField','curlNoise','attractor','substrate','reaction','sumie','opart','lissajous','voronoi','boids','chladni','dla','spectro','meta','synth','life','lsys','harmono','truchet','nbody','spiro','marbling','hilbert','lenia','pendulum','galaxy','penrose','mandalaRings','waveform','constellation','spiral','ripples','crystals','ribbons','tunnel','halftone','petals','aurora','inkWash','popArt','polygon','matrix','glitch','eva'];
+const CYCLE_MODES = ['lineTrace','flowField','curlNoise','attractor','substrate','reaction','sumie','opart','lissajous','voronoi','boids','chladni','dla','spectro','meta','synth','life','lsys','harmono','truchet','nbody','spiro','marbling','hilbert','lenia','pendulum','galaxy','penrose','pwave','mandel','wireworld','mandalaRings','waveform','constellation','spiral','ripples','crystals','ribbons','tunnel','halftone','petals','aurora','inkWash','popArt','polygon','matrix','glitch','eva'];
 let _cycleIdx = 0;
 function maybeAutoCycle(now){
   if(!state.autoCycle) return;
@@ -7487,6 +7670,9 @@ window._drawModes = function(g, dt, T){
   if(state.modes.pendulum)      drawPendulum(g, dt, T);
   if(state.modes.galaxy)        drawGalaxy(g, dt, T);
   if(state.modes.penrose)       drawPenrose(g, dt, T);
+  if(state.modes.pwave)         drawPendulumWave(g, dt, T);
+  if(state.modes.mandel)        drawMandelbrot(g, dt, T);
+  if(state.modes.wireworld)     drawWireworld(g, dt, T);
   if(state.modes.beatStrobe)    drawBeatStrobe(g, dt, T);
   if(state.modes.mandalaRings)  drawMandalaRings(g, dt, T);
   if(state.modes.waveform)      drawWaveform(g, dt, T);
@@ -8221,6 +8407,8 @@ function randomizeAll(){
     modeState.pendulum.state = null; modeState.pendulum.trail.length = 0;
     modeState.galaxy.stars.length = 0;
     modeState.penrose.triangles = null;
+    modeState.mandel.canvas = null; modeState.mandel._t = 0;
+    modeState.wireworld.grid = null;
     modeState.ringTimer = 0;
     modeState.rippleTimer = 0;
   }
@@ -8289,6 +8477,7 @@ function randomizeAll(){
     truchet:2, nbody:3, spiro:2,
     marbling:2, hilbert:2, lenia:4,
     pendulum:2, galaxy:2, penrose:3,
+    pwave:1, mandel:3, wireworld:2,
     inkWash:3, matrix:3, eva:3,
     popArt:4, glitch:4,
     pixel8:5,
@@ -8298,7 +8487,7 @@ function randomizeAll(){
   const budget = budgetBase + Math.floor(hot * 2);  // hot music allowed a little more chaos
 
   // In lightMode (white canvas) bright-content modes vanish — pool MUST favor dark/contrasted content.
-  const lightFriendly = ['inkWash','polygon','popArt','glitch','eva','halftone','lineTrace','constellation','spiral','crystals','tunnel','attractor','substrate','sumie','opart','lissajous','voronoi','boids','chladni','dla','spectro','synth','life','lsys','harmono','truchet','nbody','spiro','marbling','hilbert','lenia','pendulum','galaxy','penrose'];
+  const lightFriendly = ['inkWash','polygon','popArt','glitch','eva','halftone','lineTrace','constellation','spiral','crystals','tunnel','attractor','substrate','sumie','opart','lissajous','voronoi','boids','chladni','dla','spectro','synth','life','lsys','harmono','truchet','nbody','spiro','marbling','hilbert','lenia','pendulum','galaxy','penrose','pwave','mandel','wireworld'];
   const lightHostile  = new Set(['matrix','aurora','ribbons','petals']);  // these wash out on cream bg
 
   let hotModes, coolModes;
