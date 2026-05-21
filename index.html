@@ -732,10 +732,18 @@
   .setlist-slot{
     background:rgba(255,255,255,.03);border:1px solid var(--hairline);border-radius:10px;
     padding:8px;display:flex;flex-direction:column;gap:4px;position:relative;cursor:pointer;
-    transition:background .12s,border-color .12s;
+    transition:background .12s,border-color .12s;min-height:90px;
+    background-size:cover;background-position:center;overflow:hidden;
   }
-  .setlist-slot:hover{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.18)}
-  .setlist-slot.saved{border-color:rgba(155,211,167,.35);background:rgba(155,211,167,.05)}
+  .setlist-slot::before{
+    content:'';position:absolute;inset:0;pointer-events:none;
+    background:linear-gradient(180deg,rgba(0,0,0,.15) 0%,rgba(0,0,0,.5) 60%,rgba(0,0,0,.78) 100%);
+    transition:opacity .12s;
+  }
+  .setlist-slot.empty::before{opacity:0}
+  .setlist-slot > *{position:relative;z-index:1}
+  .setlist-slot:hover{background-color:rgba(255,255,255,.06);border-color:rgba(255,255,255,.18)}
+  .setlist-slot.saved{border-color:rgba(155,211,167,.35)}
   .setlist-slot.flash{animation:slotFlash .35s ease-out}
   @keyframes slotFlash{0%{background:rgba(155,211,167,.5)}100%{background:rgba(155,211,167,.05)}}
   .setlist-slot .hk{
@@ -2026,6 +2034,11 @@ return {
             <input id="setlistName" type="text" placeholder="setlist 名稱 (e.g. tour 2026)" />
             <button id="setlistSaveLib" title="Save this setlist into your library so you can switch between shows">★ Save to library</button>
           </div>
+          <div class="ctrl" style="margin-top:6px"><span class="label">Crossfade duration</span><span class="val" id="xfadeVal">0s · 立即切換</span>
+            <div class="slider"><div class="track"></div><div class="fill" id="xfadeFill"></div><div class="thumb" id="xfadeThumb"></div>
+              <input type="range" min="0" max="60" value="0" id="xfadeRange" />
+            </div>
+          </div>
           <div class="phrase-row" style="margin-top:6px">
             <button id="setlistExport" style="flex:1">↧ Export JSON</button>
             <label class="audio-btn" for="setlistImportFile" style="flex:1;text-align:center;cursor:pointer">↥ Import JSON</label>
@@ -2058,7 +2071,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-19L · Setlist Library — multiple saved setlists');
+console.log('[IW] script booting · build 2026-05-19m · Setlist thumbnails + crossfade transitions');
 
 // Click diagnostics — log every click so we can see where they reach.
 // Capture phase so we see clicks BEFORE any interceptor swallows them.
@@ -12826,6 +12839,17 @@ function _setlistPersist(){
   try { localStorage.setItem(SETLIST_KEY, JSON.stringify(setlist)); } catch(_){}
 }
 let _slotBinding = -1;  // index of slot currently waiting for hotkey bind
+// Grab a small thumbnail of the current canvas (base64 JPEG, ~5KB)
+function _grabSetlistThumb(){
+  try {
+    const tc = document.createElement('canvas');
+    tc.width = 192; tc.height = 108;
+    const tctx = tc.getContext('2d');
+    // cv is the main canvas
+    tctx.drawImage(cv, 0, 0, tc.width, tc.height);
+    return tc.toDataURL('image/jpeg', 0.55);
+  } catch(_){ return null; }
+}
 function _renderSetlist(){
   const grid = document.getElementById('setlistGrid');
   if(!grid) return;
@@ -12835,7 +12859,8 @@ function _renderSetlist(){
   for(let i=0; i<setlist.slots.length; i++){
     const slot = setlist.slots[i];
     const card = document.createElement('div');
-    card.className = 'setlist-slot' + (slot.snapshot ? ' saved' : '');
+    card.className = 'setlist-slot' + (slot.snapshot ? ' saved' : ' empty');
+    if(slot.thumb) card.style.backgroundImage = `url(${slot.thumb})`;
     card.dataset.idx = String(i);
     const hk = document.createElement('div');
     hk.className = 'hk' + (_slotBinding === i ? ' binding' : '');
@@ -12866,9 +12891,12 @@ function _renderSetlist(){
     saveBtn.addEventListener('click', e => {
       e.stopPropagation();
       slot.snapshot = captureSnapshot();
+      slot.thumb = _grabSetlistThumb();
       _setlistPersist();
       _renderSetlist();
-      card.classList.add('flash');
+      // Re-find the same card by index and flash it
+      const newCard = grid.querySelector(`.setlist-slot[data-idx="${i}"]`);
+      if(newCard) newCard.classList.add('flash');
     });
     const clearBtn = document.createElement('button');
     clearBtn.className = 'clear';
@@ -12876,6 +12904,7 @@ function _renderSetlist(){
     clearBtn.addEventListener('click', e => {
       e.stopPropagation();
       slot.snapshot = null;
+      slot.thumb = null;
       _setlistPersist();
       _renderSetlist();
     });
@@ -12887,9 +12916,11 @@ function _renderSetlist(){
       if(!slot.snapshot){
         // No snapshot yet — save current state into this slot
         slot.snapshot = captureSnapshot();
+        slot.thumb = _grabSetlistThumb();
         _setlistPersist();
         _renderSetlist();
-        card.classList.add('flash');
+        const newCard = grid.querySelector(`.setlist-slot[data-idx="${i}"]`);
+        if(newCard) newCard.classList.add('flash');
         return;
       }
       applySnapshot(slot.snapshot);
@@ -12972,6 +13003,99 @@ window.addEventListener('keydown', (e) => {
     if(card){ card.classList.add('flash'); setTimeout(()=>card.classList.remove('flash'), 400); }
   }
 }, true);
+// ─── Crossfade between presets (for live VJ transitions) ─────────────────
+state.crossfadeMs = 0;  // 0 = instant cut; >0 = smooth interp duration
+let _xfade = null;  // { from, to, t0, dur }
+function _easeInOut(t){ return t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t+2, 2)/2; }
+function _lerp(a, b, t){ return a + (b - a) * t; }
+function _hasNum(o, k){ return o && typeof o[k] === 'number'; }
+// Wrap applySnapshot to support crossfade transitions
+const _origApplySnapshot = applySnapshot;
+applySnapshot = function(snap, opts){
+  opts = opts || {};
+  const fade = (opts.fadeMs != null) ? opts.fadeMs : state.crossfadeMs;
+  if(!fade || fade <= 50){
+    _origApplySnapshot(snap, opts);
+    _xfade = null;
+    return;
+  }
+  // Capture current state as starting point; apply target IMMEDIATELY for
+  // discrete fields (modes, anims, family, etc.) — only numbers are tweened.
+  const from = captureSnapshot();
+  _origApplySnapshot(snap, opts);  // jumps to target across all fields
+  _xfade = { from, to: snap, t0: performance.now(), dur: fade };
+};
+function _tickCrossfade(){
+  if(!_xfade) return;
+  const t = Math.min(1, (performance.now() - _xfade.t0) / _xfade.dur);
+  const k = _easeInOut(t);
+  const f = _xfade.from, e = _xfade.to;
+  // Continuous state fields
+  if(_hasNum(f,'temp') && _hasNum(e,'temp')) state.temp = _lerp(f.temp, e.temp, k);
+  if(_hasNum(f,'vibrance')) state.vibrance = _lerp(f.vibrance, e.vibrance, k);
+  if(_hasNum(f,'hueShift')) state.hueShift = _lerp(f.hueShift, e.hueShift, k);
+  if(_hasNum(f,'bgDark')) state.bgDark = _lerp(f.bgDark, e.bgDark, k);
+  if(_hasNum(f,'bloom')) state.bloom = _lerp(f.bloom, e.bloom, k);
+  if(_hasNum(f,'trails')) state.trails = _lerp(f.trails, e.trails, k);
+  if(_hasNum(f,'grain')) state.grain = _lerp(f.grain, e.grain, k);
+  if(_hasNum(f,'vignette')) state.vignette = _lerp(f.vignette, e.vignette, k);
+  if(_hasNum(f,'density')) state.density = _lerp(f.density, e.density, k);
+  if(_hasNum(f,'motionSpeed')) state.motionSpeed = _lerp(f.motionSpeed, e.motionSpeed, k);
+  if(_hasNum(f,'turbulence')) state.turbulence = _lerp(f.turbulence, e.turbulence, k);
+  if(_hasNum(f,'glow')) state.glow = _lerp(f.glow, e.glow, k);
+  if(_hasNum(f,'audioGain')) state.audioGain = _lerp(f.audioGain, e.audioGain, k);
+  if(_hasNum(f,'bassImpact')) state.bassImpact = _lerp(f.bassImpact, e.bassImpact, k);
+  if(_hasNum(f,'midImpact')) state.midImpact = _lerp(f.midImpact, e.midImpact, k);
+  if(_hasNum(f,'trebleImpact')) state.trebleImpact = _lerp(f.trebleImpact, e.trebleImpact, k);
+  // Emotion values
+  if(f.values && e.values){
+    for(const emo of EMOTIONS){
+      const fv = f.values[emo.id] || 0;
+      const ev = e.values[emo.id] || 0;
+      state.values[emo.id] = _lerp(fv, ev, k);
+    }
+  }
+  // Typo numeric
+  if(f.typo && e.typo && typeof typo !== 'undefined'){
+    if(_hasNum(f.typo,'speed') && _hasNum(e.typo,'speed')) typo.speed = _lerp(f.typo.speed, e.typo.speed, k);
+    if(_hasNum(f.typo,'rate'))  typo.rate  = _lerp(f.typo.rate,  e.typo.rate,  k);
+    if(_hasNum(f.typo,'life'))  typo.life  = _lerp(f.typo.life,  e.typo.life,  k);
+    if(_hasNum(f.typo,'weight'))typo.weight = Math.round(_lerp(f.typo.weight, e.typo.weight, k));
+    if(_hasNum(f.typo,'outlineWidth')) typo.outlineWidth = _lerp(f.typo.outlineWidth, e.typo.outlineWidth, k);
+    if(_hasNum(f.typo,'sizeScale')) typo.sizeScale = _lerp(f.typo.sizeScale, e.typo.sizeScale, k);
+  }
+  if(t >= 1){
+    _xfade = null;
+    if(typeof syncAllUI === 'function') syncAllUI();
+  }
+}
+// Wire slider
+(function _wireXfadeSlider(){
+  const inp = document.getElementById('xfadeRange');
+  const fill = document.getElementById('xfadeFill');
+  const thumb = document.getElementById('xfadeThumb');
+  const val = document.getElementById('xfadeVal');
+  if(!inp) return;
+  const upd = () => {
+    const raw = +inp.value;  // 0..60 = 0..6s in 0.1s steps
+    const sec = raw / 10;
+    state.crossfadeMs = sec * 1000;
+    const p = (raw / +inp.max) * 100;
+    if(fill) fill.style.width = p + '%';
+    if(thumb) thumb.style.left = p + '%';
+    if(val) val.textContent = sec === 0 ? '0s · 立即切換' : sec.toFixed(1) + 's';
+  };
+  inp.addEventListener('input', upd);
+  upd();
+})();
+// Frame-loop hook — call before rendering
+const _origDrawImageTopXf = window._drawImageTop;
+// We just need _tickCrossfade to run each frame. Hook into requestAnimationFrame loop.
+(function _xfadeLoop(){
+  function loop(){ _tickCrossfade(); requestAnimationFrame(loop); }
+  requestAnimationFrame(loop);
+})();
+
 // ─── Setlist Library — multiple named setlists saved locally ──────────────
 const SETLIST_LIB_KEY = 'inner-weather-setlist-library-v1';
 let setlistLibrary = [];
