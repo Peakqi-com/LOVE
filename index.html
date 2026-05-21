@@ -2071,7 +2071,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-19n · 60fps budget + heavy-mode cap');
+console.log('[IW] script booting · build 2026-05-22 · whiteout prevention + Type contrast lock to bg');
 
 // Click diagnostics — log every click so we can see where they reach.
 // Capture phase so we see clicks BEFORE any interceptor swallows them.
@@ -8550,12 +8550,24 @@ function randomizeAll(){
   else state.lightMode = Math.random() < 0.15;
   // Re-tune when light mode is on — keep paper clean, retain ink, less bloom, less vibrance
   if(state.lightMode){
-    state.bgDark = Math.random() * 0.25;
-    state.trails = 0.30 + Math.random() * 0.40;
-    state.bloom  = Math.random() * 0.30;
-    state.vignette = Math.random() * 0.35;
-    // Cap vibrance — high values overexpose dark content to invisibility on cream bg
-    state.vibrance = Math.round(20 + Math.random() * 40);  // 20-60 range
+    state.bgDark = Math.random() * 0.20;
+    state.trails = 0.25 + Math.random() * 0.35;
+    state.bloom  = Math.random() * 0.18;        // tightened (was 0.30) — high bloom whites out
+    state.vignette = Math.random() * 0.30;
+    state.glow   = 0.25 + Math.random() * 0.45; // tightened (was 0.3-1.4) — glow stacks to white
+    state.vibrance = Math.round(15 + Math.random() * 35);  // 15-50 range (was 20-60)
+    // Disable kaleido segments >= 8 in lightMode — wedges stack on bright canvas
+    if(state.kaleido > 6) state.kaleido = Math.random() < 0.5 ? 0 : 6;
+  } else {
+    // Dark mode: also avoid extreme bloom + glow + vibrance stacking
+    // (Random was producing whiteout in dark mode too when these all maxed)
+    if(state.bloom > 0.65 && state.glow > 1.1 && state.vibrance > 80){
+      // Pick one to dim
+      const dimRoll = Math.random();
+      if(dimRoll < 0.34) state.bloom = 0.3 + Math.random()*0.3;
+      else if(dimRoll < 0.67) state.glow = 0.5 + Math.random()*0.4;
+      else state.vibrance = 50 + Math.round(Math.random()*20);
+    }
   }
 
   // 6. Mirror / kaleido — much more likely on hot/intense music
@@ -8684,7 +8696,20 @@ function randomizeAll(){
     typo.anim = animPool[Math.floor(Math.random()*animPool.length)];
     const stylePool = ['solid','outline','mix','split'];
     typo.style = stylePool[Math.floor(Math.random()*stylePool.length)];
-    const colorPool = ['auto','random','#000000','#ffffff','#f3eee6','#ff3344','#ffcc22','#1e88ff','#c87cff','#9bd3a7','#ff7a9c'];
+    // Pick color based on background mode so text is always readable:
+    //  - Dark background → bright/light colors (avoid pure black)
+    //  - Light background → dark colors (avoid white / cream / pastel)
+    let colorPool;
+    if(state.lightMode){
+      // Light canvas: force dark, saturated, high-contrast text
+      colorPool = ['#000000','#1a0028','#3a1e6e','#5a1a3a','#1e88ff','#7a3eff','#c83e6f','#0a4a3a','#3a2a00','#5a3010'];
+      // Also force solid/outline (not mix/split which can use bright colors)
+      if(typo.style === 'mix' || typo.style === 'split'){
+        typo.style = Math.random() < 0.7 ? 'solid' : 'outline';
+      }
+    } else {
+      colorPool = ['auto','random','#ffffff','#f3eee6','#ff3344','#ffcc22','#1e88ff','#c87cff','#9bd3a7','#ff7a9c','#00f0ff','#ff66cc'];
+    }
     typo.color = colorPool[Math.floor(Math.random()*colorPool.length)];
     typo.weight = [100,300,500,700,900][Math.floor(Math.random()*5)];
     typo.outlineWidth = 0.02 + Math.random()*0.10;
