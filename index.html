@@ -1153,8 +1153,8 @@
       <span class="lockbar-lbl">Lock</span>
       <button class="lock-chip" data-lock="feelings" title="Feelings tab — emotions & temperature"><span class="ico">🔓</span>Feelings</button>
       <button class="lock-chip" data-lock="field"    title="Field tab — density, motion, turbulence, glow"><span class="ico">🔓</span>Field</button>
-      <button class="lock-chip" data-lock="visual"   title="Visual tab — color, atmosphere, mirror, kaleido, light mode"><span class="ico">🔓</span>Visual</button>
-      <button class="lock-chip" data-lock="style"    title="Modes — visual style picks (Pop Art / Matrix / etc.)"><span class="ico">🔓</span>Style</button>
+      <button class="lock-chip" data-lock="visual"   title="Color, atmosphere, mirror, kaleido, light mode"><span class="ico">🔓</span>Color/FX</button>
+      <button class="lock-chip" data-lock="style"    title="Visual MODES — keeps your enabled modes (Synthwave / Boids / Sumi-e / etc.) on across Random"><span class="ico">🔓</span>Modes</button>
       <button class="lock-chip" data-lock="audio"    title="Audio tab — gain & per-band impacts"><span class="ico">🔓</span>Audio</button>
       <button class="lock-chip" data-lock="image"    title="Image tab — arrangement & aesthetics"><span class="ico">🔓</span>Image</button>
       <button class="lock-chip" data-lock="type"     title="Type tab — typography animation, color, weight"><span class="ico">🔓</span>Type</button>
@@ -1342,6 +1342,18 @@
             <label class="mode-chip"><input type="checkbox" data-mode="spectro" /><span><strong>Spectrogram 頻譜瀑布</strong><em>FFT vs time waterfall</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="meta" /><span><strong>Metaballs 熔岩燈</strong><em>blobs that merge · lava lamp</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="synth" /><span><strong>Synthwave Grid</strong><em>80s 復古地面 + sun</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="life" /><span><strong>Game of Life</strong><em>Conway 細胞自動機</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="lsys" /><span><strong>L-System</strong><em>遞迴植物 / 樹</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="harmono" /><span><strong>Harmonograph</strong><em>諧波儀曲線</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="truchet" /><span><strong>Truchet 磁磚</strong><em>random arc maze 圖樂</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="nbody" /><span><strong>N-Body 重力</strong><em>mutual gravity · galaxy orbits</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="spiro" /><span><strong>Spirograph</strong><em>嵌套齒輪 · rose curves</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="marbling" /><span><strong>Marbling 大理石</strong><em>ebru · 水墨流紋</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="hilbert" /><span><strong>Hilbert 曲線</strong><em>space-filling 漸進繪製</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="lenia" /><span><strong>Lenia 連續細胞</strong><em>生物有機演化 · 水母感</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="pendulum" /><span><strong>雙擺 Pendulum</strong><em>chaotic 物理軌跡</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="galaxy" /><span><strong>Galaxy 星系</strong><em>對數螺旋 · 旋臂</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="penrose" /><span><strong>Penrose 密鋪</strong><em>五重非週期 · 準晶體</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="mandalaRings" /><span><strong>Mandala rings</strong><em>expanding concentric pulse</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="waveform" /><span><strong>Waveform</strong><em>audio-driven horizon line</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="constellation" /><span><strong>Constellation</strong><em>dots wired to neighbors</em></span></label>
@@ -1961,7 +1973,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-19a · Spectrogram + Metaballs + Synthwave Grid');
+console.log('[IW] script booting · build 2026-05-19f · Double Pendulum + Galaxy + Penrose');
 
 // Click diagnostics — log every click so we can see where they reach.
 // Capture phase so we see clicks BEFORE any interceptor swallows them.
@@ -2153,6 +2165,18 @@ const state = {
     spectro:      false,   // FFT spectrogram waterfall
     meta:         false,   // metaballs / lava lamp
     synth:        false,   // synthwave / vaporwave grid + sun
+    life:         false,   // Conway's Game of Life
+    lsys:         false,   // L-System recursive plant
+    harmono:      false,   // Harmonograph multi-pendulum curves
+    truchet:      false,   // Truchet random tile maze
+    nbody:        false,   // N-body mutual gravity
+    spiro:        false,   // Spirograph hypotrochoid
+    marbling:     false,   // marbled paper / ebru noise field
+    hilbert:      false,   // Hilbert space-filling curve
+    lenia:        false,   // Lenia continuous cellular automaton
+    pendulum:     false,   // chaotic double pendulum trail
+    galaxy:       false,   // logarithmic spiral galaxy
+    penrose:      false,   // Penrose P2 5-fold aperiodic tiling
     mandalaRings: false,   // expanding concentric rings
     waveform:     false,   // audio waveform across screen
     constellation:false,   // dots connected to neighbors
@@ -2745,7 +2769,7 @@ function frame(now){
   // ---- trails: instead of clearing, paint translucent over (frame persistence)
   // Accumulator modes (substrate, attractor) NEED high trails to be visible —
   // they paint a few pixels per frame and rely on persistence. Auto-boost.
-  const _needsHighTrails = state.modes.substrate || state.modes.attractor || state.modes.dla;
+  const _needsHighTrails = state.modes.substrate || state.modes.attractor || state.modes.dla || state.modes.pendulum;
   const _effectiveTrails = _needsHighTrails ? Math.max(0.88, state.trails) : state.trails;
   if(_effectiveTrails > 0.02){
     g.save();
@@ -3020,8 +3044,20 @@ document.getElementById('reset').addEventListener('click', ()=>{
     modeState.chladni.canvas = null; modeState.chladni.t = 0;
     modeState.dla.grid = null; modeState.dla.walkers.length = 0;
     modeState.spectro.canvas = null;
-    modeState.meta.balls.length = 0;
+    modeState.meta.balls.length = 0; modeState.meta.canvas = null;
     modeState.synth.t = 0;
+    modeState.life.grid = null;
+    modeState.lsys._t = 0; modeState.lsys._rule = 0;
+    modeState.harmono.t = 0;
+    modeState.truchet.t = 0;
+    modeState.nbody.particles.length = 0;
+    modeState.spiro.t = 0;
+    modeState.marbling.canvas = null; modeState.marbling.t = 0;
+    modeState.hilbert.points = null; modeState.hilbert.t = 0;
+    modeState.lenia.grid = null; modeState.lenia.canvas = null;
+    modeState.pendulum.state = null; modeState.pendulum.trail.length = 0;
+    modeState.galaxy.stars.length = 0;
+    modeState.penrose.triangles = null;
     modeState.ringTimer = 0;
     modeState.rippleTimer = 0;
   }
@@ -4559,9 +4595,33 @@ const modeState = {
   // Spectrogram waterfall (FFT scrolling)
   spectro: { canvas: null, ctx: null, _freqBuf: null },
   // Metaballs (lava lamp)
-  meta: { balls: [] },
+  meta: { balls: [], canvas: null, ctx: null },
   // Synthwave / vaporwave grid + sun
   synth: { t: 0 },
+  // Conway's Game of Life
+  life: { grid: null, next: null, w: 0, h: 0, _t: 0, _resetT: 0 },
+  // L-System tree (recursive plant)
+  lsys: { _depth: 4, _rule: 0, _t: 0 },
+  // Harmonograph (multi-pendulum curves)
+  harmono: { t: 0 },
+  // Truchet tiles (random tile maze)
+  truchet: { t: 0 },
+  // N-body gravity simulation
+  nbody: { particles: [] },
+  // Spirograph (hypotrochoid)
+  spiro: { t: 0 },
+  // Marbling (paper marble / ebru noise field)
+  marbling: { t: 0, canvas: null, ctx: null, imageData: null },
+  // Hilbert space-filling curve
+  hilbert: { points: null, order: 0, t: 0 },
+  // Lenia continuous cellular automaton
+  lenia: { grid: null, next: null, w: 0, h: 0, _t: 0, canvas: null, ctx: null, imageData: null, K: null, kSize: 0 },
+  // Double pendulum (chaotic trail)
+  pendulum: { state: null, trail: [] },
+  // Galaxy (logarithmic spiral particle field)
+  galaxy: { stars: [] },
+  // Penrose tiling (Robinson triangle deflation)
+  penrose: { triangles: null, depth: 0 },
 };
 
 function ensureFlow(){
@@ -5497,32 +5557,63 @@ function ensureSpectrogram(){
 function drawSpectrogram(g, dt, T){
   ensureSpectrogram();
   const s = modeState.spectro;
-  if(!reactor.analyser) return;
-  const N = reactor.analyser.frequencyBinCount;
-  if(!s._freqBuf || s._freqBuf.length !== N) s._freqBuf = new Uint8Array(N);
-  reactor.analyser.getByteFrequencyData(s._freqBuf);
   const dom = dominantEmo();
   const cw = s.canvas.width, ch = s.canvas.height;
-  // Scroll up by 1 px (drawImage onto itself with -1 offset)
+  // Get spectrum — real if analyser available, synthetic otherwise
+  let spectrum;
+  let N;
+  if(reactor.analyser){
+    N = reactor.analyser.frequencyBinCount;
+    if(!s._freqBuf || s._freqBuf.length !== N) s._freqBuf = new Uint8Array(N);
+    reactor.analyser.getByteFrequencyData(s._freqBuf);
+    spectrum = s._freqBuf;
+  } else {
+    // Synthetic spectrum from emotion mix so the user sees SOMETHING
+    N = 128;
+    if(!s._fakeBuf || s._fakeBuf.length !== N) s._fakeBuf = new Uint8Array(N);
+    const t0 = state.t * 0.002;
+    let domWeight = 0;
+    for(const e of EMOTIONS) domWeight += state.values[e.id]/100;
+    const baseAmp = 80 + domWeight * 25;
+    for(let i=0;i<N;i++){
+      const fr = i / N;
+      const wave = Math.sin(t0 + fr*9) * 0.5 + Math.sin(t0*1.7 + fr*23) * 0.3 + Math.cos(t0*0.6 + fr*4)*0.2;
+      s._fakeBuf[i] = Math.max(0, Math.min(255, baseAmp + wave * 100 - fr*60));
+    }
+    spectrum = s._fakeBuf;
+  }
+  // Scroll up by 1 px
   s.ctx.drawImage(s.canvas, 0, -1);
-  // Clear bottom row and paint new spectrum
   s.ctx.clearRect(0, ch-1, cw, 1);
-  const usableBins = Math.floor(N * 0.6); // skip very-high noise
+  const usableBins = Math.floor(N * 0.65);
   for(let x = 0; x < cw; x++){
-    // Logarithmic frequency mapping (more low-end detail)
     const t = x / cw;
-    const binIdx = Math.floor(Math.pow(t, 2.2) * usableBins);
-    const v = s._freqBuf[binIdx] / 255;
-    if(v < 0.05) continue;
-    const hue = lerp(dom.hue[0], dom.hue[1], v) + (1-t)*30;
-    s.ctx.fillStyle = `hsla(${hue}, ${dom.sat+10}%, ${30+v*50}%, ${Math.min(1, v*1.3)})`;
+    const binIdx = Math.min(usableBins-1, Math.floor(Math.pow(t, 1.8) * usableBins));
+    const v = spectrum[binIdx] / 255;
+    if(v < 0.04) continue;
+    const hue = lerp(dom.hue[0], dom.hue[1], v) + (1-t)*40;
+    s.ctx.fillStyle = `hsla(${hue}, ${dom.sat+15}%, ${28 + v*55}%, ${Math.min(1, v*1.5)})`;
     s.ctx.fillRect(x, ch-1, 1, 1);
   }
+  // Also draw a vivid live-bar from the bottom of the screen (so it's punchy
+  // even when scrolling history is too dim to see)
   g.save();
   g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
   g.globalAlpha = 0.85 + state.glow*0.15;
   g.imageSmoothingEnabled = true;
   g.drawImage(s.canvas, 0, 0, W, H);
+  // Live bars
+  const bars = 64;
+  const barW = W / bars;
+  for(let i=0;i<bars;i++){
+    const t2 = i / bars;
+    const binIdx = Math.min(usableBins-1, Math.floor(Math.pow(t2, 1.8) * usableBins));
+    const v = spectrum[binIdx] / 255;
+    const barH = v * H * 0.35;
+    const hue = lerp(dom.hue[0], dom.hue[1], v) + (1-t2)*40;
+    g.fillStyle = `hsla(${hue}, ${dom.sat+15}%, ${40 + v*40}%, ${0.75 + state.glow*0.25})`;
+    g.fillRect(i*barW, H-barH, barW-1, barH);
+  }
   g.restore();
 }
 
@@ -5532,43 +5623,62 @@ function ensureMeta(){
   const m = modeState.meta;
   if(m.balls.length === 0){
     const dom = dominantEmo();
-    for(let i=0;i<7;i++){
+    for(let i=0;i<6;i++){
       m.balls.push({
-        x: Math.random()*W, y: Math.random()*H,
-        vx: (Math.random()-0.5)*80, vy: (Math.random()-0.5)*80,
-        r: Math.min(W,H) * (0.08 + Math.random()*0.10),
+        x: Math.random(), y: Math.random(),       // normalized 0-1
+        vx: (Math.random()-0.5)*0.0006,
+        vy: (Math.random()-0.5)*0.0006,
+        r: 0.10 + Math.random()*0.10,             // normalized radius
         hue: lerp(dom.hue[0], dom.hue[1], Math.random()) + (Math.random()-0.5)*40,
       });
     }
   }
+  if(!m.canvas){
+    m.canvas = document.createElement('canvas');
+    m.canvas.width = 384; m.canvas.height = 216;  // low-res buffer, ~6× cheaper
+    m.ctx = m.canvas.getContext('2d');
+  }
 }
 function drawMetaballs(g, dt, T){
   ensureMeta();
-  const balls = modeState.meta.balls;
+  const m = modeState.meta;
+  const balls = m.balls;
   const dom = dominantEmo();
-  const dts = dt/1000;
   const mScale = (window._songMood && window._songMood.intensityScale) || 1;
   const speedMul = (0.4 + state.motionSpeed*0.8 + (reactor.vol||0)*1.3) * mScale;
   for(const b of balls){
-    b.x += b.vx * dts * speedMul;
-    b.y += b.vy * dts * speedMul;
+    b.x += b.vx * dt * speedMul;
+    b.y += b.vy * dt * speedMul;
     if(b.x < b.r){ b.x = b.r; b.vx = -b.vx; }
-    if(b.x > W-b.r){ b.x = W-b.r; b.vx = -b.vx; }
+    if(b.x > 1-b.r){ b.x = 1-b.r; b.vx = -b.vx; }
     if(b.y < b.r){ b.y = b.r; b.vy = -b.vy; }
-    if(b.y > H-b.r){ b.y = H-b.r; b.vy = -b.vy; }
+    if(b.y > 1-b.r){ b.y = 1-b.r; b.vy = -b.vy; }
   }
-  g.save();
-  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  // Render to LOW-RES buffer (384×216), then scale up
+  const bw = m.canvas.width, bh = m.canvas.height;
+  const ctx = m.ctx;
+  ctx.clearRect(0,0,bw,bh);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
   const bassPump = 1 + (reactor.bass||0)*0.7;
   for(const b of balls){
-    const r = b.r * bassPump;
-    const grad = g.createRadialGradient(b.x, b.y, 0, b.x, b.y, r);
-    grad.addColorStop(0,   `hsla(${b.hue}, ${dom.sat+15}%, ${dom.light+28}%, ${0.9 + state.glow*0.1})`);
+    const px = b.x * bw, py = b.y * bh;
+    const r = b.r * Math.min(bw, bh) * bassPump;
+    const grad = ctx.createRadialGradient(px, py, 0, px, py, r);
+    grad.addColorStop(0,   `hsla(${b.hue}, ${dom.sat+15}%, ${dom.light+28}%, ${0.95})`);
     grad.addColorStop(0.4, `hsla(${b.hue}, ${dom.sat+10}%, ${dom.light+18}%, 0.45)`);
     grad.addColorStop(1,   `hsla(${b.hue}, ${dom.sat}%, ${dom.light}%, 0)`);
-    g.fillStyle = grad;
-    g.beginPath(); g.arc(b.x, b.y, r, 0, TAU); g.fill();
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(px, py, r, 0, TAU); ctx.fill();
   }
+  ctx.restore();
+  // Composite onto main canvas
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  g.imageSmoothingEnabled = true;
+  g.imageSmoothingQuality = 'high';
+  g.globalAlpha = 0.9 + state.glow*0.1;
+  g.drawImage(m.canvas, 0, 0, W, H);
   g.restore();
 }
 
@@ -5624,6 +5734,685 @@ function drawSynthwave(g, dt, T){
     g.beginPath();
     g.moveTo(vx, horizonY);
     g.lineTo(xAtBottom, H);
+    g.stroke();
+  }
+  g.restore();
+}
+
+// ─── Conway's Game of Life ────────────────────────────────────────────────
+// Classic CA. Random seed, evolves every ~80 ms. Audio scales evolution speed.
+function ensureLife(){
+  const l = modeState.life;
+  if(!l.grid){
+    l.w = 96; l.h = 54;
+    l.grid = new Uint8Array(l.w * l.h);
+    l.next = new Uint8Array(l.w * l.h);
+    for(let i=0;i<l.grid.length;i++) l.grid[i] = Math.random() < 0.32 ? 1 : 0;
+  }
+}
+function drawLife(g, dt, T){
+  ensureLife();
+  const l = modeState.life;
+  const dom = dominantEmo();
+  const mScale = (window._songMood && window._songMood.intensityScale) || 1;
+  const stepMs = 100 / (1 + (reactor.bass||0)*1.5 + state.motionSpeed*0.5) / mScale;
+  l._t += dt;
+  if(l._t > stepMs){
+    l._t = 0;
+    const w = l.w, h = l.h, grid = l.grid, next = l.next;
+    let liveCount = 0;
+    for(let y=0;y<h;y++){
+      for(let x=0;x<w;x++){
+        const i = y*w + x;
+        let n = 0;
+        // 8 neighbours with wrap
+        for(let dy=-1;dy<=1;dy++){
+          const ny = (y+dy+h)%h * w;
+          for(let dx=-1;dx<=1;dx++){
+            if(dx===0 && dy===0) continue;
+            n += grid[ny + (x+dx+w)%w];
+          }
+        }
+        next[i] = grid[i] ? ((n===2 || n===3) ? 1 : 0) : (n===3 ? 1 : 0);
+        liveCount += next[i];
+      }
+    }
+    l.grid = next; l.next = grid;
+    // If everything dies / stuck → reseed (every ~20 sec also reseed for variety)
+    l._resetT += dt;
+    if(liveCount < 5 || l._resetT > 25000){
+      l._resetT = 0;
+      for(let i=0;i<l.grid.length;i++) l.grid[i] = Math.random() < 0.32 ? 1 : 0;
+    }
+  }
+  // Render
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  const cw = W / l.w, ch = H / l.h;
+  for(let y=0;y<l.h;y++){
+    const baseI = y*l.w;
+    for(let x=0;x<l.w;x++){
+      if(!l.grid[baseI+x]) continue;
+      const hue = lerp(dom.hue[0], dom.hue[1], (x+y)/(l.w+l.h));
+      g.fillStyle = `hsla(${hue}, ${dom.sat+5}%, ${dom.light+18}%, ${0.75+state.glow*0.25})`;
+      g.fillRect(x*cw, y*ch, cw+1, ch+1);
+    }
+  }
+  g.restore();
+}
+
+// ─── L-System Tree ────────────────────────────────────────────────────────
+// Recursive grammar generates a string → turtle graphics draws it. Depth + rule
+// cycle on audio. Pure canvas 2D.
+function _lsysGenerate(axiom, rules, depth){
+  let s = axiom;
+  for(let i=0;i<depth;i++){
+    let next = '';
+    for(let j=0;j<s.length;j++){
+      const ch = s[j];
+      next += (rules[ch] || ch);
+    }
+    s = next;
+    if(s.length > 8000) break;  // safety
+  }
+  return s;
+}
+function drawLSystem(g, dt, T){
+  const l = modeState.lsys;
+  const dom = dominantEmo();
+  const mScale = (window._songMood && window._songMood.intensityScale) || 1;
+  l._t += dt;
+  // Cycle rule every ~10 sec
+  const ruleSet = [
+    { axiom:'F', rules:{ F:'F[+F]F[-F]F' },              ang: Math.PI/7,  depth: 4 },  // bushy
+    { axiom:'X', rules:{ X:'F-[[X]+X]+F[+FX]-X', F:'FF' }, ang: Math.PI/9,  depth: 4 },  // plant
+    { axiom:'F', rules:{ F:'FF+[+F-F-F]-[-F+F+F]' },     ang: Math.PI/8,  depth: 3 },  // tree
+    { axiom:'F', rules:{ F:'F+F-F-F+F' },                ang: Math.PI/2,  depth: 4 },  // koch
+  ];
+  if(l._t > 10000){ l._t = 0; l._rule = (l._rule + 1) % ruleSet.length; }
+  const cfg = ruleSet[l._rule];
+  const path = _lsysGenerate(cfg.axiom, cfg.rules, cfg.depth);
+  const ang0 = cfg.ang + Math.sin(state.t*0.0005) * 0.05 * mScale;
+  // Bass adds dynamic angle perturbation per branch
+  const bassWobble = (reactor.bass||0) * 0.15;
+  // Start at bottom center
+  let x = W/2, y = H * 0.95;
+  let angle = -Math.PI/2;
+  const baseStep = Math.min(W, H) * 0.32 / Math.pow(2, cfg.depth - 2.5);
+  const stack = [];
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  g.strokeStyle = `hsla(${lerp(dom.hue[0], dom.hue[1], 0.5)}, ${dom.sat+10}%, ${dom.light+18}%, ${0.65+state.glow*0.3})`;
+  g.lineWidth = 1.5 + state.bloom * 0.8;
+  g.beginPath();
+  for(let i=0;i<path.length;i++){
+    const ch = path[i];
+    if(ch === 'F' || ch === 'X'){
+      const len = baseStep * (0.85 + Math.sin(i*0.13)*0.15);
+      const nx = x + Math.cos(angle) * len;
+      const ny = y + Math.sin(angle) * len;
+      g.moveTo(x, y); g.lineTo(nx, ny);
+      x = nx; y = ny;
+    } else if(ch === '+') angle += ang0 + bassWobble*(Math.random()-0.5);
+    else if(ch === '-') angle -= ang0 + bassWobble*(Math.random()-0.5);
+    else if(ch === '['){ stack.push({x,y,angle}); }
+    else if(ch === ']'){ const s = stack.pop(); if(s){ x=s.x; y=s.y; angle=s.angle; } }
+  }
+  g.stroke();
+  g.restore();
+}
+
+// ─── Harmonograph ─────────────────────────────────────────────────────────
+// Multi-pendulum drawing. Sin waves with decay → looped rose / spiral curves.
+function drawHarmonograph(g, dt, T){
+  const h = modeState.harmono;
+  const dom = dominantEmo();
+  const mScale = (window._songMood && window._songMood.intensityScale) || 1;
+  h.t += dt * 0.0006 * mScale;
+  const cx = CX, cy = CY;
+  const R = Math.min(W, H) * 0.38;
+  // 4-pendulum frequencies driven by audio
+  const f1 = 2.0 + (reactor.bass||0)*0.6;
+  const f2 = 3.0 + (reactor.treble||0)*0.6;
+  const f3 = 2.5 + (reactor.mid||0)*0.4;
+  const f4 = 3.5 + (reactor.vol||0)*0.3;
+  const p1 = h.t, p2 = h.t*0.83 + Math.PI/4;
+  const p3 = h.t*1.17 + Math.PI/3, p4 = h.t*0.61;
+  const decay = 0.0012;
+  const samples = 1600;
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  for(let i=0;i<samples;i++){
+    const tau = i * 0.06;
+    const d = Math.exp(-decay * tau);
+    const x = cx + ((Math.sin(tau*f1 + p1) + Math.sin(tau*f3 + p3))*0.5) * R * d;
+    const y = cy + ((Math.sin(tau*f2 + p2) + Math.sin(tau*f4 + p4))*0.5) * R * d;
+    const hue = lerp(dom.hue[0], dom.hue[1], i/samples);
+    const a = 0.35 + 0.45*state.glow + (reactor.treble||0)*0.25;
+    g.fillStyle = `hsla(${hue}, ${dom.sat+10}%, ${dom.light+22}%, ${a})`;
+    const sz = 1.4 + state.bloom*1.2;
+    g.fillRect(x - sz/2, y - sz/2, sz, sz);
+  }
+  g.restore();
+}
+
+// ─── Truchet Tiles ────────────────────────────────────────────────────────
+// Classic Smith tiles — each cell randomly picks one of two quarter-arc
+// configurations. Tiled randomly, arcs connect into intricate maze patterns.
+function drawTruchet(g, dt, T){
+  const dom = dominantEmo();
+  const tr = modeState.truchet;
+  const mScale = (window._songMood && window._songMood.intensityScale) || 1;
+  tr.t += dt * 0.0007 * mScale * (1 + (reactor.bass||0)*0.8);
+  const cs = Math.max(28, Math.min(W, H) * (0.06 + state.density*0.04));
+  const cols = Math.ceil(W / cs) + 1;
+  const rows = Math.ceil(H / cs) + 1;
+  const phase = Math.floor(tr.t * 2);
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  g.strokeStyle = `hsla(${lerp(dom.hue[0], dom.hue[1], 0.5)}, ${dom.sat+5}%, ${dom.light+18}%, ${0.75 + state.glow*0.25})`;
+  g.lineWidth = Math.max(2, cs * 0.16 * (1 + (reactor.mid||0)*0.7));
+  g.lineCap = 'round';
+  for(let row=0; row<rows; row++){
+    for(let col=0; col<cols; col++){
+      const seed = Math.sin(col*12.9898 + row*78.233 + phase*3.7) * 43758;
+      const flip = ((seed - Math.floor(seed)) < 0.5);
+      const x = col * cs, y = row * cs;
+      g.beginPath();
+      if(flip){
+        g.arc(x, y, cs/2, 0, Math.PI/2);
+        g.moveTo(x+cs, y+cs);
+        g.arc(x+cs, y+cs, cs/2, Math.PI, 1.5*Math.PI);
+      } else {
+        g.arc(x+cs, y, cs/2, Math.PI/2, Math.PI);
+        g.moveTo(x, y+cs);
+        g.arc(x, y+cs, cs/2, -Math.PI/2, 0);
+      }
+      g.stroke();
+    }
+  }
+  g.restore();
+}
+
+// ─── N-Body Gravity ───────────────────────────────────────────────────────
+// O(N²) mutual gravity. Each particle pulls every other. Forms galaxy-like
+// clusters / orbits. N=60 (manageable). Audio modulates G constant.
+function ensureNbody(){
+  if(modeState.nbody.particles.length === 0){
+    const N = 60;
+    for(let i=0;i<N;i++){
+      const r = Math.random() * Math.min(W, H) * 0.32;
+      const ang = Math.random() * TAU;
+      // Start with slight orbital velocity for spin
+      modeState.nbody.particles.push({
+        x: CX + Math.cos(ang) * r,
+        y: CY + Math.sin(ang) * r,
+        vx: -Math.sin(ang) * (40 + Math.random()*30),
+        vy:  Math.cos(ang) * (40 + Math.random()*30),
+        mass: 1 + Math.random()*2,
+      });
+    }
+  }
+}
+function drawNbody(g, dt, T){
+  ensureNbody();
+  const ps = modeState.nbody.particles;
+  const dom = dominantEmo();
+  const dts = Math.min(50, dt) / 1000;
+  const mScale = (window._songMood && window._songMood.intensityScale) || 1;
+  const G = (350 + (reactor.bass||0)*900) * mScale;
+  // Compute forces
+  for(let i=0;i<ps.length;i++){
+    const p = ps[i];
+    let fx = 0, fy = 0;
+    for(let j=0;j<ps.length;j++){
+      if(i === j) continue;
+      const o = ps[j];
+      const dx = o.x - p.x, dy = o.y - p.y;
+      const d2 = dx*dx + dy*dy + 200;
+      const d = Math.sqrt(d2);
+      const f = G * o.mass / d2;
+      fx += f * dx / d;
+      fy += f * dy / d;
+    }
+    p.vx += fx * dts;
+    p.vy += fy * dts;
+    // gentle damping so it doesn't explode
+    p.vx *= 0.998;
+    p.vy *= 0.998;
+  }
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  for(const p of ps){
+    p.x += p.vx * dts;
+    p.y += p.vy * dts;
+    // wrap
+    if(p.x < -50) p.x += W+100;
+    if(p.x > W+50) p.x -= W+100;
+    if(p.y < -50) p.y += H+100;
+    if(p.y > H+50) p.y -= H+100;
+    const speed = Math.hypot(p.vx, p.vy);
+    const hue = lerp(dom.hue[0], dom.hue[1], Math.min(1, speed/300));
+    const sz = 1.5 + p.mass * 1.4 + state.bloom*1.5;
+    g.fillStyle = `hsla(${hue}, ${dom.sat+10}%, ${dom.light+22}%, ${0.7 + state.glow*0.3})`;
+    g.beginPath(); g.arc(p.x, p.y, sz, 0, TAU); g.fill();
+  }
+  g.restore();
+}
+
+// ─── Spirograph (hypotrochoid) ────────────────────────────────────────────
+// Nested rotating circles draw rose / star curves. Outer R, inner r, pen offset d.
+// Audio drives r and d → curve morphs in real time.
+function drawSpirograph(g, dt, T){
+  const dom = dominantEmo();
+  const sp = modeState.spiro;
+  const mScale = (window._songMood && window._songMood.intensityScale) || 1;
+  sp.t += dt * 0.0008 * mScale;
+  const R = Math.min(W, H) * 0.36;
+  const r = R * (0.28 + Math.sin(sp.t*0.3)*0.1 + (reactor.bass||0)*0.12);
+  const d = r * (0.6 + Math.sin(sp.t*0.5)*0.25 + (reactor.treble||0)*0.4);
+  const cx = CX, cy = CY;
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  const samples = 1400;
+  const wraps = 8;
+  for(let i=0;i<samples;i++){
+    const ang = (i / samples) * TAU * wraps + sp.t;
+    const x = cx + (R-r) * Math.cos(ang) + d * Math.cos((R-r)/r * ang);
+    const y = cy + (R-r) * Math.sin(ang) - d * Math.sin((R-r)/r * ang);
+    const hue = lerp(dom.hue[0], dom.hue[1], (i/samples + sp.t*0.05)%1);
+    const a = 0.4 + 0.4*state.glow + (reactor.treble||0)*0.25;
+    g.fillStyle = `hsla(${hue}, ${dom.sat+10}%, ${dom.light+22}%, ${a})`;
+    const sz = 1.5 + state.bloom*1.2;
+    g.fillRect(x - sz/2, y - sz/2, sz, sz);
+  }
+  g.restore();
+}
+
+// ─── Marbling 大理石紋 ─────────────────────────────────────────────────────
+// Layered sin/cos noise field with displacement → ebru-style marbled paper.
+function drawMarbling(g, dt, T){
+  const m = modeState.marbling;
+  const dom = dominantEmo();
+  const mScale = (window._songMood && window._songMood.intensityScale) || 1;
+  m.t += dt * 0.00018 * mScale * (1 + state.motionSpeed*0.4);
+  const W2 = 240, H2 = 135;
+  if(!m.canvas){
+    m.canvas = document.createElement('canvas');
+    m.canvas.width = W2; m.canvas.height = H2;
+    m.ctx = m.canvas.getContext('2d');
+    m.imageData = m.ctx.createImageData(W2, H2);
+  }
+  const data = m.imageData.data;
+  const c0 = _hslToRgbInt(dom.hue[0], dom.sat, dom.light);
+  const c1 = _hslToRgbInt(dom.hue[1], dom.sat, dom.light + 26);
+  const c2 = _hslToRgbInt(lerp(dom.hue[0], dom.hue[1], 0.5) + 40, dom.sat, dom.light + 12);
+  const t = m.t;
+  const bassWarp = (reactor.bass||0) * 3;
+  for(let y=0;y<H2;y++){
+    const ny = y * 0.036;
+    for(let x=0;x<W2;x++){
+      const nx = x * 0.036;
+      // Displaced sin layers create flowing veins
+      const a = Math.sin(nx + t + Math.cos(ny*1.3 + t*0.7)*2.5);
+      const b = Math.cos(ny*0.8 + t*0.5 + Math.sin(nx*0.9 + t*0.4)*2.2 + bassWarp);
+      const c = Math.sin((nx+ny)*0.6 + t*1.2);
+      const blend1 = (a + b) * 0.5 * 0.5 + 0.5;
+      const blend2 = (c + 1) * 0.5;
+      const o = (y*W2+x)*4;
+      // 3-color blend
+      const r1 = c0[0] + (c1[0]-c0[0]) * blend1;
+      const g1 = c0[1] + (c1[1]-c0[1]) * blend1;
+      const b1 = c0[2] + (c1[2]-c0[2]) * blend1;
+      data[o]   = r1 * (1-blend2*0.3) + c2[0] * blend2*0.3;
+      data[o+1] = g1 * (1-blend2*0.3) + c2[1] * blend2*0.3;
+      data[o+2] = b1 * (1-blend2*0.3) + c2[2] * blend2*0.3;
+      data[o+3] = 220;
+    }
+  }
+  m.ctx.putImageData(m.imageData, 0, 0);
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  g.imageSmoothingEnabled = true;
+  g.imageSmoothingQuality = 'high';
+  g.globalAlpha = 0.85 + state.glow*0.15;
+  g.drawImage(m.canvas, 0, 0, W, H);
+  g.restore();
+}
+
+// ─── Hilbert Curve 空間填充曲線 ───────────────────────────────────────────
+function _hilbertD2XY(d, n){
+  let rx, ry, t = d;
+  let x = 0, y = 0;
+  for(let s = 1; s < n; s *= 2){
+    rx = 1 & (t/2);
+    ry = 1 & (t ^ rx);
+    if(ry === 0){
+      if(rx === 1){ x = s - 1 - x; y = s - 1 - y; }
+      const tmp = x; x = y; y = tmp;
+    }
+    x += s * rx;
+    y += s * ry;
+    t = Math.floor(t/4);
+  }
+  return [x, y];
+}
+function drawHilbert(g, dt, T){
+  const h = modeState.hilbert;
+  const dom = dominantEmo();
+  const mScale = (window._songMood && window._songMood.intensityScale) || 1;
+  const order = 6;
+  const n = 1 << order;
+  const total = n * n;
+  if(!h.points || h.order !== order){
+    h.points = [];
+    for(let d = 0; d < total; d++) h.points.push(_hilbertD2XY(d, n));
+    h.order = order;
+  }
+  h.t += dt * 0.0004 * (1 + (reactor.bass||0)*1.5) * mScale;
+  // ping-pong progress: 0 → 1 → 0
+  const phase = h.t % 2;
+  const progress = phase < 1 ? phase : 2 - phase;
+  const drawCount = Math.floor(progress * total);
+  const sq = Math.min(W, H) * 0.85;
+  const cellSize = sq / n;
+  const ox = (W - sq) / 2 + cellSize/2;
+  const oy = (H - sq) / 2 + cellSize/2;
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  g.lineWidth = 1.4 + state.bloom * 0.7;
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  const segLen = 24;
+  for(let i = 0; i < drawCount; i += segLen){
+    const end = Math.min(drawCount, i + segLen + 1);
+    if(end - i < 2) break;
+    const hue = lerp(dom.hue[0], dom.hue[1], i / total);
+    g.strokeStyle = `hsla(${hue}, ${dom.sat+10}%, ${dom.light+22}%, ${0.65 + state.glow*0.3})`;
+    g.beginPath();
+    const [sx, sy] = h.points[i];
+    g.moveTo(ox + sx*cellSize, oy + sy*cellSize);
+    for(let j = i+1; j < end; j++){
+      const [px, py] = h.points[j];
+      g.lineTo(ox + px*cellSize, oy + py*cellSize);
+    }
+    g.stroke();
+  }
+  g.restore();
+}
+
+// ─── Lenia 連續細胞自動機 ─────────────────────────────────────────────────
+// Convolution kernel + Gaussian growth → produces alien organism-like patterns
+// (jellyfish, cells, slimemold). Smaller grid keeps the conv loop fast enough.
+function ensureLenia(){
+  const l = modeState.lenia;
+  if(!l.grid){
+    l.w = 84; l.h = 48;
+    l.grid = new Float32Array(l.w * l.h);
+    l.next = new Float32Array(l.w * l.h);
+    // Seed with random round blobs
+    for(let k=0;k<5;k++){
+      const cx = Math.floor(Math.random()*l.w);
+      const cy = Math.floor(Math.random()*l.h);
+      for(let dy=-5;dy<=5;dy++) for(let dx=-5;dx<=5;dx++){
+        const d = Math.sqrt(dx*dx+dy*dy);
+        if(d > 5) continue;
+        const x = (cx+dx+l.w)%l.w;
+        const y = (cy+dy+l.h)%l.h;
+        l.grid[y*l.w+x] = Math.max(l.grid[y*l.w+x], 1 - d/5);
+      }
+    }
+    // Pre-compute kernel (ring peaked around r=2.5)
+    const kr = 4;
+    l.kSize = kr*2 + 1;
+    l.K = new Float32Array(l.kSize * l.kSize);
+    let kSum = 0;
+    for(let dy=-kr;dy<=kr;dy++) for(let dx=-kr;dx<=kr;dx++){
+      const r = Math.sqrt(dx*dx+dy*dy);
+      const v = r > kr ? 0 : Math.exp(-((r-2.5)*(r-2.5))/0.5);
+      l.K[(dy+kr)*l.kSize + (dx+kr)] = v;
+      kSum += v;
+    }
+    for(let i=0;i<l.K.length;i++) l.K[i] /= kSum;
+    l.canvas = document.createElement('canvas');
+    l.canvas.width = l.w; l.canvas.height = l.h;
+    l.ctx = l.canvas.getContext('2d');
+    l.imageData = l.ctx.createImageData(l.w, l.h);
+  }
+}
+function drawLenia(g, dt, T){
+  ensureLenia();
+  const l = modeState.lenia;
+  const dom = dominantEmo();
+  const mScale = (window._songMood && window._songMood.intensityScale) || 1;
+  l._t += dt;
+  // Update step at ~25 Hz (every 40 ms) — sped up by audio
+  const stepMs = 40 / (1 + (reactor.bass||0)*1.2) / mScale;
+  if(l._t > stepMs){
+    l._t = 0;
+    const w = l.w, h = l.h, grid = l.grid, next = l.next, K = l.K, kr = 4, kSize = l.kSize;
+    const mu = 0.15, sig = 0.014, dT = 0.1;
+    for(let y=0;y<h;y++){
+      for(let x=0;x<w;x++){
+        let u = 0;
+        for(let dy=-kr;dy<=kr;dy++){
+          const ny = (y+dy+h)%h * w;
+          const kBase = (dy+kr)*kSize;
+          for(let dx=-kr;dx<=kr;dx++){
+            const nx = (x+dx+w)%w;
+            u += K[kBase + (dx+kr)] * grid[ny + nx];
+          }
+        }
+        const growth = 2 * Math.exp(-((u-mu)*(u-mu))/(2*sig*sig)) - 1;
+        const nv = grid[y*w+x] + dT * growth;
+        next[y*w+x] = nv < 0 ? 0 : (nv > 1 ? 1 : nv);
+      }
+    }
+    l.grid = next; l.next = grid;
+  }
+  // Render
+  const data = l.imageData.data;
+  const c0 = _hslToRgbInt(dom.hue[0], dom.sat, dom.light);
+  const c1 = _hslToRgbInt(dom.hue[1], dom.sat, dom.light + 28);
+  for(let i=0;i<l.grid.length;i++){
+    const v = l.grid[i];
+    const o = i*4;
+    data[o]   = c0[0] + (c1[0]-c0[0]) * v;
+    data[o+1] = c0[1] + (c1[1]-c0[1]) * v;
+    data[o+2] = c0[2] + (c1[2]-c0[2]) * v;
+    data[o+3] = Math.floor(v * 240);
+  }
+  l.ctx.putImageData(l.imageData, 0, 0);
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  g.imageSmoothingEnabled = true;
+  g.globalAlpha = 0.85 + state.glow*0.15;
+  g.drawImage(l.canvas, 0, 0, W, H);
+  g.restore();
+}
+
+// ─── Double Pendulum 雙擺 ────────────────────────────────────────────────
+// Chaotic physical system. Trail traces beautiful unpredictable curves.
+function ensurePendulum(){
+  const p = modeState.pendulum;
+  if(!p.state){
+    p.state = { theta1: Math.PI*0.65, theta2: Math.PI*0.45, omega1: 0, omega2: 0 };
+    p.trail = [];
+  }
+}
+function drawPendulum(g, dt, T){
+  ensurePendulum();
+  const p = modeState.pendulum;
+  const dom = dominantEmo();
+  const mScale = (window._songMood && window._songMood.intensityScale) || 1;
+  const s = p.state;
+  const L1 = Math.min(W, H) * 0.22;
+  const L2 = Math.min(W, H) * 0.18;
+  const m1 = 1, m2 = 1;
+  const gravity = 0.4 + (reactor.bass||0)*0.5;
+  const steps = 6;
+  const dh = Math.min(50, dt) / 1000 / steps * mScale;
+  for(let i=0;i<steps;i++){
+    const sin12 = Math.sin(s.theta1 - s.theta2);
+    const cos12 = Math.cos(s.theta1 - s.theta2);
+    const den1 = L1 * (2*m1 + m2 - m2*Math.cos(2*s.theta1 - 2*s.theta2));
+    const den2 = L2 * (2*m1 + m2 - m2*Math.cos(2*s.theta1 - 2*s.theta2));
+    const num1 = -gravity*(2*m1+m2)*Math.sin(s.theta1)
+                 - m2*gravity*Math.sin(s.theta1-2*s.theta2)
+                 - 2*sin12*m2*(s.omega2*s.omega2*L2 + s.omega1*s.omega1*L1*cos12);
+    const num2 = 2*sin12*(s.omega1*s.omega1*L1*(m1+m2) + gravity*(m1+m2)*Math.cos(s.theta1) + s.omega2*s.omega2*L2*m2*cos12);
+    s.omega1 += (num1/den1) * dh;
+    s.omega2 += (num2/den2) * dh;
+    s.theta1 += s.omega1 * dh;
+    s.theta2 += s.omega2 * dh;
+  }
+  const x1 = CX + L1 * Math.sin(s.theta1);
+  const y1 = CY + L1 * Math.cos(s.theta1);
+  const x2 = x1 + L2 * Math.sin(s.theta2);
+  const y2 = y1 + L2 * Math.cos(s.theta2);
+  p.trail.push({ x: x2, y: y2 });
+  if(p.trail.length > 1400) p.trail.shift();
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  g.lineWidth = 1.5 + state.bloom * 0.8;
+  for(let i = 1; i < p.trail.length; i++){
+    const a = i / p.trail.length;
+    const hue = lerp(dom.hue[0], dom.hue[1], a);
+    g.strokeStyle = `hsla(${hue}, ${dom.sat+10}%, ${dom.light+22}%, ${a * (0.65 + state.glow*0.35)})`;
+    g.beginPath();
+    g.moveTo(p.trail[i-1].x, p.trail[i-1].y);
+    g.lineTo(p.trail[i].x, p.trail[i].y);
+    g.stroke();
+  }
+  // Pendulum arms
+  g.strokeStyle = `hsla(${lerp(dom.hue[0], dom.hue[1], 0.5)}, ${dom.sat}%, ${Math.min(95, dom.light+35)}%, 0.85)`;
+  g.lineWidth = 2.5;
+  g.beginPath();
+  g.moveTo(CX, CY); g.lineTo(x1, y1); g.lineTo(x2, y2);
+  g.stroke();
+  g.fillStyle = g.strokeStyle;
+  g.beginPath(); g.arc(x1, y1, 4, 0, TAU); g.fill();
+  g.beginPath(); g.arc(x2, y2, 6, 0, TAU); g.fill();
+  g.restore();
+}
+
+// ─── Galaxy 對數螺旋星系 ──────────────────────────────────────────────────
+function ensureGalaxy(){
+  if(modeState.galaxy.stars.length === 0){
+    const N = 500;
+    for(let i=0;i<N;i++){
+      const r = Math.pow(Math.random(), 0.5);  // skewed toward edges
+      const arm = Math.floor(Math.random()*4);
+      modeState.galaxy.stars.push({
+        r,
+        arm,
+        baseAngle: arm * Math.PI/2 + (Math.random()-0.5)*0.45,
+        speed: 0.7 + Math.random() * 0.6,
+        size: 0.5 + Math.random()*1.8,
+      });
+    }
+  }
+}
+function drawGalaxy(g, dt, T){
+  ensureGalaxy();
+  const stars = modeState.galaxy.stars;
+  const dom = dominantEmo();
+  const mScale = (window._songMood && window._songMood.intensityScale) || 1;
+  const t = state.t * 0.00025 * mScale;
+  const cx = CX, cy = CY;
+  const R = Math.min(W, H) * 0.45;
+  const bassPulse = 1 + (reactor.bass||0)*0.15;
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  for(const s of stars){
+    const r = s.r * R * bassPulse;
+    // Logarithmic spiral arm twist — outer stars trail behind
+    const twist = Math.log(s.r + 0.1) * 2.2;
+    const angle = s.baseAngle + t / (0.3 + s.r * 1.5) * s.speed + twist;
+    const x = cx + Math.cos(angle) * r;
+    const y = cy + Math.sin(angle) * r;
+    const hue = lerp(dom.hue[0], dom.hue[1], s.r);
+    const a = (0.85 - s.r * 0.3) * (0.6 + state.glow*0.4);
+    g.fillStyle = `hsla(${hue}, ${dom.sat+10}%, ${dom.light+22}%, ${a})`;
+    g.beginPath();
+    g.arc(x, y, s.size + state.bloom*0.6, 0, TAU);
+    g.fill();
+  }
+  // Central bright core
+  const coreGrad = g.createRadialGradient(cx, cy, 0, cx, cy, R*0.25);
+  coreGrad.addColorStop(0, `hsla(${lerp(dom.hue[0], dom.hue[1], 0.5)}, ${dom.sat+10}%, ${Math.min(95, dom.light+35)}%, 0.7)`);
+  coreGrad.addColorStop(1, `hsla(${lerp(dom.hue[0], dom.hue[1], 0.5)}, ${dom.sat}%, ${dom.light}%, 0)`);
+  g.fillStyle = coreGrad;
+  g.beginPath(); g.arc(cx, cy, R*0.25, 0, TAU); g.fill();
+  g.restore();
+}
+
+// ─── Penrose Tiling 五重非週期密鋪 ────────────────────────────────────────
+// Robinson triangle deflation algorithm. Generates aperiodic 5-fold symmetric
+// pattern. Pre-generated once; rotated/scaled in render.
+function _makePenroseTriangles(depth){
+  const PHI = (1 + Math.sqrt(5)) / 2;
+  let triangles = [];
+  for(let i = 0; i < 10; i++){
+    const a1 = ((i - 1) * 36 - 180) * Math.PI / 180;
+    const a2 = (i * 36 - 180) * Math.PI / 180;
+    let v1 = [Math.cos(a1), Math.sin(a1)];
+    let v2 = [Math.cos(a2), Math.sin(a2)];
+    if(i % 2 === 0){ const tmp = v1; v1 = v2; v2 = tmp; }
+    triangles.push({ k: 0, A: [0,0], B: v1, C: v2 });
+  }
+  for(let n = 0; n < depth; n++){
+    const next = [];
+    for(const t of triangles){
+      const A = t.A, B = t.B, C = t.C;
+      if(t.k === 0){
+        const P = [A[0] + (B[0]-A[0])/PHI, A[1] + (B[1]-A[1])/PHI];
+        next.push({ k:0, A:C, B:P, C:B });
+        next.push({ k:1, A:P, B:C, C:A });
+      } else {
+        const Q = [B[0] + (A[0]-B[0])/PHI, B[1] + (A[1]-B[1])/PHI];
+        const R = [B[0] + (C[0]-B[0])/PHI, B[1] + (C[1]-B[1])/PHI];
+        next.push({ k:1, A:R, B:C, C:A });
+        next.push({ k:1, A:Q, B:R, C:B });
+        next.push({ k:0, A:R, B:Q, C:A });
+      }
+    }
+    triangles = next;
+  }
+  return triangles;
+}
+function drawPenrose(g, dt, T){
+  const p = modeState.penrose;
+  const dom = dominantEmo();
+  const wantDepth = 5;
+  if(!p.triangles || p.depth !== wantDepth){
+    p.triangles = _makePenroseTriangles(wantDepth);
+    p.depth = wantDepth;
+  }
+  const cx = CX, cy = CY;
+  const scale = Math.min(W, H) * 0.48;
+  const rot = state.t * 0.00006 * (1 + (reactor.bass||0)*0.5);
+  const cos = Math.cos(rot), sin = Math.sin(rot);
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  const fillThin = `hsla(${dom.hue[0]}, ${dom.sat+5}%, ${dom.light+18}%, ${0.55 + state.glow*0.25})`;
+  const fillThick = `hsla(${dom.hue[1]}, ${dom.sat+10}%, ${dom.light+26}%, ${0.55 + state.glow*0.25})`;
+  const strokeCol = `hsla(${lerp(dom.hue[0], dom.hue[1], 0.5)}, ${dom.sat}%, ${dom.light+10}%, ${0.5 + state.glow*0.3})`;
+  g.lineWidth = Math.max(0.6, state.bloom * 0.8);
+  for(const t of p.triangles){
+    const ax = t.A[0]*scale, ay = t.A[1]*scale;
+    const bx = t.B[0]*scale, by = t.B[1]*scale;
+    const cx2 = t.C[0]*scale, cy2 = t.C[1]*scale;
+    const Ax = cx + ax*cos - ay*sin, Ay = cy + ax*sin + ay*cos;
+    const Bx = cx + bx*cos - by*sin, By = cy + bx*sin + by*cos;
+    const Cx = cx + cx2*cos - cy2*sin, Cy = cy + cx2*sin + cy2*cos;
+    g.fillStyle = t.k === 0 ? fillThin : fillThick;
+    g.strokeStyle = strokeCol;
+    g.beginPath();
+    g.moveTo(Ax, Ay);
+    g.lineTo(Bx, By);
+    g.lineTo(Cx, Cy);
+    g.closePath();
+    g.fill();
     g.stroke();
   }
   g.restore();
@@ -6636,7 +7425,7 @@ function drawEva(g, dt, T){
 // ============================================================
 // Auto-cycle: detect music sections and rotate enabled modes
 // ============================================================
-const CYCLE_MODES = ['lineTrace','flowField','curlNoise','attractor','substrate','reaction','sumie','opart','lissajous','voronoi','boids','chladni','dla','spectro','meta','synth','mandalaRings','waveform','constellation','spiral','ripples','crystals','ribbons','tunnel','halftone','petals','aurora','inkWash','popArt','polygon','matrix','glitch','eva'];
+const CYCLE_MODES = ['lineTrace','flowField','curlNoise','attractor','substrate','reaction','sumie','opart','lissajous','voronoi','boids','chladni','dla','spectro','meta','synth','life','lsys','harmono','truchet','nbody','spiro','marbling','hilbert','lenia','pendulum','galaxy','penrose','mandalaRings','waveform','constellation','spiral','ripples','crystals','ribbons','tunnel','halftone','petals','aurora','inkWash','popArt','polygon','matrix','glitch','eva'];
 let _cycleIdx = 0;
 function maybeAutoCycle(now){
   if(!state.autoCycle) return;
@@ -6686,6 +7475,18 @@ window._drawModes = function(g, dt, T){
   if(state.modes.spectro)       drawSpectrogram(g, dt, T);
   if(state.modes.meta)          drawMetaballs(g, dt, T);
   if(state.modes.synth)         drawSynthwave(g, dt, T);
+  if(state.modes.life)          drawLife(g, dt, T);
+  if(state.modes.lsys)          drawLSystem(g, dt, T);
+  if(state.modes.harmono)       drawHarmonograph(g, dt, T);
+  if(state.modes.truchet)       drawTruchet(g, dt, T);
+  if(state.modes.nbody)         drawNbody(g, dt, T);
+  if(state.modes.spiro)         drawSpirograph(g, dt, T);
+  if(state.modes.marbling)      drawMarbling(g, dt, T);
+  if(state.modes.hilbert)       drawHilbert(g, dt, T);
+  if(state.modes.lenia)         drawLenia(g, dt, T);
+  if(state.modes.pendulum)      drawPendulum(g, dt, T);
+  if(state.modes.galaxy)        drawGalaxy(g, dt, T);
+  if(state.modes.penrose)       drawPenrose(g, dt, T);
   if(state.modes.beatStrobe)    drawBeatStrobe(g, dt, T);
   if(state.modes.mandalaRings)  drawMandalaRings(g, dt, T);
   if(state.modes.waveform)      drawWaveform(g, dt, T);
@@ -7406,8 +8207,20 @@ function randomizeAll(){
     modeState.chladni.canvas = null; modeState.chladni.t = 0;
     modeState.dla.grid = null; modeState.dla.walkers.length = 0;
     modeState.spectro.canvas = null;
-    modeState.meta.balls.length = 0;
+    modeState.meta.balls.length = 0; modeState.meta.canvas = null;
     modeState.synth.t = 0;
+    modeState.life.grid = null;
+    modeState.lsys._t = 0; modeState.lsys._rule = 0;
+    modeState.harmono.t = 0;
+    modeState.truchet.t = 0;
+    modeState.nbody.particles.length = 0;
+    modeState.spiro.t = 0;
+    modeState.marbling.canvas = null; modeState.marbling.t = 0;
+    modeState.hilbert.points = null; modeState.hilbert.t = 0;
+    modeState.lenia.grid = null; modeState.lenia.canvas = null;
+    modeState.pendulum.state = null; modeState.pendulum.trail.length = 0;
+    modeState.galaxy.stars.length = 0;
+    modeState.penrose.triangles = null;
     modeState.ringTimer = 0;
     modeState.rippleTimer = 0;
   }
@@ -7472,6 +8285,10 @@ function randomizeAll(){
     beatStrobe:1, bpmKaleido:0,
     boids:3, chladni:3, dla:2,
     spectro:2, meta:2, synth:2,
+    life:3, lsys:2, harmono:2,
+    truchet:2, nbody:3, spiro:2,
+    marbling:2, hilbert:2, lenia:4,
+    pendulum:2, galaxy:2, penrose:3,
     inkWash:3, matrix:3, eva:3,
     popArt:4, glitch:4,
     pixel8:5,
@@ -7481,16 +8298,16 @@ function randomizeAll(){
   const budget = budgetBase + Math.floor(hot * 2);  // hot music allowed a little more chaos
 
   // In lightMode (white canvas) bright-content modes vanish — pool MUST favor dark/contrasted content.
-  const lightFriendly = ['inkWash','polygon','popArt','glitch','eva','halftone','lineTrace','constellation','spiral','crystals','tunnel','attractor','substrate','sumie','opart','lissajous','voronoi','boids','chladni','dla','spectro','synth'];
+  const lightFriendly = ['inkWash','polygon','popArt','glitch','eva','halftone','lineTrace','constellation','spiral','crystals','tunnel','attractor','substrate','sumie','opart','lissajous','voronoi','boids','chladni','dla','spectro','synth','life','lsys','harmono','truchet','nbody','spiro','marbling','hilbert','lenia','pendulum','galaxy','penrose'];
   const lightHostile  = new Set(['matrix','aurora','ribbons','petals']);  // these wash out on cream bg
 
   let hotModes, coolModes;
   if(state.lightMode){
-    hotModes  = ['popArt','glitch','polygon','eva','halftone','spiral','crystals','tunnel','inkWash','attractor','substrate','opart','lissajous','boids','dla','synth','spectro'];
-    coolModes = ['lineTrace','flowField','constellation','inkWash','polygon','halftone','waveform','curlNoise','attractor','substrate','reaction','sumie','voronoi','boids','chladni','dla','meta','synth'];
+    hotModes  = ['popArt','glitch','polygon','eva','halftone','spiral','crystals','tunnel','inkWash','attractor','substrate','opart','lissajous','boids','dla','synth','spectro','life','harmono','truchet','nbody','spiro','hilbert','marbling','galaxy','penrose'];
+    coolModes = ['lineTrace','flowField','constellation','inkWash','polygon','halftone','waveform','curlNoise','attractor','substrate','reaction','sumie','voronoi','boids','chladni','dla','meta','synth','life','lsys','harmono','truchet','nbody','spiro','marbling','hilbert','lenia','pendulum','galaxy','penrose'];
   } else {
-    hotModes  = ['crystals','ripples','spiral','tunnel','mandalaRings','halftone','popArt','glitch','polygon','matrix','eva','pixel8','attractor','substrate','opart','lissajous','boids','dla','synth','spectro','meta'];
-    coolModes = ['lineTrace','flowField','constellation','ribbons','petals','aurora','waveform','inkWash','polygon','matrix','curlNoise','attractor','substrate','reaction','sumie','voronoi','boids','chladni','dla','meta','synth'];
+    hotModes  = ['crystals','ripples','spiral','tunnel','mandalaRings','halftone','popArt','glitch','polygon','matrix','eva','pixel8','attractor','substrate','opart','lissajous','boids','dla','synth','spectro','meta','life','harmono','truchet','nbody','spiro','hilbert','marbling','galaxy','penrose'];
+    coolModes = ['lineTrace','flowField','constellation','ribbons','petals','aurora','waveform','inkWash','polygon','matrix','curlNoise','attractor','substrate','reaction','sumie','voronoi','boids','chladni','dla','meta','synth','life','lsys','harmono','truchet','nbody','spiro','marbling','hilbert','lenia','pendulum','galaxy','penrose'];
   }
   const maxModes = 3;
   const targetN = Math.min(maxModes, 1 + Math.floor(Math.random()*(1 + hot*2.2)));
