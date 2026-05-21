@@ -2071,7 +2071,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-19m · Setlist thumbnails + crossfade transitions');
+console.log('[IW] script booting · build 2026-05-19n · 60fps budget + heavy-mode cap');
 
 // Click diagnostics — log every click so we can see where they reach.
 // Capture phase so we see clicks BEFORE any interceptor swallows them.
@@ -8580,14 +8580,18 @@ function randomizeAll(){
     truchet:2, nbody:3, spiro:2,
     marbling:2, hilbert:2, lenia:4,
     pendulum:2, galaxy:2, penrose:3,
-    pwave:1, mandel:3, wireworld:2,
+    pwave:1, mandel:4, wireworld:2,
     inkWash:3, matrix:3, eva:3,
     popArt:4, glitch:4,
     pixel8:5,
   };
-  // Budget — tuned for ~45-60fps on typical hardware. Larger pixelRatio screens get less.
-  const budgetBase = state.pixelRatio >= 2 ? 6 : 8;
-  const budget = budgetBase + Math.floor(hot * 2);  // hot music allowed a little more chaos
+  // Budget — tuned for 60fps target. Lower on high-DPI screens. Dynamic perf
+  // throttle (perf.avgFps) further reduces budget when frames drop.
+  const fpsHealth = (window._perf && window._perf.avgFps) || 60;
+  let budgetBase = state.pixelRatio >= 2 ? 4 : 5;
+  if(fpsHealth < 45) budgetBase = Math.max(3, budgetBase - 2);
+  else if(fpsHealth < 55) budgetBase = Math.max(3, budgetBase - 1);
+  const budget = budgetBase + Math.floor(hot * 1.5);
 
   // In lightMode (white canvas) bright-content modes vanish — pool MUST favor dark/contrasted content.
   const lightFriendly = ['inkWash','polygon','popArt','glitch','eva','halftone','lineTrace','constellation','spiral','crystals','tunnel','attractor','substrate','sumie','opart','lissajous','voronoi','boids','chladni','dla','spectro','synth','life','lsys','harmono','truchet','nbody','spiro','marbling','hilbert','lenia','pendulum','galaxy','penrose','pwave','mandel','wireworld'];
@@ -8601,23 +8605,25 @@ function randomizeAll(){
     hotModes  = ['crystals','ripples','spiral','tunnel','mandalaRings','halftone','popArt','glitch','polygon','matrix','eva','pixel8','attractor','substrate','opart','lissajous','boids','dla','synth','spectro','meta','life','harmono','truchet','nbody','spiro','hilbert','marbling','galaxy','penrose'];
     coolModes = ['lineTrace','flowField','constellation','ribbons','petals','aurora','waveform','inkWash','polygon','matrix','curlNoise','attractor','substrate','reaction','sumie','voronoi','boids','chladni','dla','meta','synth','life','lsys','harmono','truchet','nbody','spiro','marbling','hilbert','lenia','pendulum','galaxy','penrose'];
   }
-  const maxModes = 3;
-  const targetN = Math.min(maxModes, 1 + Math.floor(Math.random()*(1 + hot*2.2)));
+  const maxModes = 2;  // 60fps target: prefer 1-2 modes max instead of 3
+  const targetN = Math.min(maxModes, 1 + Math.floor(Math.random()*(1 + hot*1.5)));
   const enabled = new Set();
   let spent = 0;
-  for(let i=0;i<targetN*4 && enabled.size<targetN;i++){
+  let heavyCount = 0;  // count of modes with cost >= 3 (limit to 1)
+  for(let i=0;i<targetN*5 && enabled.size<targetN;i++){
     const pool = Math.random() < hot*0.7 + 0.15 ? hotModes : coolModes;
     const pick = pool[Math.floor(Math.random()*pool.length)];
     if(enabled.has(pick)) continue;
-    // Mutual-exclusion: pixel8 + popArt is murder
     if(pick === 'pixel8' && enabled.has('popArt')) continue;
     if(pick === 'popArt' && enabled.has('pixel8')) continue;
-    // lightMode hostility filter
     if(state.lightMode && lightHostile.has(pick)) continue;
     const cost = MODE_COST[pick] || 1;
     if(spent + cost > budget) continue;
+    // Cap: only ONE high-cost (>= 3) mode at a time to keep 60fps
+    if(cost >= 3 && heavyCount >= 1) continue;
     enabled.add(pick);
     spent += cost;
+    if(cost >= 3) heavyCount++;
     state.modes[pick] = true;
   }
   // GUARANTEE at least 1 mode — fallback prevents blank canvas (esp. on lightMode)
