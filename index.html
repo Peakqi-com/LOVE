@@ -728,6 +728,36 @@
   }
   .audio-btn:hover{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.16)}
   .audio-btn.danger{color:rgba(255,180,180,.85)}
+  /* Setlist slot card */
+  .setlist-slot{
+    background:rgba(255,255,255,.03);border:1px solid var(--hairline);border-radius:10px;
+    padding:8px;display:flex;flex-direction:column;gap:4px;position:relative;cursor:pointer;
+    transition:background .12s,border-color .12s;
+  }
+  .setlist-slot:hover{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.18)}
+  .setlist-slot.saved{border-color:rgba(155,211,167,.35);background:rgba(155,211,167,.05)}
+  .setlist-slot.flash{animation:slotFlash .35s ease-out}
+  @keyframes slotFlash{0%{background:rgba(155,211,167,.5)}100%{background:rgba(155,211,167,.05)}}
+  .setlist-slot .hk{
+    font-family:ui-monospace,monospace;font-size:13px;font-weight:700;background:rgba(0,0,0,.4);
+    color:var(--ink);padding:3px 7px;border-radius:5px;letter-spacing:.05em;align-self:flex-start;
+    cursor:pointer;border:1px solid rgba(255,255,255,.1);
+  }
+  .setlist-slot .hk.binding{background:rgba(255,140,0,.6);animation:slotPulse 0.5s infinite}
+  @keyframes slotPulse{50%{opacity:.4}}
+  .setlist-slot .sl-name{
+    background:transparent;border:none;color:var(--ink);font-family:var(--sans);font-size:12px;
+    width:100%;outline:none;padding:2px 0;border-bottom:1px dashed rgba(255,255,255,.08);
+  }
+  .setlist-slot .sl-name:focus{border-bottom-color:rgba(255,255,255,.3)}
+  .setlist-slot .sl-actions{display:flex;gap:4px;margin-top:2px}
+  .setlist-slot .sl-actions button{
+    flex:1;font-size:10px;padding:4px 6px;border-radius:6px;border:1px solid rgba(255,255,255,.08);
+    background:rgba(255,255,255,.03);color:var(--ink-soft);cursor:pointer;letter-spacing:.05em;
+  }
+  .setlist-slot .sl-actions button:hover{background:rgba(255,255,255,.08);color:var(--ink)}
+  .setlist-slot .sl-actions .save{color:#9bd3a7}
+  .setlist-slot .sl-actions .clear{color:rgba(255,180,180,.7)}
   .audio-row .grow{flex:1}
   .audio-note{font-family:var(--serif);font-style:italic;font-size:11.5px;color:var(--ink-faint);line-height:1.45}
   .audio-levels{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:4px}
@@ -1170,6 +1200,7 @@
       <button data-tab="live">Live</button>
       <button data-tab="type">Type</button>
       <button data-tab="compose">Compose</button>
+      <button data-tab="setlist">Show</button>
     </nav>
 
     <div class="panel-body">
@@ -1295,6 +1326,13 @@
             </div>
           </div>
           <label class="mode-chip" style="margin-top:2px"><input type="checkbox" id="lightModeToggle" /><span><strong>Light mode 反相</strong><em>white canvas · dark content (preserves hue)</em></span></label>
+          <div class="ctrl" style="margin-top:4px"><span class="label">Random 背景鎖</span><span class="val" id="bgLockVal">auto</span>
+            <div class="seg" id="bgLockSeg" style="grid-template-columns:repeat(3,1fr)">
+              <button data-bglock="auto" class="on">Auto</button>
+              <button data-bglock="dark">Dark</button>
+              <button data-bglock="light">Light</button>
+            </div>
+          </div>
         </div>
 
         <div class="section">
@@ -1827,6 +1865,15 @@
                 <button data-anim="sizeShake">Shake<em>抖動 忽大忽小</em></button>
                 <button data-anim="marquee">Marquee<em>跑馬燈</em></button>
                 <button data-anim="extrude3d">3D Extrude<em>立體擠出</em></button>
+                <button data-anim="neon">Neon<em>霓虹燈管</em></button>
+                <button data-anim="vapor">Vaporwave<em>蒸氣波 · RGB shift</em></button>
+                <button data-anim="liquid">Liquid<em>液態波動</em></button>
+                <button data-anim="dotmatrix">Dot Matrix<em>點陣 · 復古 LED</em></button>
+                <button data-anim="smoke">Smoke<em>煙霧消散</em></button>
+                <button data-anim="scramble">Scramble<em>亂碼解析 · matrix-style</em></button>
+                <button data-anim="pathSine">Path Sine<em>沿正弦曲線</em></button>
+                <button data-anim="staggerBounce">Stagger Bounce<em>逐字彈跳出場</em></button>
+                <button data-anim="holo">Holographic<em>全息彩虹</em></button>
               </div>
             </div>
             <details style="background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.07);border-radius:9px;padding:8px 10px">
@@ -1959,6 +2006,25 @@ return {
         </div>
       </section>
 
+      <!-- SETLIST — live show / concert preset slots with hotkeys -->
+      <section class="tab" data-tab="setlist">
+        <div class="section">
+          <h3 class="section-title">Setlist <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">演唱會 · 20 slots · 快捷鍵切換</em></h3>
+          <div class="phrase-row">
+            <input id="setlistName" type="text" placeholder="setlist 名稱 (e.g. tour 2026)" />
+            <button id="setlistExport">↧ Export</button>
+            <label class="audio-btn" for="setlistImportFile" style="text-align:center;cursor:pointer">↥ Import</label>
+            <input id="setlistImportFile" type="file" accept=".json,application/json" style="display:none" />
+          </div>
+          <div class="type-tip" style="margin-top:6px">
+            <strong>每格存一個完整視覺狀態</strong>（情緒、視覺 modes、字型、所有 slider）。
+            演出時按快捷鍵直接切換。預設快捷鍵 <code>1-9 0 Q W E R T Y U I O P</code>。
+            <strong>點 slot 名字</strong>編輯顯示文字，<strong>點 hotkey</strong>重新綁定。
+          </div>
+          <div id="setlistGrid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-top:8px"></div>
+        </div>
+      </section>
+
     </div>
   </aside>
 
@@ -1976,7 +2042,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-19g · Pendulum Wave + Mandelbrot + Wireworld');
+console.log('[IW] script booting · build 2026-05-19k · 4 GitHub-inspired Type anims + 20-slot SETLIST');
 
 // Click diagnostics — log every click so we can see where they reach.
 // Capture phase so we see clicks BEFORE any interceptor swallows them.
@@ -2218,6 +2284,7 @@ const state = {
   },
   // inverse palette — white canvas, dark content. CSS filter (invert + hue-rotate) preserves hue.
   lightMode: false,
+  bgLock: 'auto',  // 'auto' / 'dark' / 'light' — controls Random's lightMode pick
   // silent audio output — for projection windows. Visuals still react, no speaker sound.
   // Auto-enabled when ?silent=1 is in the URL.
   silentOutput: (new URLSearchParams(location.search)).has('silent'),
@@ -5924,13 +5991,17 @@ function drawTruchet(g, dt, T){
   const phase = Math.floor(tr.t * 2);
   g.save();
   g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
-  g.strokeStyle = `hsla(${lerp(dom.hue[0], dom.hue[1], 0.5)}, ${dom.sat+5}%, ${dom.light+18}%, ${0.75 + state.glow*0.25})`;
   g.lineWidth = Math.max(2, cs * 0.16 * (1 + (reactor.mid||0)*0.7));
   g.lineCap = 'round';
   for(let row=0; row<rows; row++){
     for(let col=0; col<cols; col++){
       const seed = Math.sin(col*12.9898 + row*78.233 + phase*3.7) * 43758;
       const flip = ((seed - Math.floor(seed)) < 0.5);
+      // Per-tile hue variation so the field has color, not just white wash
+      const hueShift = Math.sin(col*0.7 + row*0.4 + phase*0.3) * 30;
+      const hue = lerp(dom.hue[0], dom.hue[1], (col + row) / (cols + rows)) + hueShift;
+      const lit = state.lightMode ? Math.max(15, dom.light - 10) : Math.min(70, dom.light + 8);
+      g.strokeStyle = `hsla(${hue}, ${Math.min(95, dom.sat+25)}%, ${lit}%, ${0.85 + state.glow*0.15})`;
       const x = col * cs, y = row * cs;
       g.beginPath();
       if(flip){
@@ -8444,7 +8515,10 @@ function randomizeAll(){
   state.trails   = Math.max(0, cool*0.55 + Math.random()*0.35 - 0.1);
   state.grain    = Math.random() * 0.75;
   state.vignette = Math.random() * 0.6;
-  state.lightMode = Math.random() < 0.15;
+  // Respect user's bgLock: auto = random 15%, dark = always false, light = always true
+  if(state.bgLock === 'dark') state.lightMode = false;
+  else if(state.bgLock === 'light') state.lightMode = true;
+  else state.lightMode = Math.random() < 0.15;
   // Re-tune when light mode is on — keep paper clean, retain ink, less bloom, less vibrance
   if(state.lightMode){
     state.bgDark = Math.random() * 0.25;
@@ -8571,7 +8645,7 @@ function randomizeAll(){
 
   // 10. Type tab — randomize typography params (only when typography is on AND unlocked)
   if(state.modes.typography && typeof typo !== 'undefined'){
-    const animPool = ['breathe','flow','wave','popIn','glitch','drift','scalePulse','rotate','shimmer','comic','strobe','flipStyle','charBurst','sizeShake','marquee','extrude3d'];
+    const animPool = ['breathe','flow','wave','popIn','glitch','drift','scalePulse','rotate','shimmer','comic','strobe','flipStyle','charBurst','sizeShake','marquee','extrude3d','neon','vapor','liquid','dotmatrix','smoke','scramble','pathSine','staggerBounce','holo'];
     typo.anim = animPool[Math.floor(Math.random()*animPool.length)];
     const stylePool = ['solid','outline','mix','split'];
     typo.style = stylePool[Math.floor(Math.random()*stylePool.length)];
@@ -10435,6 +10509,30 @@ if(lightModeToggle){
     applyLightMode();
   });
 }
+// BG lock segment: auto / dark / light — controls what Random picks for lightMode
+(function _wireBgLock(){
+  const seg = document.getElementById('bgLockSeg');
+  const val = document.getElementById('bgLockVal');
+  if(!seg) return;
+  seg.querySelectorAll('button').forEach(b => {
+    b.addEventListener('click', () => {
+      seg.querySelectorAll('button').forEach(x => x.classList.remove('on'));
+      b.classList.add('on');
+      state.bgLock = b.dataset.bglock;
+      if(val) val.textContent = state.bgLock;
+      // Apply immediately when forcing dark/light
+      if(state.bgLock === 'dark'){
+        state.lightMode = false;
+        if(lightModeToggle) lightModeToggle.checked = false;
+        if(typeof applyLightMode === 'function') applyLightMode();
+      } else if(state.bgLock === 'light'){
+        state.lightMode = true;
+        if(lightModeToggle) lightModeToggle.checked = true;
+        if(typeof applyLightMode === 'function') applyLightMode();
+      }
+    });
+  });
+})();
 
 /* —————————————————————————————————————————————————————————————————————
    Live recording (MediaRecorder of canvas stream)
@@ -11891,8 +11989,6 @@ function drawTypography(g, dt, T){
       // per-word/per-char hash so positions don't flicker each frame.
       const chars = Array.from(w.text);
       const charSizeBase = _renderSize;
-      // Measure total natural width to space chars from left
-      let xOffset = 0;
       const measures = chars.map(ch => {
         const sFactor = 0.6 + ((Math.abs(Math.sin((w.phase + ch.charCodeAt(0)) * 12.9898)) % 1));
         const cs = charSizeBase * sFactor;
@@ -11903,14 +11999,228 @@ function drawTypography(g, dt, T){
       const totalW = measures.reduce((s, m) => s + m.mw + charSizeBase*0.08, 0);
       let cursor = -totalW / 2;
       for(const m of measures){
-        const t01char = Math.min(1, age * 6 * sp);  // type-on speed
+        const t01char = Math.min(1, age * 6 * sp);
         g.font = `${pickWeight(w)} ${m.cs}px ${fontStack()}`;
-        g.fillStyle = w.color;
-        // Each char gets a small wobble
         const wob = Math.sin(t0*4*sp + m.ch.charCodeAt(0)) * m.cs * 0.05;
         g.globalAlpha = Math.max(0, alpha * t01char);
         renderStyledText(g, m.ch, cursor + m.mw/2, wob, m.cs, w.color, w.outlineSpawn);
         cursor += m.mw + charSizeBase*0.08;
+      }
+    } else if(typo.anim === 'neon'){
+      // Neon tube: multi-layer outline glow + bright inner core
+      g.font = `${pickWeight(w)} ${_renderSize}px ${fontStack()}`;
+      g.textAlign = w.align; g.textBaseline = 'middle';
+      g.lineJoin = 'round'; g.lineCap = 'round';
+      // Outer glow passes (largest to smallest)
+      for(let pass = 5; pass >= 1; pass--){
+        g.globalAlpha = Math.max(0, alpha * (0.35 / pass));
+        g.strokeStyle = w.color;
+        g.lineWidth = _renderSize * 0.035 * pass;
+        g.strokeText(w.text, 0, 0);
+      }
+      // Bright fill (color)
+      g.globalAlpha = Math.max(0, alpha);
+      g.fillStyle = w.color;
+      g.fillText(w.text, 0, 0);
+      // Inner white-hot core (slightly smaller via scaled draw)
+      g.globalAlpha = Math.max(0, alpha * 0.85);
+      g.fillStyle = state.lightMode ? '#202028' : '#ffffff';
+      g.save();
+      g.scale(0.93, 0.93);
+      g.fillText(w.text, 0, 0);
+      g.restore();
+    } else if(typo.anim === 'vapor'){
+      // Vaporwave: cyan + magenta chromatic offset + white core
+      const shift = _renderSize * 0.05 * (1 + (reactor.bass||0)*1.5);
+      g.font = `${pickWeight(w)} ${_renderSize}px ${fontStack()}`;
+      g.textAlign = w.align; g.textBaseline = 'middle';
+      g.globalAlpha = Math.max(0, alpha * 0.75);
+      g.fillStyle = '#ff66cc';  // magenta layer
+      g.fillText(w.text, -shift, shift * 0.2);
+      g.fillStyle = '#66f0ff';  // cyan layer
+      g.fillText(w.text, shift, -shift * 0.2);
+      // Optional white core (or use user color)
+      g.globalAlpha = Math.max(0, alpha);
+      g.fillStyle = state.lightMode ? '#1a0028' : '#ffffff';
+      g.fillText(w.text, 0, 0);
+    } else if(typo.anim === 'liquid'){
+      // Per-character sine-wave vertical displacement + small skew
+      const chars = Array.from(w.text);
+      g.font = `${pickWeight(w)} ${_renderSize}px ${fontStack()}`;
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      const widths = chars.map(c => g.measureText(c).width);
+      const totalW = widths.reduce((s, x) => s + x, 0) + (chars.length-1) * _renderSize*0.02;
+      let cursor = -totalW / 2;
+      const waveAmp = _renderSize * (0.12 + (reactor.bass||0)*0.18);
+      for(let i=0;i<chars.length;i++){
+        const cw = widths[i];
+        const phaseCh = i * 0.55;
+        const wave = Math.sin(t0*3.2*sp + phaseCh) * waveAmp;
+        const skew = Math.cos(t0*2.4*sp + phaseCh*0.7) * 0.18;
+        g.save();
+        g.transform(1, skew, 0, 1, cursor + cw/2, 0);
+        g.globalAlpha = Math.max(0, alpha);
+        renderStyledText(g, chars[i], 0, wave, _renderSize, w.color, w.outlineSpawn);
+        g.restore();
+        cursor += cw + _renderSize*0.02;
+      }
+    } else if(typo.anim === 'dotmatrix'){
+      // Pixelated LED-display effect: render to offscreen, sample, draw as dots
+      if(!typo._dotCanvas) typo._dotCanvas = document.createElement('canvas');
+      const tc = typo._dotCanvas;
+      g.font = `${pickWeight(w)} ${_renderSize}px ${fontStack()}`;
+      const tw_m = g.measureText(w.text);
+      const tw = Math.max(8, Math.ceil(tw_m.width));
+      const th = Math.max(8, Math.ceil(_renderSize * 1.3));
+      tc.width = tw; tc.height = th;
+      const tctx = tc.getContext('2d');
+      tctx.clearRect(0, 0, tw, th);
+      tctx.font = `${pickWeight(w)} ${_renderSize}px ${fontStack()}`;
+      tctx.textAlign = 'left'; tctx.textBaseline = 'middle';
+      tctx.fillStyle = '#fff';
+      tctx.fillText(w.text, 0, th/2);
+      let data;
+      try { data = tctx.getImageData(0, 0, tw, th).data; } catch(_){ data = null; }
+      if(data){
+        const dotSize = Math.max(1.5, _renderSize * 0.045);
+        const gap = dotSize * 1.6;
+        g.globalAlpha = Math.max(0, alpha);
+        g.fillStyle = w.color;
+        for(let dy=gap/2; dy<th; dy += gap){
+          for(let dx=gap/2; dx<tw; dx += gap){
+            const ix = Math.floor(dx), iy = Math.floor(dy);
+            const i = (iy * tw + ix) * 4 + 3;
+            if(data[i] > 100){
+              g.beginPath();
+              g.arc(dx - tw/2, dy - th/2, dotSize, 0, TAU);
+              g.fill();
+            }
+          }
+        }
+      } else {
+        renderStyledText(g, w.text, 0, 0, _renderSize, w.color, w.outlineSpawn);
+      }
+    } else if(typo.anim === 'smoke'){
+      // Each character renders with a vertical drift + alpha fade based on per-
+      // char phase. Bottom = solid, top = dispersing.
+      const chars = Array.from(w.text);
+      g.font = `${pickWeight(w)} ${_renderSize}px ${fontStack()}`;
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      const widths = chars.map(c => g.measureText(c).width);
+      const totalW = widths.reduce((s, x) => s + x, 0) + (chars.length-1) * _renderSize*0.04;
+      let cursor = -totalW / 2;
+      for(let i=0;i<chars.length;i++){
+        const cw = widths[i];
+        const ph = (t0 * 0.5 * sp + i * 0.25) % 1;
+        const dy = -ph * _renderSize * 0.9;
+        const aCh = (1 - ph) * 0.95;
+        const jitterX = (Math.random() - 0.5) * ph * _renderSize * 0.12;
+        g.globalAlpha = Math.max(0, alpha * aCh);
+        renderStyledText(g, chars[i], cursor + cw/2 + jitterX, dy, _renderSize * (1 + ph*0.3), w.color, w.outlineSpawn);
+        cursor += cw + _renderSize*0.04;
+      }
+    } else if(typo.anim === 'scramble'){
+      // Matrix-style: chars start as random glyphs, resolve one-by-one over ~2s
+      const chars = Array.from(w.text);
+      const scrambleSet = '!<>-_\\/[]{}=+*^?#01abcdefXYZ';
+      g.font = `${pickWeight(w)} ${_renderSize}px ${fontStack()}`;
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      const widths = chars.map(c => g.measureText(c).width);
+      const totalW = widths.reduce((s,x)=>s+x, 0) + (chars.length-1)*_renderSize*0.025;
+      let cursor = -totalW/2;
+      const dom2 = dominantEmo();
+      const progress = Math.min(1, age * 0.55);
+      for(let i=0;i<chars.length;i++){
+        const cw = widths[i];
+        const charP = (progress - i / chars.length * 0.55) * 1.8;
+        let displayCh, useColor;
+        if(charP >= 1){
+          displayCh = chars[i];
+          useColor = w.color;
+        } else {
+          displayCh = scrambleSet[Math.floor(Math.random() * scrambleSet.length)];
+          // Tint scrambled chars with a brighter tail
+          useColor = `hsla(${dom2.hue[1]}, 75%, 65%, ${charP < 0 ? 0 : 1})`;
+        }
+        g.globalAlpha = Math.max(0, alpha * (charP < 0 ? 0 : 1));
+        renderStyledText(g, displayCh, cursor + cw/2, 0, _renderSize, useColor, w.outlineSpawn);
+        cursor += cw + _renderSize*0.025;
+      }
+    } else if(typo.anim === 'pathSine'){
+      // Chars laid along a moving sine wave; tangent rotation per char
+      const chars = Array.from(w.text);
+      g.font = `${pickWeight(w)} ${_renderSize}px ${fontStack()}`;
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      const widths = chars.map(c => g.measureText(c).width);
+      const charGap = _renderSize * 0.04;
+      const totalW = widths.reduce((s,x)=>s+x, 0) + (chars.length-1)*charGap;
+      let cursor = -totalW/2;
+      const ampl = _renderSize * (0.35 + (reactor.bass||0)*0.2);
+      const freq = 0.014;
+      const phaseShift = t0 * 1.6 * sp;
+      for(let i=0;i<chars.length;i++){
+        const cw = widths[i];
+        const xPos = cursor + cw/2;
+        const wave = Math.sin(xPos * freq + phaseShift) * ampl;
+        const slope = Math.cos(xPos * freq + phaseShift) * ampl * freq;
+        const rotCh = Math.atan(slope);
+        g.save();
+        g.translate(xPos, wave);
+        g.rotate(rotCh);
+        g.globalAlpha = Math.max(0, alpha);
+        renderStyledText(g, chars[i], 0, 0, _renderSize, w.color, w.outlineSpawn);
+        g.restore();
+        cursor += cw + charGap;
+      }
+    } else if(typo.anim === 'staggerBounce'){
+      // Each char enters with stagger delay using easeOutBack overshoot
+      const chars = Array.from(w.text);
+      g.font = `${pickWeight(w)} ${_renderSize}px ${fontStack()}`;
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      const widths = chars.map(c => g.measureText(c).width);
+      const charGap = _renderSize * 0.03;
+      const totalW = widths.reduce((s,x)=>s+x, 0) + (chars.length-1)*charGap;
+      let cursor = -totalW/2;
+      const stagger = 0.06;
+      for(let i=0;i<chars.length;i++){
+        const cw = widths[i];
+        const tCh = (age - i * stagger) * 4.5 * sp;
+        if(tCh > 0){
+          const springT = Math.min(1.2, tCh);
+          const sFactor = springT < 1 ? easeOutBack(springT) : (1 + Math.sin((springT-1)*6) * Math.exp(-(springT-1)*3) * 0.08);
+          const yOff = (1 - Math.min(1, tCh)) * _renderSize * 0.6;
+          g.save();
+          g.translate(cursor + cw/2, yOff);
+          g.scale(sFactor, sFactor);
+          g.globalAlpha = Math.max(0, alpha * Math.min(1, tCh * 1.5));
+          renderStyledText(g, chars[i], 0, 0, _renderSize, w.color, w.outlineSpawn);
+          g.restore();
+        }
+        cursor += cw + charGap;
+      }
+    } else if(typo.anim === 'holo'){
+      // Holographic: per-char rainbow hue cycling + chromatic offset shadow
+      const chars = Array.from(w.text);
+      g.font = `${pickWeight(w)} ${_renderSize}px ${fontStack()}`;
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      const widths = chars.map(c => g.measureText(c).width);
+      const charGap = _renderSize * 0.02;
+      const totalW = widths.reduce((s,x)=>s+x, 0) + (chars.length-1)*charGap;
+      let cursor = -totalW/2;
+      const hueBase = t0 * 80 * sp + (reactor.bass||0) * 60;
+      for(let i=0;i<chars.length;i++){
+        const cw = widths[i];
+        const hue = (hueBase + i * 28) % 360;
+        const mainCol = `hsl(${hue}, 92%, 62%)`;
+        const ghostCol = `hsl(${(hue+180)%360}, 92%, 62%)`;
+        const offset = 3 + state.bloom*4;
+        // Chromatic offset shadow
+        g.globalAlpha = Math.max(0, alpha * 0.55);
+        renderStyledText(g, chars[i], cursor + cw/2 + offset, -1, _renderSize, ghostCol, w.outlineSpawn);
+        // Main character
+        g.globalAlpha = Math.max(0, alpha);
+        renderStyledText(g, chars[i], cursor + cw/2, 0, _renderSize, mainCol, w.outlineSpawn);
+        cursor += cw + charGap;
       }
     } else {
       renderStyledText(g, w.text, 0, 0, _renderSize, w.color, w.outlineSpawn);
@@ -12463,6 +12773,191 @@ $('presetImportFile').addEventListener('change', async e => {
   }catch(err){ console.error(err); alert('Import failed — invalid file?'); }
   e.target.value = '';
 });
+
+/* —————————————————————————————————————————————————————————————————————
+   SETLIST — 20 preset slots with hotkeys for live performance.
+   Each slot stores a captureSnapshot() result and binds a keyboard key.
+   Persisted to localStorage. Keys default to 1234567890qwertyuiop (20).
+   ————————————————————————————————————————————————————————————————————— */
+const SETLIST_KEY = 'inner-weather-setlist-v1';
+const SETLIST_SLOT_COUNT = 20;
+const SETLIST_DEFAULT_KEYS = ['1','2','3','4','5','6','7','8','9','0','q','w','e','r','t','y','u','i','o','p'];
+let setlist = { name: '', slots: [] };
+function _setlistDefault(){
+  return {
+    name: '',
+    slots: Array.from({length: SETLIST_SLOT_COUNT}, (_, i) => ({
+      name: '', hotkey: SETLIST_DEFAULT_KEYS[i] || '', snapshot: null,
+    })),
+  };
+}
+try {
+  const raw = localStorage.getItem(SETLIST_KEY);
+  if(raw){
+    const parsed = JSON.parse(raw);
+    if(parsed && Array.isArray(parsed.slots)){
+      setlist = parsed;
+      // ensure length
+      while(setlist.slots.length < SETLIST_SLOT_COUNT) setlist.slots.push({ name:'', hotkey: SETLIST_DEFAULT_KEYS[setlist.slots.length]||'', snapshot:null });
+    } else {
+      setlist = _setlistDefault();
+    }
+  } else {
+    setlist = _setlistDefault();
+  }
+} catch(_){ setlist = _setlistDefault(); }
+function _setlistPersist(){
+  try { localStorage.setItem(SETLIST_KEY, JSON.stringify(setlist)); } catch(_){}
+}
+let _slotBinding = -1;  // index of slot currently waiting for hotkey bind
+function _renderSetlist(){
+  const grid = document.getElementById('setlistGrid');
+  if(!grid) return;
+  const nameEl = document.getElementById('setlistName');
+  if(nameEl && nameEl.value !== setlist.name) nameEl.value = setlist.name || '';
+  grid.innerHTML = '';
+  for(let i=0; i<setlist.slots.length; i++){
+    const slot = setlist.slots[i];
+    const card = document.createElement('div');
+    card.className = 'setlist-slot' + (slot.snapshot ? ' saved' : '');
+    card.dataset.idx = String(i);
+    const hk = document.createElement('div');
+    hk.className = 'hk' + (_slotBinding === i ? ' binding' : '');
+    hk.textContent = _slotBinding === i ? '...' : (slot.hotkey || '–').toUpperCase();
+    hk.title = 'Click then press a key to rebind';
+    hk.addEventListener('click', (e) => {
+      e.stopPropagation();
+      _slotBinding = (_slotBinding === i) ? -1 : i;
+      _renderSetlist();
+    });
+    card.appendChild(hk);
+    const nameInp = document.createElement('input');
+    nameInp.className = 'sl-name';
+    nameInp.type = 'text';
+    nameInp.placeholder = `Slot ${i+1}`;
+    nameInp.value = slot.name || '';
+    nameInp.addEventListener('click', e => e.stopPropagation());
+    nameInp.addEventListener('input', () => {
+      slot.name = nameInp.value;
+      _setlistPersist();
+    });
+    card.appendChild(nameInp);
+    const actions = document.createElement('div');
+    actions.className = 'sl-actions';
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'save';
+    saveBtn.textContent = slot.snapshot ? '⟳ Re-save' : '+ Save';
+    saveBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      slot.snapshot = captureSnapshot();
+      _setlistPersist();
+      _renderSetlist();
+      card.classList.add('flash');
+    });
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'clear';
+    clearBtn.textContent = '✕ Clear';
+    clearBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      slot.snapshot = null;
+      _setlistPersist();
+      _renderSetlist();
+    });
+    actions.appendChild(saveBtn);
+    actions.appendChild(clearBtn);
+    card.appendChild(actions);
+    // Click card → load preset (if saved)
+    card.addEventListener('click', () => {
+      if(!slot.snapshot){
+        // No snapshot yet — save current state into this slot
+        slot.snapshot = captureSnapshot();
+        _setlistPersist();
+        _renderSetlist();
+        card.classList.add('flash');
+        return;
+      }
+      applySnapshot(slot.snapshot);
+      // Flash all matching cards briefly
+      grid.querySelectorAll('.setlist-slot').forEach(c => c.classList.remove('flash'));
+      card.classList.add('flash');
+      setTimeout(() => card.classList.remove('flash'), 400);
+    });
+    grid.appendChild(card);
+  }
+}
+// Setlist name input
+(() => {
+  const nameEl = document.getElementById('setlistName');
+  if(nameEl){
+    nameEl.addEventListener('input', () => { setlist.name = nameEl.value; _setlistPersist(); });
+  }
+})();
+// Export
+const _slExportBtn = document.getElementById('setlistExport');
+if(_slExportBtn){
+  _slExportBtn.addEventListener('click', () => {
+    const data = { _kind: 'inner-weather-setlist', name: setlist.name, slots: setlist.slots };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `setlist-${(setlist.name||'untitled').replace(/[^a-z0-9-_]+/gi,'_')}-${Date.now()}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 2000);
+  });
+}
+// Import
+const _slImportEl = document.getElementById('setlistImportFile');
+if(_slImportEl){
+  _slImportEl.addEventListener('change', async e => {
+    const f = e.target.files && e.target.files[0]; if(!f) return;
+    try{
+      const text = await f.text();
+      const data = JSON.parse(text);
+      if(data._kind !== 'inner-weather-setlist'){ alert('Not a setlist file.'); return; }
+      if(!confirm(`Replace current setlist with "${data.name||'imported'}"? (${(data.slots||[]).filter(s=>s.snapshot).length} saved slots)`)) return;
+      setlist.name = data.name || '';
+      const slots = Array.isArray(data.slots) ? data.slots : [];
+      for(let i=0;i<SETLIST_SLOT_COUNT;i++){
+        const src = slots[i];
+        setlist.slots[i] = src ? { name: src.name||'', hotkey: src.hotkey || SETLIST_DEFAULT_KEYS[i], snapshot: src.snapshot||null } : { name:'', hotkey:SETLIST_DEFAULT_KEYS[i], snapshot:null };
+      }
+      _setlistPersist();
+      _renderSetlist();
+    } catch(err){ alert('Import failed: ' + err.message); }
+    e.target.value = '';
+  });
+}
+// Global keydown — hotkey activation + binding capture
+window.addEventListener('keydown', (e) => {
+  // Skip if typing in an input/textarea/contentEditable
+  const tg = e.target;
+  if(tg && (tg.tagName === 'INPUT' || tg.tagName === 'TEXTAREA' || tg.isContentEditable)) return;
+  if(e.metaKey || e.ctrlKey || e.altKey) return;
+  const key = (e.key || '').toLowerCase();
+  if(!key || key.length !== 1) return;
+  // Binding mode — capture key
+  if(_slotBinding >= 0){
+    setlist.slots[_slotBinding].hotkey = key;
+    _slotBinding = -1;
+    _setlistPersist();
+    _renderSetlist();
+    e.preventDefault();
+    return;
+  }
+  // Look up hotkey → slot
+  const slot = setlist.slots.find(s => s.hotkey && s.hotkey.toLowerCase() === key && s.snapshot);
+  if(slot){
+    applySnapshot(slot.snapshot);
+    e.preventDefault();
+    // visual flash on the matching card if visible
+    const idx = setlist.slots.indexOf(slot);
+    const card = document.querySelector(`.setlist-slot[data-idx="${idx}"]`);
+    if(card){ card.classList.add('flash'); setTimeout(()=>card.classList.remove('flash'), 400); }
+  }
+}, true);
+// Initial render
+_renderSetlist();
 
 /* —————————————————————————————————————————————————————————————————————
    Custom typography effects (user-defined animation functions).
