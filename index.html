@@ -1750,6 +1750,22 @@
               </div>
               <div class="type-tip" style="margin-top:5px">擇一：face → 從眼睛長出；hand → 從手指長出。</div>
               <label class="mode-chip" style="margin-top:6px"><input type="checkbox" id="camRemoveBg" /><span><strong>Remove background 去背</strong><em>keep person only (selfie segmenter)</em></span></label>
+              <div class="ctrl" style="margin-top:6px"><span class="label">邊緣柔化 feather</span><span class="val" id="camBgFeatherVal">0.50</span>
+                <div class="slider"><div class="track"></div><div class="fill" id="camBgFeatherFill"></div><div class="thumb" id="camBgFeatherThumb"></div>
+                  <input type="range" min="0" max="100" value="50" id="camBgFeather" />
+                </div>
+              </div>
+              <div class="ctrl"><span class="label">時間平滑 smooth</span><span class="val" id="camBgSmoothVal">0.55</span>
+                <div class="slider"><div class="track"></div><div class="fill" id="camBgSmoothFill"></div><div class="thumb" id="camBgSmoothThumb"></div>
+                  <input type="range" min="0" max="100" value="55" id="camBgSmooth" />
+                </div>
+              </div>
+              <div class="ctrl"><span class="label">Model 模型</span>
+                <div class="seg" id="camBgModelSeg" style="grid-template-columns:repeat(2,1fr)">
+                  <button data-segmodel="fast" class="on">Fast</button>
+                  <button data-segmodel="multiclass">Hair-aware 多分類</button>
+                </div>
+              </div>
             </div>
             <div>
               <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Effect</span>
@@ -2071,7 +2087,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-22 · whiteout prevention + Type contrast lock to bg');
+console.log('[IW] script booting · build 2026-05-22a · improved bg removal (soft mask + temporal smooth + multiclass model)');
 
 // Click diagnostics — log every click so we can see where they reach.
 // Capture phase so we see clicks BEFORE any interceptor swallows them.
@@ -10932,6 +10948,9 @@ const cam = {
   lastDetectT: 0,
   // background removal (face track) — keeps only the person
   removeBg: false,
+  bgFeather: 0.5,       // 0 = sharp edges, 1 = very soft
+  bgSmooth: 0.55,       // 0 = no temporal blend, 1 = freeze (typical 0.5-0.7)
+  bgModel: 'fast',      // 'fast' (selfie_segmenter) | 'multiclass' (selfie_multiclass_256x256)
   segMaskData: null,    // Uint8Array category mask (1 byte per pixel, 0=person, 255=bg by model convention; we treat <128 as person)
   segMaskW: 0, segMaskH: 0,
   // off-screen for sampling video frames
@@ -10968,8 +10987,14 @@ async function loadMediaPipe(which){
   }
   if(which === 'seg' && !cam.segLM && ImageSegmenter){
     cam.segLoading = true;
+    // 'fast': selfie_segmenter (single-class person/bg, fastest, default)
+    // 'multiclass': selfie_multiclass_256x256 (hair / body-skin / face / clothes / accessories / bg)
+    //               combines all person classes; better edges around hair
+    const modelUrl = (cam.bgModel === 'multiclass')
+      ? 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/1/selfie_multiclass_256x256.tflite'
+      : 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/1/selfie_segmenter.tflite';
     cam.segLM = await ImageSegmenter.createFromOptions(vision, {
-      baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/1/selfie_segmenter.tflite', delegate:'GPU' },
+      baseOptions: { modelAssetPath: modelUrl, delegate:'GPU' },
       runningMode: 'VIDEO', outputCategoryMask: true, outputConfidenceMasks: false,
     });
     cam.segLoading = false;
@@ -11097,6 +11122,32 @@ if(camRemoveBg){
     }
   });
 }
+// Feather + smoothing sliders
+wireCamSlider('camBgFeather','camBgFeatherFill','camBgFeatherThumb','camBgFeatherVal','bgFeather', v => (v/100).toFixed(2), v => v/100);
+wireCamSlider('camBgSmooth','camBgSmoothFill','camBgSmoothThumb','camBgSmoothVal','bgSmooth', v => (v/100).toFixed(2), v => v/100);
+// Model picker — switching forces re-init
+const _camBgModelSeg = document.getElementById('camBgModelSeg');
+if(_camBgModelSeg){
+  _camBgModelSeg.querySelectorAll('button').forEach(b => {
+    b.addEventListener('click', async () => {
+      const newModel = b.dataset.segmodel;
+      if(cam.bgModel === newModel) return;
+      _camBgModelSeg.querySelectorAll('button').forEach(x => x.classList.remove('on'));
+      b.classList.add('on');
+      cam.bgModel = newModel;
+      // Force reload model on next use
+      if(cam.segLM){
+        try { cam.segLM.close && cam.segLM.close(); } catch(_){}
+        cam.segLM = null;
+      }
+      if(cam.removeBg){
+        setCamStatus('loading ' + newModel + ' segmenter…');
+        await loadMediaPipe('seg');
+        setCamStatus(cam.ready ? 'live · ' + cam.track + ' · ' + newModel : newModel + ' ready');
+      }
+    });
+  });
+}
 
 /* —————————————————————————————————————————————————————————————————————
    MediaPipe detection loop (decoupled from main RAF; faster)
@@ -11131,22 +11182,51 @@ async function detectLoop(){
 detectLoop();
 
 // Build/refresh the alpha mask canvas from segMaskData (0=person, 255=bg in selfie_segmenter)
+// — Soft-edge mask (gradient at threshold)
+// — Temporal EMA smoothing (reduce jitter / flicker)
+// — Feather radius controlled by cam.bgFeather (0-1)
 const _segMaskCv = document.createElement('canvas');
 const _segMaskCtx = _segMaskCv.getContext('2d', { willReadFrequently: false });
+let _segMaskPrev = null;  // Uint8ClampedArray of last frame's alpha (for EMA)
 function rebuildSegMaskCanvas(){
   if(!cam.segMaskData || !cam.segMaskW || !cam.segMaskH) return null;
   if(_segMaskCv.width !== cam.segMaskW || _segMaskCv.height !== cam.segMaskH){
     _segMaskCv.width = cam.segMaskW; _segMaskCv.height = cam.segMaskH;
+    _segMaskPrev = null;  // size changed — reset history
   }
   const img = _segMaskCtx.createImageData(cam.segMaskW, cam.segMaskH);
   const d = img.data;
   const src = cam.segMaskData;
-  // selfie_segmenter: 0 = person/foreground (we want to keep), 255 = background
+  const isMulti = cam.bgModel === 'multiclass';
+  // Edge soft range (only meaningful for 'fast' which gives gradient values).
+  const feather = (cam.bgFeather != null) ? cam.bgFeather : 0.5;
+  const halfRange = 30 + feather * 70;
+  const lo = 128 - halfRange/2;
+  const hi = 128 + halfRange/2;
+  const rangeRecip = 1 / (hi - lo);
+  const ema = (cam.bgSmooth != null) ? cam.bgSmooth : 0.55;
+  const newWeight = 1 - ema;
+  const haveHist = _segMaskPrev && _segMaskPrev.length === src.length;
+  if(!haveHist) _segMaskPrev = new Uint8ClampedArray(src.length);
   for(let i=0;i<src.length;i++){
-    const isPerson = src[i] < 128;
+    const v = src[i];
+    let alphaRaw;
+    if(isMulti){
+      // Multiclass categories: 0=bg, 1-5=person parts (hair/skin/face/clothes/accessories)
+      alphaRaw = v === 0 ? 0 : 255;
+    } else {
+      // Fast model: gradient values, 0=person, 255=bg with soft threshold
+      if(v <= lo) alphaRaw = 255;
+      else if(v >= hi) alphaRaw = 0;
+      else alphaRaw = Math.round((hi - v) * rangeRecip * 255);
+    }
+    const alpha = haveHist
+      ? Math.round(_segMaskPrev[i] * ema + alphaRaw * newWeight)
+      : alphaRaw;
+    _segMaskPrev[i] = alpha;
     const j = i*4;
     d[j] = d[j+1] = d[j+2] = 255;
-    d[j+3] = isPerson ? 255 : 0;
+    d[j+3] = alpha;
   }
   _segMaskCtx.putImageData(img, 0, 0);
   return _segMaskCv;
@@ -11167,8 +11247,16 @@ function getMaskedVideo(rawVideo, vw, vh){
   _segVidCtx.drawImage(rawVideo, 0, 0, vw, vh);
   const maskCv = rebuildSegMaskCanvas();
   if(maskCv){
+    _segVidCtx.imageSmoothingEnabled = true;
+    _segVidCtx.imageSmoothingQuality = 'high';
     _segVidCtx.globalCompositeOperation = 'destination-in';
+    // Extra blur on the mask when feather is high — smooths jagged hair edges
+    const blur = (cam.bgFeather || 0) * 2.5;  // 0-2.5 px
+    if(blur > 0.4 && _segVidCtx.filter !== undefined){
+      _segVidCtx.filter = `blur(${blur.toFixed(2)}px)`;
+    }
     _segVidCtx.drawImage(maskCv, 0, 0, vw, vh);
+    _segVidCtx.filter = 'none';
     _segVidCtx.globalCompositeOperation = 'source-over';
   }
   return _segVidCv;
