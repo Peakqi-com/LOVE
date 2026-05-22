@@ -2193,7 +2193,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-22h · Visual modes → Effect/Filter/Motion subgroups; Random rewritten — every mode is randomizable; preset defaults for missing cam fields so old presets do not leak runtime state');
+console.log('[IW] script booting · build 2026-05-22j · captureSnapshot completeness: image block + audio impacts + bgLock; applySnapshot (setlist) now restores typo + image too; defaults for missing fields so old slots dont leak runtime state');
 
 // Click diagnostics — log every click so we can see where they reach.
 // Capture phase so we see clicks BEFORE any interceptor swallows them.
@@ -7996,6 +7996,59 @@ function applySnapshot(snap, opts){
   document.querySelectorAll('#modes input').forEach(cb=>{
     cb.checked = !!state.modes[cb.dataset.mode];
   });
+  // bgLock
+  if(snap.bgLock !== undefined){
+    state.bgLock = snap.bgLock;
+    document.querySelectorAll('#bgLockSeg button').forEach(b => b.classList.toggle('on', b.dataset.bglock === state.bgLock));
+  }
+  // typo — restore full text style (so a setlist slot can mean "use this font + animation")
+  if(snap.typo && typeof typo !== 'undefined'){
+    Object.assign(typo, snap.typo);
+    typo.spawns.length = 0; typo._tw = null; typo.centerCurrent = null;
+    const setBtn = (sel, attr, val) => {
+      document.querySelectorAll(sel + ' button').forEach(b => b.classList.toggle('on', b.dataset[attr] === val));
+    };
+    if(typo.family) setBtn('#typeFamilySeg','family', typo.family);
+    if(typo.lang)   setBtn('#typeLangSeg','lang', typo.lang);
+    if(typo.layout) setBtn('#typeLayoutGrid','layout', typo.layout);
+    if(typo.sizeMode) setBtn('#typeSizeSeg','size', typo.sizeMode);
+    if(typo.style)  setBtn('#typeStyleSeg','style', typo.style);
+    if(typo.anim)   setBtn('#typeAnimGrid','anim', typo.anim);
+    document.querySelectorAll('#typePalette button').forEach(b => b.classList.toggle('on', b.dataset.col === typo.color));
+    const setSlider = (id, v) => { const el = document.getElementById(id); if(el && v != null){ el.value = v; el.dispatchEvent(new Event('input')); } };
+    if(typo.speed != null) setSlider('typeSpeed', typo.speed*100);
+    if(typo.rate != null)  setSlider('typeRate',  typo.rate*10);
+    if(typo.life != null)  setSlider('typeLife',  typo.life*10);
+    if(typo.density != null) setSlider('typeDens', typo.density*100);
+    if(typo.weight != null)  setSlider('typeWeight', typo.weight);
+    if(typo.outlineWidth != null) setSlider('typeOutline', typo.outlineWidth*100);
+    const loopEl = document.getElementById('typeLoop'); if(loopEl) loopEl.checked = !!typo.loop;
+  }
+  // image — full restore (setlist slot can mean "single + Oil + 0.8 opacity")
+  if(snap.img && typeof imgState !== 'undefined'){
+    const imgDefaults = {
+      arrangement:'single', count:8, spawnRate:1.0, opacity:0.85,
+      effectStrength:1.0, scale:1.0, blend:'source-over',
+      useAllImages:false, cycle:false, stretchToFill:false,
+    };
+    for(const k in imgDefaults){
+      imgState[k] = (snap.img[k] !== undefined) ? snap.img[k] : imgDefaults[k];
+    }
+    if(snap.img.modes){
+      const knownModes = ['enabled','ripple','oil','gothic','mannerist','nihilist','romantic','occult','glitch','shatter','kaleido','melt','pixelSort','ascii','chromaShift','shake'];
+      for(const m of knownModes) imgState.modes[m] = !!snap.img.modes[m];
+    }
+    document.querySelectorAll('#imgModes input').forEach(cb => cb.checked = !!imgState.modes[cb.dataset.imode]);
+    document.querySelectorAll('#imgArrSeg button[data-arr]').forEach(b => b.classList.toggle('on', b.dataset.arr === imgState.arrangement));
+    document.querySelectorAll('#imgBlendSeg button').forEach(b => b.classList.toggle('on', b.dataset.blend === imgState.blend));
+    const setSlider2 = (id, v) => { const el = document.getElementById(id); if(el && v != null){ el.value = v; el.dispatchEvent(new Event('input')); } };
+    setSlider2('imgOpa', imgState.opacity*100);
+    setSlider2('imgFx',  imgState.effectStrength*100);
+    setSlider2('imgScl', imgState.scale*100);
+    const cycEl = document.getElementById('imgCycle'); if(cycEl) cycEl.checked = imgState.cycle;
+    const allEl = document.getElementById('imgUseAll'); if(allEl) allEl.checked = imgState.useAllImages;
+    const stEl  = document.getElementById('imgStretchFill'); if(stEl) stEl.checked = !!imgState.stretchToFill;
+  }
   // cam — apply settings + start/stop the stream so setlist slots can mean "camera on/off"
   if(snap.cam){
     // Defaults — reset any field not in this snapshot so old slots don't leak current state
@@ -9139,6 +9192,10 @@ function renderImgList(){
     });
     imgListEl.appendChild(div);
   });
+  // Refresh Library badges (the ✓ on items already in Loaded)
+  try { if(typeof mediaRenderGrid === 'function') mediaRenderGrid(); } catch(_){}
+  const lc = document.getElementById('loadedCount');
+  if(lc) lc.textContent = `${imgState.images.length} active`;
 }
 // ============================================================
 // MEDIA LIBRARY — IndexedDB-backed image + video storage with folders
@@ -9295,8 +9352,16 @@ async function mediaUploadFile(file, folder){
   return id;
 }
 
-// Take an item from IDB and load it into imgState.images for rendering
+// Take an item from IDB and load it into imgState.images for rendering.
+// If the item is already loaded, just promote it to active instead of duplicating.
 async function mediaLoadIntoCanvas(id){
+  const existingIdx = imgState.images.findIndex(e => e && e.mediaId === id);
+  if(existingIdx >= 0){
+    imgState.active = existingIdx;
+    if(!imgState.selected.includes(existingIdx)) imgState.selected.push(existingIdx);
+    renderImgList();
+    return;
+  }
   const item = await mediaGetItem(id);
   if(!item || !item.blob) return;
   const url = URL.createObjectURL(item.blob);
@@ -9398,14 +9463,17 @@ function mediaRenderGrid(){
     return;
   }
   media.items.sort((a,b) => b.createdAt - a.createdAt);
+  const loadedIds = new Set(imgState.images.map(e => e && e.mediaId).filter(Boolean));
   media.items.forEach(item => {
     const thumbUrl = item.thumb ? URL.createObjectURL(item.thumb) : '';
+    const isLoaded = loadedIds.has(item.id);
     const div = document.createElement('div');
-    div.className = 'img-thumb';
-    div.title = item.name;
+    div.className = 'img-thumb' + (isLoaded ? ' selected' : '');
+    div.title = item.name + (isLoaded ? ' · 已載入' : '');
     div.innerHTML = `
       <img src="${thumbUrl}" alt="" />
       ${item.type === 'video' ? '<div class="sel-badge" style="left:4px;right:auto;background:rgba(0,0,0,.7);color:#fff;font-size:10px">▶</div>' : ''}
+      ${isLoaded ? '<div class="sel-badge" style="background:rgba(80,200,120,.85);color:#fff">✓</div>' : ''}
       <button class="x" title="刪除">×</button>
       <button class="x" style="right:22px;background:rgba(0,0,0,.65);color:#fff" title="移到其他資料夾">⋮</button>
     `;
@@ -13854,6 +13922,10 @@ function captureSnapshot(){
     turbulence: state.turbulence, glow: state.glow,
     modes: { ...state.modes },
     autoCycle: state.autoCycle, autoSec: state.autoSec,
+    // audio impacts
+    audioGain: state.audioGain, bassImpact: state.bassImpact,
+    midImpact: state.midImpact, trebleImpact: state.trebleImpact,
+    bgLock: state.bgLock,
     // typography (deep copy minus runtime fields)
     typo: {
       text: typo.text, family: typo.family, lang: typo.lang,
@@ -13863,6 +13935,14 @@ function captureSnapshot(){
       sizeScale: typo.sizeScale, style: typo.style, kaleido: typo.kaleido,
       weight: typo.weight, outlineWidth: typo.outlineWidth,
     },
+    // image controls + aesthetic modes (Effect/Filter/Motion checkboxes)
+    img: (typeof imgState !== 'undefined' && imgState) ? {
+      arrangement: imgState.arrangement, count: imgState.count, spawnRate: imgState.spawnRate,
+      opacity: imgState.opacity, effectStrength: imgState.effectStrength, scale: imgState.scale,
+      blend: imgState.blend, useAllImages: imgState.useAllImages, cycle: imgState.cycle,
+      stretchToFill: !!imgState.stretchToFill,
+      modes: imgState.modes ? { ...imgState.modes } : null,
+    } : null,
     // light mode + sketch (line-art glyph)
     lightMode: !!state.lightMode,
     sketch: state.sketch ? {
@@ -13916,10 +13996,46 @@ function applyFullSnapshot(snap){
   if(snap.mirror !== undefined){ state.mirror = snap.mirror; }
   if(snap.autoCycle !== undefined) state.autoCycle = !!snap.autoCycle;
   if(snap.autoSec !== undefined)  setSlider('cyc', snap.autoSec);
+  // audio impacts
+  if(snap.audioGain !== undefined)    setSlider('aGain', snap.audioGain*100);
+  if(snap.bassImpact !== undefined)   setSlider('bImp',  snap.bassImpact*100);
+  if(snap.midImpact !== undefined)    setSlider('mImp',  snap.midImpact*100);
+  if(snap.trebleImpact !== undefined) setSlider('tImp',  snap.trebleImpact*100);
+  if(snap.bgLock !== undefined){
+    state.bgLock = snap.bgLock;
+    document.querySelectorAll('#bgLockSeg button').forEach(b => b.classList.toggle('on', b.dataset.bglock === state.bgLock));
+  }
   // modes
   if(snap.modes){
     for(const k in snap.modes){ if(k in state.modes) state.modes[k] = !!snap.modes[k]; }
     document.querySelectorAll('#modes input').forEach(cb => cb.checked = !!state.modes[cb.dataset.mode]);
+  }
+  // image (arrangement, modes, sliders) — reset missing fields so old presets don't leak current state
+  if(snap.img && typeof imgState !== 'undefined'){
+    const imgDefaults = {
+      arrangement:'single', count:8, spawnRate:1.0, opacity:0.85,
+      effectStrength:1.0, scale:1.0, blend:'source-over',
+      useAllImages:false, cycle:false, stretchToFill:false,
+    };
+    for(const k in imgDefaults){
+      if(snap.img[k] === undefined) imgState[k] = imgDefaults[k];
+      else imgState[k] = snap.img[k];
+    }
+    if(snap.img.modes){
+      // Reset all known aesthetic flags, then apply snapshot's
+      const knownModes = ['enabled','ripple','oil','gothic','mannerist','nihilist','romantic','occult','glitch','shatter','kaleido','melt','pixelSort','ascii','chromaShift','shake'];
+      for(const m of knownModes) imgState.modes[m] = !!snap.img.modes[m];
+    }
+    // Sync image UI
+    document.querySelectorAll('#imgModes input').forEach(cb => cb.checked = !!imgState.modes[cb.dataset.imode]);
+    document.querySelectorAll('#imgArrSeg button[data-arr]').forEach(b => b.classList.toggle('on', b.dataset.arr === imgState.arrangement));
+    document.querySelectorAll('#imgBlendSeg button').forEach(b => b.classList.toggle('on', b.dataset.blend === imgState.blend));
+    setSlider('imgOpa', imgState.opacity*100);
+    setSlider('imgFx',  imgState.effectStrength*100);
+    setSlider('imgScl', imgState.scale*100);
+    const cycEl = document.getElementById('imgCycle'); if(cycEl) cycEl.checked = imgState.cycle;
+    const allEl = document.getElementById('imgUseAll'); if(allEl) allEl.checked = imgState.useAllImages;
+    const stEl  = document.getElementById('imgStretchFill'); if(stEl) stEl.checked = !!imgState.stretchToFill;
   }
   // typo
   if(snap.typo){
