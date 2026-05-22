@@ -1399,7 +1399,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-22v · file split round 4: visual-modes.js extracted (modeState + all 47 draw functions, ~3045 lines). index.html main script ~7800 lines. All modules pass node --check.');
+console.log('[IW] script booting · build 2026-05-22w · perf: image bg removal segments adaptively (10fps normal, 5fps when cam-bg also on, 4fps if fps<30); image filter throttles too under stacked load. Random Live: track + videoOpacity + removeBg now also randomized.');
 
 // Click diagnostics — log every click so we can see where they reach.
 // Capture phase so we see clicks BEFORE any interceptor swallows them.
@@ -5142,14 +5142,20 @@ function randomizeAll(){
     if(typeof setKaleidoUI === 'function'){ try { setKaleidoUI('typo', typo.kaleido); } catch(_){} }
   }
 
-  // 11. Live tab — randomize camera fx + filter (camera ON/OFF state itself untouched)
+  // 11. Live tab — randomize EVERY camera attribute (not just FX). Camera ON/OFF stream state untouched.
   if(typeof cam !== 'undefined'){
     const faceFxPool = ['tendrils','petals','rays','orbits','ribbon','pulse','confetti','prism','stars','hearts','duplicate','splitTile','trail','emit'];
     const handFxPool = faceFxPool;
     cam.faceFx = faceFxPool[Math.floor(Math.random()*faceFxPool.length)];
     cam.handFx = handFxPool[Math.floor(Math.random()*handFxPool.length)];
+    // Track — 80% face / 20% hand (face is the more interesting input for most users)
+    cam.track = Math.random() < 0.8 ? 'face' : 'hand';
     cam.fx = cam.track === 'face' ? cam.faceFx : cam.handFx;
     cam.fxSize = 0.5 + Math.random()*1.5;
+    // Video opacity — between subtle ghost (20%) and prominent (80%)
+    cam.videoOpacity = 0.2 + Math.random()*0.6;
+    // Background removal — 30% chance, biased off so it doesn't always run the segmenter
+    cam.removeBg = Math.random() < 0.3;
     // Filter — every filter is randomizable. 'none' weighted higher so filter isn't always on.
     const filterPool = ['none','none','none','8bit','mosaic','chroma','glitch','threshold','invert','vapor','sepia','mono','edge','scanlines','sketch','halftone'];
     cam.filter = filterPool[Math.floor(Math.random()*filterPool.length)];
@@ -5178,6 +5184,13 @@ function randomizeAll(){
     document.querySelectorAll('#camArGrid button').forEach(b => b.classList.toggle('on', b.dataset.ar === cam.ar));
     document.querySelectorAll('#camHandArGrid button').forEach(b => b.classList.toggle('on', b.dataset.handar === cam.handAr));
     document.querySelectorAll('#camMotionGrid button').forEach(b => b.classList.toggle('on', b.dataset.motion === cam.motion));
+    document.querySelectorAll('#camTrackSeg button').forEach(b => b.classList.toggle('on', b.dataset.track === cam.track));
+    // Switch MediaPipe model if track changed (only when cam is live, so we don't trigger model load otherwise)
+    if(cam.ready && typeof loadMediaPipe === 'function'){ try { loadMediaPipe(cam.track); } catch(_){} }
+    const _camVid = document.getElementById('camVid');
+    if(_camVid){ _camVid.value = Math.round(cam.videoOpacity*100); _camVid.dispatchEvent(new Event('input')); }
+    const _camRmBg = document.getElementById('camRemoveBg');
+    if(_camRmBg){ _camRmBg.checked = !!cam.removeBg; _camRmBg.dispatchEvent(new Event('change')); }
     const _fInt = document.getElementById('camFilterAmt');
     if(_fInt){ _fInt.value = Math.round(cam.filterIntensity*100); _fInt.dispatchEvent(new Event('input')); }
     const _aInt = document.getElementById('camArAmt');
@@ -5450,19 +5463,20 @@ function getMaskedMediaSource(src, entry){
   if(cache.cv.width !== sw || cache.cv.height !== sh){
     cache.cv.width = sw; cache.cv.height = sh;
   }
-  // Decide whether to (re)run segmentation:
-  //  - never segmented yet
-  //  - source changed (e.g. swap between GIF frames)
-  //  - video: every ~100ms (10fps for segmentation — smooth enough since masks change slowly).
-  //    The mask is reused for ~3 frames between segmentations.
+  // Adaptive segmentation rate — drops aggressively under load:
+  //  - cam bg removal also active → image seg drops to 5fps (200ms)
+  //  - perf throttle says fps below 30 → drops to 4fps (250ms)
+  //  - otherwise → 10fps (100ms)
+  const _camBgOn = (typeof cam !== 'undefined' && cam.removeBg);
+  const _lowFps  = (window._perf && window._perf.avgFps && window._perf.avgFps < 30);
+  const segInterval = _lowFps ? 250 : (_camBgOn ? 200 : 100);
   const needSeg = !cache.done
     || cache.lastSrc !== src
-    || (isVideo && (now - cache.lastSegT) > 100);
+    || (isVideo && (now - cache.lastSegT) > segInterval);
   if(needSeg){
     try {
-      // Downscale the source to ~360p before segmentation so MediaPipe runs faster on big videos.
-      // Selfie segmenter only outputs ~256px masks anyway, so reducing input is lossless for quality.
-      const SEG_TARGET = 360;
+      // Downscale segmenter input. Lower target when under load (selfie segmenter outputs ~256px anyway).
+      const SEG_TARGET = _lowFps ? 240 : (_camBgOn ? 280 : 360);
       if(sw > SEG_TARGET){
         const scale = SEG_TARGET / sw;
         const ssw = Math.round(sw * scale);

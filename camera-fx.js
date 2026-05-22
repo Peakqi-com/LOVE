@@ -450,17 +450,23 @@ function applyVideoFilter(src, vw, vh, mode){
   const isImg = (mode === 'img');
   const f = isImg ? (imgState.filter || 'none') : (cam.filter || 'none');
   if(f === 'none') return src;
-  // Adaptive throttle (camera only — image filter is user-explicit, no need to throttle)
-  if(!isImg){
-    _filterFrameCounter++;
-    const heavyFilters = new Set(['glitch','halftone','sketch','edge','8bit','mosaic','chroma']);
-    const videoItemActive = imgState && imgState.images && imgState.images.some(e => e && e.isVideo);
-    const imgFxActive = imgState && imgState.modes && Object.values(imgState.modes).filter(Boolean).length > 1;
-    const arActive = cam.ar && cam.ar !== 'none';
-    const stackedLoad = (videoItemActive ? 1 : 0) + (imgFxActive ? 1 : 0) + (arActive ? 1 : 0);
-    if(stackedLoad >= 2 && heavyFilters.has(f) && (_filterFrameCounter & 1) && _filterCv.width === vw && _filterCv.height === vh){
-      return _filterCv;
-    }
+  // Adaptive throttle — both cam and image filters now skip frames under stacked load.
+  _filterFrameCounter++;
+  const heavyFilters = new Set(['glitch','halftone','sketch','edge','8bit','mosaic','chroma']);
+  const videoItemActive = (typeof imgState !== 'undefined') && imgState.images && imgState.images.some(e => e && e.isVideo);
+  const imgFxActive = (typeof imgState !== 'undefined') && imgState.modes && Object.values(imgState.modes).filter(Boolean).length > 1;
+  const arActive = cam.ar && cam.ar !== 'none';
+  const camBgOn = !!cam.removeBg;
+  const imgBgOn = (typeof imgState !== 'undefined') && !!imgState.removeBg;
+  const stackedLoad = (videoItemActive ? 1 : 0) + (imgFxActive ? 1 : 0) + (arActive ? 1 : 0) + (camBgOn ? 1 : 0) + (imgBgOn ? 1 : 0);
+  // CAM filter: skip every-other frame on heavy filter when 2+ stacked sources
+  if(!isImg && stackedLoad >= 2 && heavyFilters.has(f) && (_filterFrameCounter & 1) && _filterCv.width === vw && _filterCv.height === vh){
+    return _filterCv;
+  }
+  // IMG filter: more aggressive on big videos under stacked load
+  if(isImg && stackedLoad >= 2 && _imgFilterCv.width === vw && _imgFilterCv.height === vh){
+    if(heavyFilters.has(f) && (_filterFrameCounter % 3) !== 0) return _imgFilterCv;
+    else if(stackedLoad >= 3 && (_filterFrameCounter & 1)) return _imgFilterCv;
   }
   // Pick scratch buffers based on mode
   const _cv    = isImg ? _imgFilterCv    : _filterCv;
