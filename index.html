@@ -28,8 +28,8 @@
                              (Crown3D / Sunglasses3D / Cat / Halo / Mask / etc.)
                              Depends on `cam` from camera-fx.js
 
-    index.html (this file) — HTML body + the main <script>. Within the main
-                             script, top-down:
+    index.html (this file) — HTML body + the main inline script. Within
+                             the main script, top-down:
       · state / cam / typo / imgState declarations
       · helpers ($, $$, hsl, clamp, etc.)
       · EMOTIONS table + emotion sliders
@@ -50,7 +50,7 @@
       · Recording + Saving
       · Hotkeys + tap tempo
 
-    Other inline <script> blocks at end of body:
+    Other inline script blocks at end of body:
       · Floating bottom-right FABs (Present / Random)
       · License gate + login modals
 -->
@@ -1399,7 +1399,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-22w · perf: image bg removal segments adaptively (10fps normal, 5fps when cam-bg also on, 4fps if fps<30); image filter throttles too under stacked load. Random Live: track + videoOpacity + removeBg now also randomized.');
+console.log('[IW] script booting · build 2026-05-22x · build pipeline: external .css/.js modules now copied + minified into dist/; FILE MAP comment + popup HTML template fixed so build regex stops matching their literal <script> text');
 
 // Click diagnostics — log every click so we can see where they reach.
 // Capture phase so we see clicks BEFORE any interceptor swallows them.
@@ -9308,7 +9308,7 @@ document.getElementById('kaleidoLink').addEventListener('change', e => {
 </style></head><body>
 <video id="v" autoplay playsinline></video>
 <div class="hint" id="h">Click to fullscreen · Esc closes · F toggles</div>
-<script>
+<` + `script>
 document.addEventListener('click', () => {
   if(document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
 });

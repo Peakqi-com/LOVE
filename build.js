@@ -146,6 +146,44 @@ async function build() {
   // Copy api/ into dist/api/ so Vercel functions deploy
   await copyDir(SRC_API, OUT_API);
 
+  // Copy external assets that index.html references via <link>/<script src>.
+  // These were split out of the inline script for maintainability — they still
+  // need to ship alongside the HTML. Minify .js files through esbuild too so
+  // they get the same compression as the inline blocks.
+  const STATIC_ASSETS = [
+    'styles.css',
+    'visual-modes.js',
+    'camera-fx.js',
+    'typography.js',
+    'media-library.js',
+    'ar-3d.js',
+  ];
+  for(const name of STATIC_ASSETS){
+    const src = path.join(ROOT, name);
+    const dst = path.join(OUT_DIR, name);
+    try {
+      const raw = await fs.readFile(src, 'utf8');
+      if(name.endsWith('.js')){
+        const { code } = await esbuild.transform(raw, { minify: true, target: 'es2020', loader: 'js', legalComments: 'none' });
+        const banner = COPYRIGHT_BANNER;
+        let out = banner + code;
+        if(OBFUSCATE){
+          try {
+            const opts = { ...OBF_OPTIONS, seed: Math.floor(Math.random() * 0x7fffffff) };
+            out = banner + Obfuscator.obfuscate(code, opts).getObfuscatedCode();
+          } catch(e){ console.warn(`Obfuscation failed for ${name}, using minified only:`, e.message); }
+        }
+        await fs.writeFile(dst, out);
+        console.log(`▶ ${name}: ${raw.length} → ${out.length} bytes (-${((1 - out.length/raw.length)*100).toFixed(0)}%)`);
+      } else {
+        await fs.copyFile(src, dst);
+        console.log(`▶ Copied ${name} → dist/${name}`);
+      }
+    } catch(e){
+      console.warn(`▶ ${name} not found or copy failed — skipping (${e.message})`);
+    }
+  }
+
   // Optionally copy any markdown / static the user wants exposed (skip by default)
 
   const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
