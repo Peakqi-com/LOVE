@@ -1586,7 +1586,11 @@
           </div>
           <label class="mode-chip" style="margin-top:6px">
             <input type="checkbox" id="imgCycle" />
-            <span><strong>Cycle uploaded images</strong><em>auto-rotate through them</em></span>
+            <span><strong>Cycle uploaded images 自動輪播</strong><em>auto-rotate through them</em></span>
+          </label>
+          <label class="mode-chip" style="margin-top:6px">
+            <input type="checkbox" id="imgRemoveBg" />
+            <span><strong>Remove background 影片/圖片去背</strong><em>套用 MediaPipe selfie segmenter · 保留人/主體 · video frames auto-refresh</em></span>
           </label>
         </div>
 
@@ -2240,7 +2244,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-22o · bilingual zh/en pass: tab names, lock chips, action buttons, section titles, slider labels (Visual/Color/Atmosphere/Field/Audio/Image/Type/Live high-visibility controls)');
+console.log('[IW] script booting · build 2026-05-22q · 3D AR cm-units fix + image/video bg removal (Image controls → Remove background 影片/圖片去背)');
 
 // Click diagnostics — log every click so we can see where they reach.
 // Capture phase so we see clicks BEFORE any interceptor swallows them.
@@ -8084,7 +8088,7 @@ function applySnapshot(snap, opts){
     const imgDefaults = {
       arrangement:'single', count:8, spawnRate:1.0, opacity:0.85,
       effectStrength:1.0, scale:1.0, blend:'source-over',
-      useAllImages:false, cycle:false, stretchToFill:false,
+      useAllImages:false, cycle:false, stretchToFill:false, removeBg:false,
     };
     for(const k in imgDefaults){
       imgState[k] = (snap.img[k] !== undefined) ? snap.img[k] : imgDefaults[k];
@@ -8103,6 +8107,8 @@ function applySnapshot(snap, opts){
     const cycEl = document.getElementById('imgCycle'); if(cycEl) cycEl.checked = imgState.cycle;
     const allEl = document.getElementById('imgUseAll'); if(allEl) allEl.checked = imgState.useAllImages;
     const stEl  = document.getElementById('imgStretchFill'); if(stEl) stEl.checked = !!imgState.stretchToFill;
+    const rbEl  = document.getElementById('imgRemoveBg'); if(rbEl) rbEl.checked = !!imgState.removeBg;
+    if(imgState.removeBg && typeof _loadImgSegmenter === 'function') _loadImgSegmenter();
   }
   // cam — apply settings + start/stop the stream so setlist slots can mean "camera on/off"
   if(snap.cam){
@@ -8626,6 +8632,7 @@ function syncAllUI(){
   const cycEl = document.getElementById('imgCycle'); if(cycEl) cycEl.checked = imgState.cycle;
   const allEl = document.getElementById('imgUseAll'); if(allEl) allEl.checked = imgState.useAllImages;
   const stEl = document.getElementById('imgStretchFill'); if(stEl) stEl.checked = !!imgState.stretchToFill;
+  const rbEl = document.getElementById('imgRemoveBg'); if(rbEl) rbEl.checked = !!imgState.removeBg;
 
   updateReadout();
 }
@@ -9256,12 +9263,131 @@ const imgState = {
     shake: false,
   },
   stretchToFill: false,  // VJ option: ignore native aspect ratio
+  removeBg: false,       // Background removal for uploaded image/video (MediaPipe selfie segmenter)
   t0: performance.now(),
 };
 
 // offscreen canvas for processing one image
 const imgPipe = document.createElement('canvas');
 const imgPipeCtx = imgPipe.getContext('2d');
+
+// ============================================================
+// Background removal for uploaded images / videos
+// Lazy-loaded separate ImageSegmenter (camera has its own).
+// Video sources re-segment every frame; static images segment once + cache.
+// ============================================================
+let _imgSegLM = null, _imgSegLoading = false;
+async function _loadImgSegmenter(){
+  if(_imgSegLM || _imgSegLoading) return _imgSegLM;
+  _imgSegLoading = true;
+  try {
+    if(!window._mpVision){
+      window._mpVision = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.10/vision_bundle.mjs');
+    }
+    const { ImageSegmenter, FilesetResolver } = window._mpVision;
+    const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.10/wasm');
+    _imgSegLM = await ImageSegmenter.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/1/selfie_segmenter.tflite',
+        delegate: 'GPU'
+      },
+      runningMode: 'VIDEO',
+      outputCategoryMask: true,
+    });
+    console.log('[IW] img segmenter ready');
+  } catch(e){ console.warn('[IW] img segmenter load failed', e); }
+  _imgSegLoading = false;
+  return _imgSegLM;
+}
+
+// Per-source mask cache (uses WeakMap so masked canvases get GC'd with entries)
+const _imgSegCache = new WeakMap();
+let _imgSegSharedMask = null;
+function getMaskedMediaSource(src, entry){
+  if(!_imgSegLM){
+    if(!_imgSegLoading) _loadImgSegmenter();
+    return null;
+  }
+  if(!src) return null;
+  const sw = src.naturalWidth || src.videoWidth || src.width || 0;
+  const sh = src.naturalHeight || src.videoHeight || src.height || 0;
+  if(!sw || !sh) return null;
+  const isVideo = !!(src.videoWidth || (entry && entry.isVideo));
+  const now = performance.now();
+  // Cache key — entry is preferred (stable across frames). Fallback to src for non-entry uses.
+  let cache = entry ? _imgSegCache.get(entry) : null;
+  if(!cache){
+    cache = {
+      cv: document.createElement('canvas'),
+      ctx: null,
+      auxCv: document.createElement('canvas'),
+      auxCtx: null,
+      maskData: null, mw: 0, mh: 0,
+      lastSegT: 0, lastSrc: null,
+      done: false,
+    };
+    cache.ctx = cache.cv.getContext('2d');
+    cache.auxCtx = cache.auxCv.getContext('2d');
+    if(entry) _imgSegCache.set(entry, cache);
+  }
+  // Resize cache canvas to source size
+  if(cache.cv.width !== sw || cache.cv.height !== sh){
+    cache.cv.width = sw; cache.cv.height = sh;
+  }
+  // Decide whether to (re)run segmentation:
+  //  - never segmented yet
+  //  - source changed (e.g. swap between GIF frames)
+  //  - video: every ~50ms (20fps for segmentation, smooth enough)
+  const needSeg = !cache.done
+    || cache.lastSrc !== src
+    || (isVideo && (now - cache.lastSegT) > 50);
+  if(needSeg){
+    try {
+      _imgSegLM.segmentForVideo(src, now, (result) => {
+        const cm = result.categoryMask;
+        if(!cm) return;
+        cache.maskData = cm.getAsUint8Array();
+        cache.mw = cm.width; cache.mh = cm.height;
+        cm.close();
+        cache.done = true;
+      });
+      cache.lastSegT = now;
+      cache.lastSrc = src;
+    } catch(e){ /* swallow — return un-masked */ }
+  }
+  if(!cache.maskData || !cache.mw || !cache.mh) return null;
+  // Build alpha mask (low-res) then upscale via destination-in
+  if(cache.auxCv.width !== cache.mw || cache.auxCv.height !== cache.mh){
+    cache.auxCv.width = cache.mw; cache.auxCv.height = cache.mh;
+  }
+  const img = cache.auxCtx.createImageData(cache.mw, cache.mh);
+  const d = img.data;
+  const md = cache.maskData;
+  for(let i = 0; i < md.length; i++){
+    const v = md[i];
+    // Selfie segmenter: low values = person, high values = background.
+    // Soft threshold around 128 for cleaner edges.
+    let a;
+    if(v <= 64) a = 255;
+    else if(v >= 192) a = 0;
+    else a = Math.round((192 - v) * 255 / 128);
+    const j = i*4;
+    d[j] = d[j+1] = d[j+2] = 255;
+    d[j+3] = a;
+  }
+  cache.auxCtx.putImageData(img, 0, 0);
+  // Composite source through mask
+  cache.ctx.globalCompositeOperation = 'source-over';
+  cache.ctx.clearRect(0, 0, sw, sh);
+  cache.ctx.imageSmoothingEnabled = true;
+  cache.ctx.drawImage(src, 0, 0, sw, sh);
+  cache.ctx.globalCompositeOperation = 'destination-in';
+  cache.ctx.filter = 'blur(1.5px)';   // soften mask edges
+  cache.ctx.drawImage(cache.auxCv, 0, 0, sw, sh);
+  cache.ctx.filter = 'none';
+  cache.ctx.globalCompositeOperation = 'source-over';
+  return cache.cv;
+}
 
 const imgDrop = document.getElementById('imgDrop');
 const imgInput = document.getElementById('imgInput');
@@ -9808,6 +9934,14 @@ wireSlider('imgScl','imgSclFill','imgSclThumb','imgSclVal',
 document.getElementById('imgCycle').addEventListener('change', e=>{
   imgState.cycle = e.target.checked;
 });
+// Background removal for uploaded images / videos
+const _imgRemoveBgEl = document.getElementById('imgRemoveBg');
+if(_imgRemoveBgEl){
+  _imgRemoveBgEl.addEventListener('change', e => {
+    imgState.removeBg = e.target.checked;
+    if(imgState.removeBg) _loadImgSegmenter();
+  });
+}
 
 // Arrangement segmented control
 document.querySelectorAll('#imgArrSeg button[data-arr]').forEach(b=>{
@@ -9863,6 +9997,11 @@ function fitImageToCanvas(img){
       if(inLoop < acc){ idx = i; break; }
     }
     source = entry.frames[idx] || img;
+  }
+  // Apply background removal (MediaPipe selfie segmenter) when imgState.removeBg is on
+  if(imgState.removeBg){
+    const masked = getMaskedMediaSource(source, entry);
+    if(masked) source = masked;
   }
   const srcW = source.width || img.width;
   const srcH = source.height || img.height;
@@ -13479,8 +13618,9 @@ async function _loadAR3D(){
     key.position.set(2, 3, 4); ar3d.scene.add(key);
     const rim = new THREE.DirectionalLight(0xffd0a0, 0.4);
     rim.position.set(-3, 2, -2); ar3d.scene.add(rim);
-    // Camera — match a typical webcam FOV
-    ar3d.camera = new THREE.PerspectiveCamera(63, W/H, 0.1, 100);
+    // Camera — match a typical webcam FOV. Units are cm (matches MediaPipe face matrix).
+    // Near 1cm, far 10m (1000cm) — comfortably covers face at ~50cm.
+    ar3d.camera = new THREE.PerspectiveCamera(63, W/H, 1, 1000);
     ar3d.camera.position.set(0, 0, 0);
     // Head group — face transform matrix is applied here each frame
     ar3d.headGroup = new THREE.Group();
@@ -13491,60 +13631,62 @@ async function _loadAR3D(){
   return ar3d.loaded;
 }
 function _buildAR3DEffect(key){
+  // NOTE: MediaPipe face transformation matrix uses CENTIMETERS (face mesh is ~14cm tall),
+  // so ALL geometry sizes + offsets here must be in cm too (face is ~50cm from camera).
   const THREE = ar3d.THREE; if(!THREE) return null;
   const g = new THREE.Group();
   const baseHue = (typeof dominantEmo === 'function') ? (dominantEmo().hue || 200) : 200;
   const hueCol = (h, s, l) => new THREE.Color().setHSL(h/360, s, l);
   switch(key){
     case 'crown3d': {
-      // 5-pointed crown with gems
+      // 5-pointed crown with gems — band ~7.5cm radius (head-sized)
       const goldMat = new THREE.MeshPhysicalMaterial({ color: 0xffcc44, metalness: 1.0, roughness: 0.2, clearcoat:1 });
-      const bandGeo = new THREE.CylinderGeometry(0.075, 0.075, 0.025, 32, 1, true);
-      const band = new THREE.Mesh(bandGeo, goldMat); band.position.y = 0.10; g.add(band);
+      const bandGeo = new THREE.CylinderGeometry(7.5, 7.5, 2.5, 32, 1, true);
+      const band = new THREE.Mesh(bandGeo, goldMat); band.position.y = 10; g.add(band);
       for(let i=0; i<5; i++){
         const a = (i/5) * Math.PI*2;
-        const x = Math.cos(a)*0.075, z = Math.sin(a)*0.075;
-        const spikeGeo = new THREE.ConeGeometry(0.018, 0.07, 8);
+        const x = Math.cos(a)*7.5, z = Math.sin(a)*7.5;
+        const spikeGeo = new THREE.ConeGeometry(1.8, 7, 8);
         const spike = new THREE.Mesh(spikeGeo, goldMat);
-        spike.position.set(x, 0.14, z);
+        spike.position.set(x, 14, z);
         g.add(spike);
         const gemCols = [0xff3366, 0x33ccff, 0xffcc33, 0x9c33ff, 0x33ff99];
         const gemMat = new THREE.MeshPhysicalMaterial({ color: gemCols[i], metalness:0.2, roughness:0.1, clearcoat:1, transmission:0.3 });
-        const gem = new THREE.Mesh(new THREE.IcosahedronGeometry(0.014, 0), gemMat);
-        gem.position.set(x*0.95, 0.115, z*0.95);
+        const gem = new THREE.Mesh(new THREE.IcosahedronGeometry(1.4, 0), gemMat);
+        gem.position.set(x*0.95, 11.5, z*0.95);
         g.add(gem);
       }
-      g.position.y = 0.04;
+      g.position.y = 4;
       return g;
     }
     case 'sunglasses3d': {
       const lensMat = new THREE.MeshPhysicalMaterial({ color:0x0a0a14, metalness:0.6, roughness:0.05, clearcoat:1, transmission:0.15 });
       const frameMat = new THREE.MeshStandardMaterial({ color:0x1a1a22, metalness:0.7, roughness:0.3 });
-      // Two rounded rectangle lenses
-      const lensGeo = new THREE.BoxGeometry(0.05, 0.035, 0.005);
-      const l = new THREE.Mesh(lensGeo, lensMat); l.position.set(-0.035, -0.005, 0.08); g.add(l);
-      const r = new THREE.Mesh(lensGeo, lensMat); r.position.set(+0.035, -0.005, 0.08); g.add(r);
+      // Two rectangle lenses ~5cm wide each, positioned over eyes (~3.5cm from face center horizontally)
+      const lensGeo = new THREE.BoxGeometry(5, 3.5, 0.5);
+      const l = new THREE.Mesh(lensGeo, lensMat); l.position.set(-3.5, -0.5, 8); g.add(l);
+      const r = new THREE.Mesh(lensGeo, lensMat); r.position.set(+3.5, -0.5, 8); g.add(r);
       // Bridge
-      const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.005, 0.005), frameMat);
-      bridge.position.set(0, -0.005, 0.08); g.add(bridge);
-      // Frames around lenses (outline)
-      const outlineGeo = new THREE.BoxGeometry(0.055, 0.04, 0.008);
-      const lOut = new THREE.Mesh(outlineGeo, frameMat); lOut.position.set(-0.035, -0.005, 0.079); g.add(lOut);
-      const rOut = new THREE.Mesh(outlineGeo, frameMat); rOut.position.set(+0.035, -0.005, 0.079); g.add(rOut);
+      const bridge = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.5, 0.5), frameMat);
+      bridge.position.set(0, -0.5, 8); g.add(bridge);
+      // Frames (slightly larger boxes behind lenses for outline effect)
+      const outlineGeo = new THREE.BoxGeometry(5.5, 4, 0.8);
+      const lOut = new THREE.Mesh(outlineGeo, frameMat); lOut.position.set(-3.5, -0.5, 7.9); g.add(lOut);
+      const rOut = new THREE.Mesh(outlineGeo, frameMat); rOut.position.set(+3.5, -0.5, 7.9); g.add(rOut);
       return g;
     }
     case 'cat3d': {
       const furMat = new THREE.MeshStandardMaterial({ color: hueCol(baseHue, 0.6, 0.5), roughness:0.85 });
       const pinkMat = new THREE.MeshStandardMaterial({ color: 0xffaacc, roughness:0.7 });
       for(let side of [-1, 1]){
-        const earGeo = new THREE.ConeGeometry(0.025, 0.06, 4);
+        const earGeo = new THREE.ConeGeometry(2.5, 6, 4);
         const ear = new THREE.Mesh(earGeo, furMat);
-        ear.position.set(0.05 * side, 0.085, 0.02);
+        ear.position.set(5 * side, 8.5, 2);
         ear.rotation.z = -side * 0.15;
         g.add(ear);
-        const innerGeo = new THREE.ConeGeometry(0.014, 0.04, 4);
+        const innerGeo = new THREE.ConeGeometry(1.4, 4, 4);
         const inner = new THREE.Mesh(innerGeo, pinkMat);
-        inner.position.set(0.05 * side, 0.082, 0.025);
+        inner.position.set(5 * side, 8.2, 2.5);
         inner.rotation.z = -side * 0.15;
         g.add(inner);
       }
@@ -13552,27 +13694,27 @@ function _buildAR3DEffect(key){
     }
     case 'halo3d': {
       const haloMat = new THREE.MeshStandardMaterial({ color: 0xfff080, emissive: 0xffe066, emissiveIntensity: 1.6, metalness:0.3, roughness:0.2 });
-      const ringGeo = new THREE.TorusGeometry(0.085, 0.008, 12, 48);
+      // ~8.5cm ring radius, 0.8cm tube
+      const ringGeo = new THREE.TorusGeometry(8.5, 0.8, 12, 48);
       const halo = new THREE.Mesh(ringGeo, haloMat);
       halo.rotation.x = Math.PI/2;
-      halo.position.y = 0.12;
+      halo.position.y = 12;
       g.add(halo);
       return g;
     }
     case 'mask3d': {
-      // Phantom-style half mask
+      // Phantom-style half mask — ~8.5cm sphere half-shell over face
       const maskMat = new THREE.MeshPhysicalMaterial({ color: 0xf8f0e0, metalness:0.1, roughness:0.4, clearcoat:0.4 });
-      const maskGeo = new THREE.SphereGeometry(0.085, 28, 16, 0, Math.PI*2, 0, Math.PI*0.55);
+      const maskGeo = new THREE.SphereGeometry(8.5, 28, 16, 0, Math.PI*2, 0, Math.PI*0.55);
       const mask = new THREE.Mesh(maskGeo, maskMat);
-      mask.rotation.x = Math.PI; // flip
-      mask.position.set(0, 0.005, 0.04);
+      mask.rotation.x = Math.PI;
+      mask.position.set(0, 0.5, 4);
       mask.scale.set(1, 1, 0.7);
       g.add(mask);
-      // Eye hole cutouts via dark spheres
       const holeMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
-      [-0.034, 0.034].forEach(x => {
-        const hole = new THREE.Mesh(new THREE.SphereGeometry(0.018, 12, 8), holeMat);
-        hole.position.set(x, -0.005, 0.085);
+      [-3.4, 3.4].forEach(x => {
+        const hole = new THREE.Mesh(new THREE.SphereGeometry(1.8, 12, 8), holeMat);
+        hole.position.set(x, -0.5, 8.5);
         g.add(hole);
       });
       return g;
@@ -13580,8 +13722,8 @@ function _buildAR3DEffect(key){
     case 'horns3d': {
       const hornMat = new THREE.MeshStandardMaterial({ color: 0x550022, metalness:0.4, roughness:0.4 });
       for(let side of [-1, 1]){
-        const horn = new THREE.Mesh(new THREE.ConeGeometry(0.018, 0.085, 12), hornMat);
-        horn.position.set(0.045 * side, 0.10, -0.005);
+        const horn = new THREE.Mesh(new THREE.ConeGeometry(1.8, 8.5, 12), hornMat);
+        horn.position.set(4.5 * side, 10, -0.5);
         horn.rotation.z = -side * 0.35;
         horn.rotation.x = -0.2;
         g.add(horn);
@@ -13590,20 +13732,19 @@ function _buildAR3DEffect(key){
     }
     case 'headband3d': {
       const bandMat = new THREE.MeshStandardMaterial({ color: hueCol(baseHue, 0.85, 0.5), metalness:0.5, roughness:0.3 });
-      const torus = new THREE.Mesh(new THREE.TorusGeometry(0.085, 0.012, 12, 36), bandMat);
+      const torus = new THREE.Mesh(new THREE.TorusGeometry(8.5, 1.2, 12, 36), bandMat);
       torus.rotation.x = Math.PI/2.3;
-      torus.position.y = 0.085;
+      torus.position.y = 8.5;
       g.add(torus);
-      // Decoration: bow
       const bowMat = new THREE.MeshStandardMaterial({ color: 0xff5577, roughness:0.5 });
-      const bowL = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.02, 0.005), bowMat);
-      bowL.position.set(-0.025, 0.105, 0.02); bowL.rotation.z = 0.4;
+      const bowL = new THREE.Mesh(new THREE.BoxGeometry(3, 2, 0.5), bowMat);
+      bowL.position.set(-2.5, 10.5, 2); bowL.rotation.z = 0.4;
       g.add(bowL);
-      const bowR = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.02, 0.005), bowMat);
-      bowR.position.set(+0.025, 0.105, 0.02); bowR.rotation.z = -0.4;
+      const bowR = new THREE.Mesh(new THREE.BoxGeometry(3, 2, 0.5), bowMat);
+      bowR.position.set(+2.5, 10.5, 2); bowR.rotation.z = -0.4;
       g.add(bowR);
-      const knot = new THREE.Mesh(new THREE.SphereGeometry(0.008, 12, 8), bowMat);
-      knot.position.set(0, 0.105, 0.025);
+      const knot = new THREE.Mesh(new THREE.SphereGeometry(0.8, 12, 8), bowMat);
+      knot.position.set(0, 10.5, 2.5);
       g.add(knot);
       return g;
     }
@@ -14700,7 +14841,7 @@ function captureSnapshot(){
       arrangement: imgState.arrangement, count: imgState.count, spawnRate: imgState.spawnRate,
       opacity: imgState.opacity, effectStrength: imgState.effectStrength, scale: imgState.scale,
       blend: imgState.blend, useAllImages: imgState.useAllImages, cycle: imgState.cycle,
-      stretchToFill: !!imgState.stretchToFill,
+      stretchToFill: !!imgState.stretchToFill, removeBg: !!imgState.removeBg,
       modes: imgState.modes ? { ...imgState.modes } : null,
     } : null,
     // light mode + sketch (line-art glyph)
@@ -14776,7 +14917,7 @@ function applyFullSnapshot(snap){
     const imgDefaults = {
       arrangement:'single', count:8, spawnRate:1.0, opacity:0.85,
       effectStrength:1.0, scale:1.0, blend:'source-over',
-      useAllImages:false, cycle:false, stretchToFill:false,
+      useAllImages:false, cycle:false, stretchToFill:false, removeBg:false,
     };
     for(const k in imgDefaults){
       if(snap.img[k] === undefined) imgState[k] = imgDefaults[k];
@@ -14797,6 +14938,8 @@ function applyFullSnapshot(snap){
     const cycEl = document.getElementById('imgCycle'); if(cycEl) cycEl.checked = imgState.cycle;
     const allEl = document.getElementById('imgUseAll'); if(allEl) allEl.checked = imgState.useAllImages;
     const stEl  = document.getElementById('imgStretchFill'); if(stEl) stEl.checked = !!imgState.stretchToFill;
+    const rbEl  = document.getElementById('imgRemoveBg'); if(rbEl) rbEl.checked = !!imgState.removeBg;
+    if(imgState.removeBg && typeof _loadImgSegmenter === 'function') _loadImgSegmenter();
   }
   // typo
   if(snap.typo){
