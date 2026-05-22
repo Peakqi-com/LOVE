@@ -1,6 +1,7 @@
 /* —————————————————————————————————————————————————————————————————————
    Camera + MediaPipe (lazy-loaded)
    ————————————————————————————————————————————————————————————————————— */
+console.log('[IW] camera-fx.js loading · $=' + typeof $ + ' state=' + typeof state + ' imgState=' + typeof imgState);
 const cam = {
   stream: null,
   video: $('camVideo'),

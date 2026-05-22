@@ -1,3 +1,4 @@
+console.log('[IW] typography.js loading · $=' + typeof $ + ' state=' + typeof state + ' W=' + typeof W);
 const FONT = {
   sans:{
     latin:'"Noto Sans", system-ui, sans-serif',

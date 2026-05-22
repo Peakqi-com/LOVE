@@ -1399,7 +1399,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-22y · CRITICAL FIX: $ and $$ helpers were declared inside an IIFE so external modules (camera-fx, media-library, ar-3d) hit ReferenceError on load. Now declared globally before the IIFE.');
+console.log('[IW] script booting · build 2026-05-22z · build inlines all split modules into dist/index.html (source stays split for clarity; deployed HTML has everything in one place, no cross-script scope issues)');
 
 // Global helpers — MUST be declared at top-level (not inside any IIFE) so
 // external modules (visual-modes.js / camera-fx.js / typography.js / media-library.js

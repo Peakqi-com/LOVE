@@ -1,6 +1,7 @@
 // ============================================================
 // NEW VISUAL MODES — stackable treatments
 // ============================================================
+console.log('[IW] visual-modes.js loading · state=' + typeof state + ' EMOTIONS=' + typeof EMOTIONS + ' W=' + typeof W);
 const modeState = {
   // Line trace state
   trace: {

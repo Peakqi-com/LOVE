@@ -139,6 +139,46 @@ async function build() {
 
   let outHtml = segments.map(s => s.text).join('');
 
+  // ────────────────────────────────────────────────────────────────────
+  // Inline external .js modules back into the dist HTML.
+  // Source code stays split for clarity. Deployed HTML has everything
+  // inline so there's zero risk of cross-script scope issues (every
+  // module ends up in the same lexical script — same as if we never
+  // split).  Module load order is preserved.  styles.css stays external.
+  // ────────────────────────────────────────────────────────────────────
+  const JS_MODULES_TO_INLINE = ['visual-modes.js', 'camera-fx.js', 'typography.js', 'media-library.js', 'ar-3d.js'];
+  // Read + minify each module
+  const moduleSources = [];
+  for(const name of JS_MODULES_TO_INLINE){
+    const src = path.join(ROOT, name);
+    try {
+      const raw = await fs.readFile(src, 'utf8');
+      const { code } = await esbuild.transform(raw, { minify: true, target: 'es2020', loader: 'js', legalComments: 'none' });
+      let out = code;
+      if(OBFUSCATE){
+        try {
+          const opts = { ...OBF_OPTIONS, seed: Math.floor(Math.random() * 0x7fffffff) };
+          out = Obfuscator.obfuscate(code, opts).getObfuscatedCode();
+        } catch(e){ console.warn(`Obfuscation failed for ${name}, using minified only:`, e.message); }
+      }
+      moduleSources.push({ name, code: out });
+      console.log(`▶ Inlining ${name}: ${raw.length} → ${out.length} bytes`);
+    } catch(e){
+      console.warn(`▶ ${name} not found — skipping (${e.message})`);
+    }
+  }
+  // Replace each <script src="X.js?..."></script> with an inline <script>…</script>.
+  // Uses a regex that matches any querystring (e.g. "?v=22y") on the src.
+  for(const m of moduleSources){
+    const re = new RegExp(`<script src="${m.name.replace(/\./g,'\\.')}(?:\\?[^"]*)?"></script>`, 'g');
+    const replacement = `<script>\n${COPYRIGHT_BANNER}${m.code}\n</script>`;
+    const before = outHtml.length;
+    outHtml = outHtml.replace(re, replacement);
+    if(outHtml.length === before){
+      console.warn(`▶ WARN: could not find <script src="${m.name}…"> in HTML to inline. Module will stay external.`);
+    }
+  }
+
   // Ensure output dir exists, write
   await fs.mkdir(OUT_DIR, { recursive: true });
   await fs.writeFile(OUT_HTML, outHtml);

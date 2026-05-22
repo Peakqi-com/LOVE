@@ -2,6 +2,7 @@
 // MEDIA LIBRARY — IndexedDB-backed image + video storage with folders
 // Each browser keeps its own library (effectively per-user-per-device).
 // ============================================================
+console.log('[IW] media-library.js loading · $=' + typeof $ + ' imgState=' + typeof imgState);
 const MEDIA_DB_NAME = 'inner-weather-media';
 const MEDIA_DB_VERSION = 1;
 let _mediaDB = null;
