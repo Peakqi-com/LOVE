@@ -1399,7 +1399,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-22z · build inlines all split modules into dist/index.html (source stays split for clarity; deployed HTML has everything in one place, no cross-script scope issues)');
+console.log('[IW] script booting · build 2026-05-22-fix · renderPhraseLib() ran at main-script top level and dereferenced typo before typography.js loaded. Guarded the typo.text comparison so it skips when typo is still undefined.');
 
 // Global helpers — MUST be declared at top-level (not inside any IIFE) so
 // external modules (visual-modes.js / camera-fx.js / typography.js / media-library.js
@@ -7779,7 +7779,9 @@ function renderPhraseLib(){
   phraseLib.forEach((p, idx) => {
     const chip = document.createElement('button');
     chip.className = 'phrase-chip';
-    if(typo.text === p.text) chip.classList.add('on');
+    // typo lives in typography.js (loaded after main script). Guard so the
+    // top-level renderPhraseLib() call during main script init doesn't throw.
+    if(typeof typo !== 'undefined' && typo.text === p.text) chip.classList.add('on');
     chip.innerHTML = `${escapeHtml(p.name)}<span class="x" title="Delete">✕</span>`;
     chip.addEventListener('click', e => {
       if(e.target.classList.contains('x')){
