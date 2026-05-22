@@ -169,11 +169,14 @@ async function build() {
   }
   // Replace each <script src="X.js?..."></script> with an inline <script>…</script>.
   // Uses a regex that matches any querystring (e.g. "?v=22y") on the src.
+  // IMPORTANT: must use a REPLACEMENT FUNCTION, not a string. With a string
+  // replacement, `$$` in m.code (used heavily as the querySelectorAll helper)
+  // is interpreted by String.prototype.replace as the escape for a literal `$`
+  // and silently corrupts every `$$(...)` call into `$(...)`.
   for(const m of moduleSources){
     const re = new RegExp(`<script src="${m.name.replace(/\./g,'\\.')}(?:\\?[^"]*)?"></script>`, 'g');
-    const replacement = `<script>\n${COPYRIGHT_BANNER}${m.code}\n</script>`;
     const before = outHtml.length;
-    outHtml = outHtml.replace(re, replacement);
+    outHtml = outHtml.replace(re, () => `<script>\n${COPYRIGHT_BANNER}${m.code}\n</script>`);
     if(outHtml.length === before){
       console.warn(`▶ WARN: could not find <script src="${m.name}…"> in HTML to inline. Module will stay external.`);
     }

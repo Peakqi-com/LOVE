@@ -1399,7 +1399,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-22-fix · renderPhraseLib() ran at main-script top level and dereferenced typo before typography.js loaded. Guarded the typo.text comparison so it skips when typo is still undefined.');
+console.log('[IW] script booting · build 2026-05-22-fix2 · CRITICAL build.js fix: String.replace() with string replacement was interpreting $$ in module code as $-escape, silently breaking every $$(query) call. Switched to replacement function.');
 
 // Global helpers — MUST be declared at top-level (not inside any IIFE) so
 // external modules (visual-modes.js / camera-fx.js / typography.js / media-library.js
