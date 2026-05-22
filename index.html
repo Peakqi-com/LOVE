@@ -1379,8 +1379,10 @@
           </div>
         </div>
         <div class="section">
-          <h3 class="section-title">Visual modes <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">stackable</em></h3>
+          <h3 class="section-title">Visual modes <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">stackable · Effect / Filter / Motion</em></h3>
           <div class="modes" id="modes">
+            <!-- EFFECT — generative content (the things that actually draw on the canvas) -->
+            <div style="grid-column:1/-1;font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);margin:0 0 2px 0">Effect <em style="font-family:var(--serif);font-style:italic;text-transform:none;letter-spacing:0;color:var(--ink-faint);font-size:11.5px;margin-left:4px">生成內容</em></div>
             <label class="mode-chip"><input type="checkbox" data-mode="base" checked /><span><strong>Base field</strong><em>the emotional clouds</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="lineTrace" /><span><strong>Line trace</strong><em>一筆畫 · single flowing line</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="flowField" /><span><strong>Flow field</strong><em>particles riding noise currents</em></span></label>
@@ -1389,11 +1391,8 @@
             <label class="mode-chip"><input type="checkbox" data-mode="substrate" /><span><strong>Substrate</strong><em>結晶生長 · branching crack lines</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="reaction" /><span><strong>Reaction</strong><em>反應擴散 · Turing patterns</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="sumie" /><span><strong>Sumi-e</strong><em>水墨潑灑 · generative ink wash</em></span></label>
-            <label class="mode-chip"><input type="checkbox" data-mode="opart" /><span><strong>Op Art</strong><em>歐普藝術 · stripes/rings/checker</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="lissajous" /><span><strong>Lissajous</strong><em>振盪曲線 · oscilloscope curves</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="voronoi" /><span><strong>Voronoi</strong><em>細胞分割 · cellular tessellation</em></span></label>
-            <label class="mode-chip"><input type="checkbox" data-mode="beatStrobe" /><span><strong>Beat Strobe</strong><em>節拍頻閃 · flash on every beat</em></span></label>
-            <label class="mode-chip"><input type="checkbox" data-mode="bpmKaleido" /><span><strong>BPM Kaleido</strong><em>節拍鎖定 · auto-cycle kaleido on BPM</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="boids" /><span><strong>Boids 鳥群</strong><em>flock motion · Reynolds 1986</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="chladni" /><span><strong>Chladni 聲音圖案</strong><em>nodal lines · audio-driven n,m</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="dla" /><span><strong>DLA 凝聚</strong><em>diffusion-limited 珊瑚 / 閃電</em></span></label>
@@ -1423,16 +1422,25 @@
             <label class="mode-chip"><input type="checkbox" data-mode="crystals" /><span><strong>Crystals</strong><em>shard burst from center</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="ribbons" /><span><strong>Ribbons</strong><em>silk strands in wind</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="tunnel" /><span><strong>Tunnel</strong><em>zooming forward perspective</em></span></label>
-            <label class="mode-chip"><input type="checkbox" data-mode="halftone" /><span><strong>Halftone</strong><em>pulsing dot grid</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="petals" /><span><strong>Petals</strong><em>drifting floral debris</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="aurora" /><span><strong>Aurora</strong><em>vertical light curtains</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="inkWash" /><span><strong>Ink wash</strong><em>水墨 · brush &amp; bleed</em></span></label>
-            <label class="mode-chip"><input type="checkbox" data-mode="pixel8" /><span><strong>8-Bit</strong><em>像素化 + 16-color palette</em></span></label>
-            <label class="mode-chip"><input type="checkbox" data-mode="popArt" /><span><strong>Pop Art</strong><em>普普 · ben-day dots &amp; panels</em></span></label>
-            <label class="mode-chip"><input type="checkbox" data-mode="glitch" /><span><strong>Glitch</strong><em>故障 · channel split &amp; tear</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="polygon" /><span><strong>Polygon</strong><em>多邊 · wireframe mesh</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="matrix" /><span><strong>Matrix rain</strong><em>數位雨 · 緑の文字</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="eva" /><span><strong>EVA HUD</strong><em>新世紀 · AT-field &amp; warnings</em></span></label>
+            <!-- FILTER — post-process / style overlays applied on top -->
+            <div style="grid-column:1/-1;font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);margin:8px 0 2px 0">Filter <em style="font-family:var(--serif);font-style:italic;text-transform:none;letter-spacing:0;color:var(--ink-faint);font-size:11.5px;margin-left:4px">後製濾鏡 · 風格疊加</em></div>
+            <label class="mode-chip"><input type="checkbox" data-mode="opart" /><span><strong>Op Art</strong><em>歐普藝術 · stripes/rings/checker</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="halftone" /><span><strong>Halftone</strong><em>pulsing dot grid</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="pixel8" /><span><strong>8-Bit</strong><em>像素化 + 16-color palette</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="popArt" /><span><strong>Pop Art</strong><em>普普 · ben-day dots &amp; panels</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="glitch" /><span><strong>Glitch</strong><em>故障 · channel split &amp; tear</em></span></label>
+            <!-- MOTION — global rhythm / behavior / beat-sync -->
+            <div style="grid-column:1/-1;font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);margin:8px 0 2px 0">Motion <em style="font-family:var(--serif);font-style:italic;text-transform:none;letter-spacing:0;color:var(--ink-faint);font-size:11.5px;margin-left:4px">節奏 · 自動循環</em></div>
+            <label class="mode-chip"><input type="checkbox" data-mode="beatStrobe" /><span><strong>Beat Strobe</strong><em>節拍頻閃 · flash on every beat</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="bpmKaleido" /><span><strong>BPM Kaleido</strong><em>節拍鎖定 · auto-cycle kaleido on BPM</em></span></label>
+            <!-- SOURCES — external inputs (Live + Type tabs feed into these) -->
+            <div style="grid-column:1/-1;font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);margin:8px 0 2px 0">Sources <em style="font-family:var(--serif);font-style:italic;text-transform:none;letter-spacing:0;color:var(--ink-faint);font-size:11.5px;margin-left:4px">外部輸入</em></div>
             <label class="mode-chip"><input type="checkbox" data-mode="webcamFX" /><span><strong>Webcam FX</strong><em>face / hand-driven · uses Live tab</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="typography" /><span><strong>Typography</strong><em>字 · text as VJ visual</em></span></label>
           </div>
@@ -2185,7 +2193,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-22g · UI relabel: Image modes → Effect/Filter/Motion subgroups; Type Animation → Motion (functionality unchanged)');
+console.log('[IW] script booting · build 2026-05-22h · Visual modes → Effect/Filter/Motion subgroups; Random rewritten — every mode is randomizable; preset defaults for missing cam fields so old presets do not leak runtime state');
 
 // Click diagnostics — log every click so we can see where they reach.
 // Capture phase so we see clicks BEFORE any interceptor swallows them.
@@ -7990,6 +7998,18 @@ function applySnapshot(snap, opts){
   });
   // cam — apply settings + start/stop the stream so setlist slots can mean "camera on/off"
   if(snap.cam){
+    // Defaults — reset any field not in this snapshot so old slots don't leak current state
+    const camDefaults = {
+      track:'face', fx:'tendrils', faceFx:'tendrils', handFx:'rays',
+      videoOpacity:0.35, fxSize:1.0, mirror:true, kaleido:0,
+      removeBg:false, bgFeather:0.5, bgSmooth:0.55, bgModel:'fast',
+      filter:'none', filterIntensity:1.0,
+      ar:'none', arIntensity:1.0,
+      motion:'none', motionIntensity:1.0, motionSpeed:1.0,
+    };
+    for(const k in camDefaults){
+      if(snap.cam[k] === undefined) cam[k] = camDefaults[k];
+    }
     const { running, ...camFields } = snap.cam;
     Object.assign(cam, camFields);
     document.querySelectorAll('#camTrackSeg button').forEach(b => b.classList.toggle('on', b.dataset.track === cam.track));
@@ -8726,62 +8746,48 @@ function randomizeAll(){
   }
   state.mirror = Math.random() < hot*0.35 + 0.05 ? 1 + Math.floor(Math.random()*3) : 0;
 
-  // 7. Visual modes — performance-bounded pick (target ≥45fps).
-  // Each mode has a cost weight; total must stay below the per-device budget.
+  // 7. Visual modes — every mode is randomizable. Budget system keeps FPS healthy
+  // by limiting how many can stack, but the POOL itself includes everything.
   // Hard rules: pixel8 ⊣ popArt (mutually exclusive), heavy modes cap kaleido.
   const MODE_COST = {
-    lineTrace:1, constellation:1, waveform:1, mandalaRings:1, ripples:1, petals:1,
-    flowField:2, ribbons:2, aurora:2, spiral:2, crystals:2, tunnel:2, halftone:2, polygon:2,
-    curlNoise:2, attractor:3, substrate:2, reaction:4,
-    sumie:3, opart:2, lissajous:2, voronoi:3,
+    // Effects (generative content)
+    base:0, lineTrace:1, flowField:2, curlNoise:2, attractor:3, substrate:2, reaction:4,
+    sumie:3, lissajous:2, voronoi:3, boids:3, chladni:3, dla:2, spectro:2, meta:2, synth:2,
+    life:3, lsys:2, harmono:2, truchet:2, nbody:3, spiro:2, marbling:2, hilbert:2, lenia:4,
+    pendulum:2, galaxy:2, penrose:3, pwave:1, mandel:4, wireworld:2,
+    mandalaRings:1, waveform:1, constellation:1, spiral:2, ripples:1, crystals:2,
+    ribbons:2, tunnel:2, petals:1, aurora:2, inkWash:3, polygon:2, matrix:3, eva:3,
+    // Filters (post-process style overlays)
+    opart:2, halftone:2, pixel8:5, popArt:4, glitch:4,
+    // Motion (rhythm modifiers)
     beatStrobe:1, bpmKaleido:0,
-    boids:3, chladni:3, dla:2,
-    spectro:2, meta:2, synth:2,
-    life:3, lsys:2, harmono:2,
-    truchet:2, nbody:3, spiro:2,
-    marbling:2, hilbert:2, lenia:4,
-    pendulum:2, galaxy:2, penrose:3,
-    pwave:1, mandel:4, wireworld:2,
-    inkWash:3, matrix:3, eva:3,
-    popArt:4, glitch:4,
-    pixel8:5,
   };
-  // Budget — tuned for 60fps target. Lower on high-DPI screens. Dynamic perf
-  // throttle (perf.avgFps) further reduces budget when frames drop.
+  // ALL randomizable mode keys (excludes "Sources" — webcamFX/typography are preserved separately)
+  const ALL_MODES = Object.keys(MODE_COST).filter(m => m !== 'base');  // base is always-on
+  // Modes that don't render well on a white canvas
+  const lightHostile = new Set(['matrix','aurora','ribbons','petals']);
+  // Budget — tuned for 60fps. Lower on high-DPI screens. Dynamic perf throttle
+  // (perf.avgFps) further reduces budget when frames drop.
   const fpsHealth = (window._perf && window._perf.avgFps) || 60;
   let budgetBase = state.pixelRatio >= 2 ? 4 : 5;
   if(fpsHealth < 45) budgetBase = Math.max(3, budgetBase - 2);
   else if(fpsHealth < 55) budgetBase = Math.max(3, budgetBase - 1);
   const budget = budgetBase + Math.floor(hot * 1.5);
-
-  // In lightMode (white canvas) bright-content modes vanish — pool MUST favor dark/contrasted content.
-  const lightFriendly = ['inkWash','polygon','popArt','glitch','eva','halftone','lineTrace','constellation','spiral','crystals','tunnel','attractor','substrate','sumie','opart','lissajous','voronoi','boids','chladni','dla','spectro','synth','life','lsys','harmono','truchet','nbody','spiro','marbling','hilbert','lenia','pendulum','galaxy','penrose','pwave','mandel','wireworld'];
-  const lightHostile  = new Set(['matrix','aurora','ribbons','petals']);  // these wash out on cream bg
-
-  let hotModes, coolModes;
-  if(state.lightMode){
-    hotModes  = ['popArt','glitch','polygon','eva','halftone','spiral','crystals','tunnel','inkWash','attractor','substrate','opart','lissajous','boids','dla','synth','spectro','life','harmono','truchet','nbody','spiro','hilbert','marbling','galaxy','penrose'];
-    coolModes = ['lineTrace','flowField','constellation','inkWash','polygon','halftone','waveform','curlNoise','attractor','substrate','reaction','sumie','voronoi','boids','chladni','dla','meta','synth','life','lsys','harmono','truchet','nbody','spiro','marbling','hilbert','lenia','pendulum','galaxy','penrose'];
-  } else {
-    hotModes  = ['crystals','ripples','spiral','tunnel','mandalaRings','halftone','popArt','glitch','polygon','matrix','eva','pixel8','attractor','substrate','opart','lissajous','boids','dla','synth','spectro','meta','life','harmono','truchet','nbody','spiro','hilbert','marbling','galaxy','penrose'];
-    coolModes = ['lineTrace','flowField','constellation','ribbons','petals','aurora','waveform','inkWash','polygon','matrix','curlNoise','attractor','substrate','reaction','sumie','voronoi','boids','chladni','dla','meta','synth','life','lsys','harmono','truchet','nbody','spiro','marbling','hilbert','lenia','pendulum','galaxy','penrose'];
-  }
-  const maxModes = 2;  // 60fps target: prefer 1-2 modes max instead of 3
-  const targetN = Math.min(maxModes, 1 + Math.floor(Math.random()*(1 + hot*1.5)));
+  // Effective pool — full ALL_MODES, minus lightHostile when in lightMode
+  const pool = state.lightMode ? ALL_MODES.filter(m => !lightHostile.has(m)) : ALL_MODES.slice();
+  const maxModes = 3;  // raised from 2 — budget still caps total weight, so this is just a count cap
+  const targetN = Math.min(maxModes, 1 + Math.floor(Math.random()*(1 + hot*2)));
   const enabled = new Set();
   let spent = 0;
   let heavyCount = 0;  // count of modes with cost >= 3 (limit to 1)
-  for(let i=0;i<targetN*5 && enabled.size<targetN;i++){
-    const pool = Math.random() < hot*0.7 + 0.15 ? hotModes : coolModes;
+  for(let i=0;i<targetN*8 && enabled.size<targetN;i++){
     const pick = pool[Math.floor(Math.random()*pool.length)];
     if(enabled.has(pick)) continue;
     if(pick === 'pixel8' && enabled.has('popArt')) continue;
     if(pick === 'popArt' && enabled.has('pixel8')) continue;
-    if(state.lightMode && lightHostile.has(pick)) continue;
     const cost = MODE_COST[pick] || 1;
     if(spent + cost > budget) continue;
-    // Cap: only ONE high-cost (>= 3) mode at a time to keep 60fps
-    if(cost >= 3 && heavyCount >= 1) continue;
+    if(cost >= 3 && heavyCount >= 1) continue;   // cap heavy modes
     enabled.add(pick);
     spent += cost;
     if(cost >= 3) heavyCount++;
@@ -8825,13 +8831,13 @@ function randomizeAll(){
   imgState.useAllImages = imgState.images.length > 1 && Math.random() < 0.5;
   imgState.cycle = imgState.images.length > 1 && Math.random() < 0.3;
   imgState.spawned = []; imgState.spawnTimer = 0;
-  // image aesthetic modes — pick 0-3 (always keep "enabled" true)
-  const imgModeKeys = ['ripple','oil','gothic','mannerist','nihilist','romantic','occult','glitch','shatter','kaleido','melt'];
+  // image modes — every mode is randomizable (Effect/Filter/Motion all in pool)
+  const imgModeKeys = ['ripple','oil','gothic','mannerist','nihilist','romantic','occult','glitch','shatter','kaleido','melt','pixelSort','ascii','chromaShift','shake'];
   for(const m of imgModeKeys) imgState.modes[m] = false;
   imgState.modes.enabled = true;
   // hot music biases toward intense aesthetics
-  const intenseAesthetics = ['glitch','shatter','occult','kaleido','nihilist'];
-  const softAesthetics    = ['romantic','oil','gothic','mannerist','ripple','melt'];
+  const intenseAesthetics = ['glitch','shatter','occult','kaleido','nihilist','pixelSort','chromaShift','shake'];
+  const softAesthetics    = ['romantic','oil','gothic','mannerist','ripple','melt','ascii'];
   const nImgModes = Math.floor(Math.random()*4);  // 0-3
   for(let i=0;i<nImgModes;i++){
     const pool = Math.random() < hot*0.7 + 0.2 ? intenseAesthetics : softAesthetics;
@@ -8841,9 +8847,8 @@ function randomizeAll(){
 
   // 10. Type tab — randomize typography params (only when typography is on AND unlocked)
   if(state.modes.typography && typeof typo !== 'undefined'){
-    // 'dotmatrix' excluded from Random — does per-frame getImageData on offscreen
-    // canvas, which costs FPS when sampled randomly. Still available manually.
-    const animPool = ['breathe','flow','wave','popIn','glitch','drift','scalePulse','rotate','shimmer','comic','strobe','flipStyle','charBurst','sizeShake','marquee','extrude3d','neon','vapor','liquid','smoke','scramble','pathSine','staggerBounce','holo'];
+    // All animations are randomizable — budget system protects FPS for heavy ones.
+    const animPool = ['breathe','flow','wave','popIn','glitch','drift','scalePulse','rotate','shimmer','comic','strobe','flipStyle','charBurst','sizeShake','marquee','extrude3d','neon','vapor','liquid','dotmatrix','smoke','scramble','pathSine','staggerBounce','holo'];
     typo.anim = animPool[Math.floor(Math.random()*animPool.length)];
     const stylePool = ['solid','outline','mix','split'];
     typo.style = stylePool[Math.floor(Math.random()*stylePool.length)];
@@ -8876,8 +8881,8 @@ function randomizeAll(){
     cam.handFx = handFxPool[Math.floor(Math.random()*handFxPool.length)];
     cam.fx = cam.track === 'face' ? cam.faceFx : cam.handFx;
     cam.fxSize = 0.5 + Math.random()*1.5;
-    // Filter — weight 'none' so it's not always on. 'halftone' excluded (heavy, uses getImageData)
-    const filterPool = ['none','none','none','8bit','mosaic','chroma','glitch','threshold','invert','vapor','sepia','mono','edge','scanlines','sketch'];
+    // Filter — every filter is randomizable. 'none' weighted higher so filter isn't always on.
+    const filterPool = ['none','none','none','8bit','mosaic','chroma','glitch','threshold','invert','vapor','sepia','mono','edge','scanlines','sketch','halftone'];
     cam.filter = filterPool[Math.floor(Math.random()*filterPool.length)];
     cam.filterIntensity = 0.6 + Math.random()*1.1;   // 0.6 .. 1.7
     // AR — weight 'none' so face isn't always covered. All AR effects are landmark-driven & cheap.
@@ -13962,7 +13967,20 @@ function applyFullSnapshot(snap){
   }
   // cam settings
   if(snap.cam){
-    // Apply settings first (don't write `running` into the cam object — it's a state flag, not config)
+    // Defaults — for ANY field missing from this snapshot, reset to default so the
+    // user's current runtime selection doesn't leak across preset loads.
+    const camDefaults = {
+      track:'face', fx:'tendrils', faceFx:'tendrils', handFx:'rays',
+      videoOpacity:0.35, fxSize:1.0, mirror:true, kaleido:0,
+      removeBg:false, bgFeather:0.5, bgSmooth:0.55, bgModel:'fast',
+      filter:'none', filterIntensity:1.0,
+      ar:'none', arIntensity:1.0,
+      motion:'none', motionIntensity:1.0, motionSpeed:1.0,
+    };
+    for(const k in camDefaults){
+      if(snap.cam[k] === undefined) cam[k] = camDefaults[k];
+    }
+    // Apply settings (don't write `running` into the cam object — it's a state flag, not config)
     const { running, ...camFields } = snap.cam;
     Object.assign(cam, camFields);
     document.querySelectorAll('#camTrackSeg button').forEach(b => b.classList.toggle('on', b.dataset.track === cam.track));
