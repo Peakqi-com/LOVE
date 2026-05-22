@@ -146,6 +146,26 @@
   }
   .lock-chip:hover{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.18)}
   .lock-chip .ico{font-size:11px;opacity:.65}
+  .lock-chip-wrap{position:relative;display:inline-flex;align-items:center}
+  .lock-sub-caret{
+    margin-left:-3px;padding:6px 6px 6px 4px;background:transparent;border:1px solid transparent;
+    color:var(--ink-soft);font-size:9px;cursor:pointer;border-radius:0 9px 9px 0;line-height:1;
+  }
+  .lock-sub-caret:hover{color:var(--ink);background:rgba(255,255,255,.06)}
+  .lock-sub-caret.has-active{color:#e8d166}
+  .lock-sub-popover{
+    position:absolute;top:calc(100% + 4px);left:0;background:#15121a;
+    border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:8px 10px;
+    min-width:170px;z-index:9999;box-shadow:0 10px 28px rgba(0,0,0,.55);
+    display:flex;flex-direction:column;gap:2px;
+  }
+  .lock-sub-popover .ttl{font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:4px}
+  .lock-sub-popover label{
+    display:flex;align-items:center;gap:7px;padding:5px 4px;font-size:11.5px;
+    color:var(--ink);cursor:pointer;border-radius:5px;
+  }
+  .lock-sub-popover label:hover{background:rgba(255,255,255,.05)}
+  .lock-sub-popover input[type=checkbox]{margin:0;accent-color:#e8d166}
   .lock-chip.locked{
     background:rgba(255,200,120,.14);border-color:rgba(255,200,120,.42);color:#ffd89e;
   }
@@ -1176,51 +1196,51 @@
 
     <!-- Quick action bar (always visible) -->
     <div class="quickbar">
-      <button class="qa" id="qaRandomTop" title="Randomize composition (R)">
+      <button class="qa" id="qaRandomTop" title="隨機 Randomize (R)">
         <svg viewBox="0 0 24 24"><path d="M16 3h5v5"/><path d="M21 3l-7.5 7.5"/><path d="M8 21H3v-5"/><path d="M3 21l7.5-7.5"/><path d="M21 16v5h-5"/><path d="M14 14l7 7"/><path d="M3 3l7 7"/></svg>
-        <span class="lbl">Random</span>
+        <span class="lbl">Random 隨機</span>
       </button>
-      <button class="qa" id="qaResetTop" title="Reset to defaults">
+      <button class="qa" id="qaResetTop" title="重設 Reset to defaults">
         <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v6h6"/></svg>
-        <span class="lbl">Reset</span>
+        <span class="lbl">Reset 重設</span>
       </button>
-      <button class="qa" id="qaSaveTop" title="Save current composition as PNG">
+      <button class="qa" id="qaSaveTop" title="存成 PNG · Save current composition">
         <svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
-        <span class="lbl">Save img</span>
+        <span class="lbl">Save 存圖</span>
       </button>
-      <button class="qa rec" id="qaRecTop" title="Record live video (start / stop)">
+      <button class="qa rec" id="qaRecTop" title="開始 / 停止錄影 · Record">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
-        <span class="lbl">Record</span>
+        <span class="lbl">Record 錄影</span>
       </button>
-      <button class="qa" id="qaGenerateTop" title="Generate a new image (uses AI)">
+      <button class="qa" id="qaGenerateTop" title="生成 AI 圖片 · Generate">
         <svg viewBox="0 0 24 24"><path d="M12 3l1.8 4.6L18.5 9 14.6 12l1.4 5.2L12 14.4 7.9 17.2 9.4 12 5.5 9l4.7-1.4L12 3z"/></svg>
-        <span class="lbl">Generate</span>
+        <span class="lbl">Generate 生成</span>
       </button>
     </div>
 
     <!-- Lock chips — one per tab. Locked groups are preserved across RANDOM. -->
     <div class="lockbar">
       <span class="lockbar-lbl">Lock</span>
-      <button class="lock-chip" data-lock="feelings" title="Feelings tab — emotions & temperature"><span class="ico">🔓</span>Feelings</button>
-      <button class="lock-chip" data-lock="field"    title="Field tab — density, motion, turbulence, glow"><span class="ico">🔓</span>Field</button>
-      <button class="lock-chip" data-lock="visual"   title="Color, atmosphere, mirror, kaleido, light mode"><span class="ico">🔓</span>Color/FX</button>
-      <button class="lock-chip" data-lock="style"    title="Visual MODES — keeps your enabled modes (Synthwave / Boids / Sumi-e / etc.) on across Random"><span class="ico">🔓</span>Modes</button>
-      <button class="lock-chip" data-lock="audio"    title="Audio tab — gain & per-band impacts"><span class="ico">🔓</span>Audio</button>
-      <button class="lock-chip" data-lock="image"    title="Image tab — arrangement & aesthetics"><span class="ico">🔓</span>Image</button>
-      <button class="lock-chip" data-lock="type"     title="Type tab — typography animation, color, weight"><span class="ico">🔓</span>Type</button>
-      <button class="lock-chip" data-lock="live"     title="Live tab — camera fx, background removal"><span class="ico">🔓</span>Live</button>
+      <button class="lock-chip" data-lock="feelings" title="鎖定情緒 + 溫度 · Feelings tab"><span class="ico">🔓</span>Feelings 情緒</button>
+      <button class="lock-chip" data-lock="field"    title="鎖定場域 · density / motion / turbulence / glow"><span class="ico">🔓</span>Field 場域</button>
+      <span class="lock-chip-wrap"><button class="lock-chip" data-lock="visual" title="鎖定色彩 / 氛圍 / 鏡像 / 萬花筒 / 反相"><span class="ico">🔓</span>Color/FX 色彩</button><button class="lock-sub-caret" data-sub="visual" title="細部鎖定 fine-grained">▾</button></span>
+      <button class="lock-chip" data-lock="style"    title="鎖定視覺模式 · 保持目前勾選的 Modes"><span class="ico">🔓</span>Modes 模式</button>
+      <button class="lock-chip" data-lock="audio"    title="鎖定音頻反應靈敏度 · gain + 頻段強度"><span class="ico">🔓</span>Audio 聲音</button>
+      <span class="lock-chip-wrap"><button class="lock-chip" data-lock="image" title="鎖定圖片排版 + 風格效果"><span class="ico">🔓</span>Image 素材</button><button class="lock-sub-caret" data-sub="image" title="細部鎖定 fine-grained">▾</button></span>
+      <span class="lock-chip-wrap"><button class="lock-chip" data-lock="type" title="鎖定文字動畫 + 顏色 + 字重"><span class="ico">🔓</span>Type 文字</button><button class="lock-sub-caret" data-sub="type" title="細部鎖定 fine-grained">▾</button></span>
+      <span class="lock-chip-wrap"><button class="lock-chip" data-lock="live" title="鎖定攝影機效果 + 去背"><span class="ico">🔓</span>Live 攝影</button><button class="lock-sub-caret" data-sub="live" title="細部鎖定 fine-grained">▾</button></span>
     </div>
 
     <nav class="tabs" id="tabs">
-      <button class="on" data-tab="feelings">Feelings</button>
-      <button data-tab="field">Field</button>
-      <button data-tab="visual">Visual</button>
-      <button data-tab="image">Image</button>
-      <button data-tab="audio">Audio</button>
-      <button data-tab="live">Live</button>
-      <button data-tab="type">Type</button>
-      <button data-tab="compose">Compose</button>
-      <button data-tab="setlist">Show</button>
+      <button class="on" data-tab="feelings" title="情緒">Feelings 情緒</button>
+      <button data-tab="field" title="場域">Field 場域</button>
+      <button data-tab="visual" title="視覺">Visual 視覺</button>
+      <button data-tab="image" title="素材庫">Image 素材</button>
+      <button data-tab="audio" title="聲音">Audio 聲音</button>
+      <button data-tab="live" title="攝影機">Live 攝影</button>
+      <button data-tab="type" title="文字">Type 文字</button>
+      <button data-tab="compose" title="儲存">Compose 儲存</button>
+      <button data-tab="setlist" title="演出歌單">Show 演出</button>
     </nav>
 
     <div class="panel-body">
@@ -1233,9 +1253,9 @@
       <!-- FIELD -->
       <section class="tab" data-tab="field">
         <div class="section">
-          <h3 class="section-title">Climate</h3>
+          <h3 class="section-title">Climate 氣候 <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">情緒組合 · 溫度</em></h3>
           <div class="ctrl">
-            <span class="label">Temperature</span>
+            <span class="label">Temperature 溫度</span>
             <span class="val" id="tempVal">42°</span>
             <div class="temp-track" style="grid-column:1/-1;height:10px;border-radius:99px;overflow:hidden;background:linear-gradient(90deg,#3a5da8 0%,#9aa8c2 22%,#e8e1d2 45%,#e8a473 70%,#d34a3a 100%);position:relative">
               <input type="range" min="0" max="100" value="42" id="temp" style="position:absolute;inset:-8px 0;width:100%;height:26px;opacity:0;cursor:pointer" />
@@ -1246,23 +1266,23 @@
         </div>
 
         <div class="section">
-          <h3 class="section-title">Field dynamics</h3>
-          <div class="ctrl"><span class="label">Density</span><span class="val" id="densVal">1.0×</span>
+          <h3 class="section-title">Field dynamics 場域動態 <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">密度 · 速度 · 紊流</em></h3>
+          <div class="ctrl"><span class="label">Density 密度</span><span class="val" id="densVal">1.0×</span>
             <div class="slider"><div class="track"></div><div class="fill" id="densFill"></div><div class="thumb" id="densThumb"></div>
               <input type="range" min="20" max="200" value="100" id="dens" />
             </div>
           </div>
-          <div class="ctrl"><span class="label">Motion speed</span><span class="val" id="motVal">1.0×</span>
+          <div class="ctrl"><span class="label">Motion speed 速度</span><span class="val" id="motVal">1.0×</span>
             <div class="slider"><div class="track"></div><div class="fill" id="motFill"></div><div class="thumb" id="motThumb"></div>
               <input type="range" min="10" max="300" value="100" id="mot" />
             </div>
           </div>
-          <div class="ctrl"><span class="label">Turbulence</span><span class="val" id="turbVal">0.50</span>
+          <div class="ctrl"><span class="label">Turbulence 紊流</span><span class="val" id="turbVal">0.50</span>
             <div class="slider"><div class="track"></div><div class="fill" id="turbFill"></div><div class="thumb" id="turbThumb"></div>
               <input type="range" min="0" max="200" value="50" id="turb" />
             </div>
           </div>
-          <div class="ctrl"><span class="label">Glow / softness</span><span class="val" id="glowVal">0.70</span>
+          <div class="ctrl"><span class="label">Glow / softness 輝光柔光</span><span class="val" id="glowVal">0.70</span>
             <div class="slider"><div class="track"></div><div class="fill" id="glowFill"></div><div class="thumb" id="glowThumb"></div>
               <input type="range" min="0" max="150" value="70" id="glow" />
             </div>
@@ -1273,13 +1293,13 @@
       <!-- VISUAL -->
       <section class="tab" data-tab="visual">
         <div class="section">
-          <h3 class="section-title">Kaleidoscopes</h3>
+          <h3 class="section-title">Kaleidoscopes 萬花筒 <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">三層獨立 · field / cam / text</em></h3>
           <label class="mode-chip" style="margin:0 0 6px">
             <input type="checkbox" id="kaleidoLink" />
             <span><strong>🔗 Link all three</strong><em>change one → all sync (field · camera · text)</em></span>
           </label>
           <div class="ctrl">
-            <span class="label">Field</span>
+            <span class="label">Field 場域</span>
             <span class="val" id="kaleidoVal">off</span>
             <div class="seg" id="kaleidoSeg" data-kl-layer="field">
               <button data-k="0" class="on">Off</button>
@@ -1291,7 +1311,7 @@
             </div>
           </div>
           <div class="ctrl">
-            <span class="label">Camera</span>
+            <span class="label">Camera 攝影機</span>
             <span class="val" id="kaleidoCamVal">off</span>
             <div class="seg" id="kaleidoCamSeg" data-kl-layer="cam">
               <button data-k="0" class="on">Off</button>
@@ -1303,7 +1323,7 @@
             </div>
           </div>
           <div class="ctrl">
-            <span class="label">Text</span>
+            <span class="label">Text 文字</span>
             <span class="val" id="kaleidoTypoVal">off</span>
             <div class="seg" id="kaleidoTypoSeg" data-kl-layer="typo">
               <button data-k="0" class="on">Off</button>
@@ -1315,7 +1335,7 @@
             </div>
           </div>
           <div class="ctrl">
-            <span class="label">Mirror axis</span>
+            <span class="label">Mirror axis 鏡像</span>
             <span class="val" id="mirrorVal">none</span>
             <div class="seg" style="grid-template-columns:repeat(4,1fr)" id="mirrorSeg">
               <button data-m="0" class="on">None</button>
@@ -1327,20 +1347,20 @@
         </div>
 
         <div class="section">
-          <h3 class="section-title">Color</h3>
-          <div class="ctrl"><span class="label">Vibrance</span><span class="val" id="vibVal">50</span>
+          <h3 class="section-title">Color 色彩 <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">飽和 · 色相 · 明暗</em></h3>
+          <div class="ctrl"><span class="label">Vibrance 飽和度</span><span class="val" id="vibVal">50</span>
             <div class="slider"><div class="track"></div><div class="fill" id="vibFill"></div><div class="thumb" id="vibThumb"></div>
               <input type="range" min="0" max="100" value="50" id="vib" />
             </div>
           </div>
-          <div class="ctrl"><span class="label">Hue shift</span><span class="val" id="hueVal">0°</span>
+          <div class="ctrl"><span class="label">Hue shift 色相偏移</span><span class="val" id="hueVal">0°</span>
             <div class="slider">
               <div class="track" style="background:linear-gradient(90deg,#ff5b8d,#ffd166,#9ee06a,#7fdcff,#c87cff,#ff5b8d);opacity:.45"></div>
               <div class="thumb" id="hueThumb"></div>
               <input type="range" min="-180" max="180" value="0" id="hue" />
             </div>
           </div>
-          <div class="ctrl"><span class="label">Background depth</span><span class="val" id="darkVal">0.30</span>
+          <div class="ctrl"><span class="label">Background depth 背景深度</span><span class="val" id="darkVal">0.30</span>
             <div class="slider"><div class="track"></div><div class="fill" id="darkFill"></div><div class="thumb" id="darkThumb"></div>
               <input type="range" min="0" max="100" value="30" id="dark" />
             </div>
@@ -1356,30 +1376,30 @@
         </div>
 
         <div class="section">
-          <h3 class="section-title">Atmosphere</h3>
-          <div class="ctrl"><span class="label">Bloom</span><span class="val" id="bloomVal">0.30</span>
+          <h3 class="section-title">Atmosphere 氛圍 <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">輝光 · 殘影 · 顆粒 · 暗角</em></h3>
+          <div class="ctrl"><span class="label">Bloom 輝光</span><span class="val" id="bloomVal">0.30</span>
             <div class="slider"><div class="track"></div><div class="fill" id="bloomFill"></div><div class="thumb" id="bloomThumb"></div>
               <input type="range" min="0" max="100" value="30" id="bloom" />
             </div>
           </div>
-          <div class="ctrl"><span class="label">Trails (persistence)</span><span class="val" id="trailVal">0</span>
+          <div class="ctrl"><span class="label">Trails 殘影</span><span class="val" id="trailVal">0</span>
             <div class="slider"><div class="track"></div><div class="fill" id="trailFill"></div><div class="thumb" id="trailThumb"></div>
               <input type="range" min="0" max="95" value="0" id="trail" />
             </div>
           </div>
-          <div class="ctrl"><span class="label">Grain</span><span class="val" id="grainVal">0.5</span>
+          <div class="ctrl"><span class="label">Grain 顆粒</span><span class="val" id="grainVal">0.5</span>
             <div class="slider"><div class="track"></div><div class="fill" id="grainFill"></div><div class="thumb" id="grainThumb"></div>
               <input type="range" min="0" max="100" value="50" id="grain" />
             </div>
           </div>
-          <div class="ctrl"><span class="label">Vignette</span><span class="val" id="vigVal">0.5</span>
+          <div class="ctrl"><span class="label">Vignette 暗角</span><span class="val" id="vigVal">0.5</span>
             <div class="slider"><div class="track"></div><div class="fill" id="vigFill"></div><div class="thumb" id="vigThumb"></div>
               <input type="range" min="0" max="100" value="50" id="vig" />
             </div>
           </div>
         </div>
         <div class="section">
-          <h3 class="section-title">Visual modes <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">stackable · Effect / Filter / Motion</em></h3>
+          <h3 class="section-title">Visual modes 視覺模式 <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">可疊加 · Effect / Filter / Motion</em></h3>
           <div class="modes" id="modes">
             <!-- EFFECT — generative content (the things that actually draw on the canvas) -->
             <div style="grid-column:1/-1;font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);margin:0 0 2px 0">Effect <em style="font-family:var(--serif);font-style:italic;text-transform:none;letter-spacing:0;color:var(--ink-faint);font-size:11.5px;margin-left:4px">生成內容</em></div>
@@ -1451,7 +1471,7 @@
             </label>
           </div>
           <div class="ctrl">
-            <span class="label">Cycle interval</span><span class="val" id="cycVal">14s</span>
+            <span class="label">Cycle interval 自動切換間隔</span><span class="val" id="cycVal">14s</span>
             <div class="slider"><div class="track"></div><div class="fill" id="cycFill"></div><div class="thumb" id="cycThumb"></div>
               <input type="range" min="4" max="60" value="14" id="cyc" />
             </div>
@@ -1540,23 +1560,23 @@
         </div>
 
         <div class="section">
-          <h3 class="section-title">Image controls</h3>
-          <div class="ctrl"><span class="label">Image opacity</span><span class="val" id="imgOpaVal">0.85</span>
+          <h3 class="section-title">Image controls 圖片參數 <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">透明 · 強度 · 縮放 · 混合</em></h3>
+          <div class="ctrl"><span class="label">Image opacity 透明度</span><span class="val" id="imgOpaVal">0.85</span>
             <div class="slider"><div class="track"></div><div class="fill" id="imgOpaFill"></div><div class="thumb" id="imgOpaThumb"></div>
               <input type="range" min="0" max="100" value="85" id="imgOpa" />
             </div>
           </div>
-          <div class="ctrl"><span class="label">Effect strength</span><span class="val" id="imgFxVal">1.0×</span>
+          <div class="ctrl"><span class="label">Effect strength 效果強度</span><span class="val" id="imgFxVal">1.0×</span>
             <div class="slider"><div class="track"></div><div class="fill" id="imgFxFill"></div><div class="thumb" id="imgFxThumb"></div>
               <input type="range" min="0" max="200" value="100" id="imgFx" />
             </div>
           </div>
-          <div class="ctrl"><span class="label">Image scale</span><span class="val" id="imgSclVal">1.0×</span>
+          <div class="ctrl"><span class="label">Image scale 縮放</span><span class="val" id="imgSclVal">1.0×</span>
             <div class="slider"><div class="track"></div><div class="fill" id="imgSclFill"></div><div class="thumb" id="imgSclThumb"></div>
               <input type="range" min="30" max="200" value="100" id="imgScl" />
             </div>
           </div>
-          <div class="ctrl"><span class="label">Blend</span><span class="val" id="imgBlendVal">normal</span>
+          <div class="ctrl"><span class="label">Blend 混合模式</span><span class="val" id="imgBlendVal">normal</span>
             <div class="seg" id="imgBlendSeg" style="grid-template-columns:repeat(4,1fr)">
               <button data-blend="source-over" class="on">Normal</button>
               <button data-blend="lighter">Add</button>
@@ -1571,9 +1591,9 @@
         </div>
 
         <div class="section">
-          <h3 class="section-title">Arrangement</h3>
+          <h3 class="section-title">Arrangement 排列 <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">single / radial / scatter / tile</em></h3>
           <div class="ctrl">
-            <span class="label">Layout</span>
+            <span class="label">Layout 排列方式</span>
             <span class="val" id="imgArrVal">single</span>
             <div class="seg" id="imgArrSeg" style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px">
               <button data-arr="single" class="on">Single</button>
@@ -1586,12 +1606,12 @@
               <button data-arr="single" style="visibility:hidden"></button>
             </div>
           </div>
-          <div class="ctrl"><span class="label">Copies</span><span class="val" id="imgCntVal">8</span>
+          <div class="ctrl"><span class="label">Copies 數量</span><span class="val" id="imgCntVal">8</span>
             <div class="slider"><div class="track"></div><div class="fill" id="imgCntFill"></div><div class="thumb" id="imgCntThumb"></div>
               <input type="range" min="2" max="48" value="8" id="imgCnt" />
             </div>
           </div>
-          <div class="ctrl"><span class="label">Spawn rate (growth)</span><span class="val" id="imgRateVal">1.0/s</span>
+          <div class="ctrl"><span class="label">Spawn rate 生成速率 (growth)</span><span class="val" id="imgRateVal">1.0/s</span>
             <div class="slider"><div class="track"></div><div class="fill" id="imgRateFill"></div><div class="thumb" id="imgRateThumb"></div>
               <input type="range" min="2" max="200" value="100" id="imgRate" />
             </div>
@@ -1610,7 +1630,7 @@
       <!-- AUDIO -->
       <section class="tab" data-tab="audio">
         <div class="section">
-          <h3 class="section-title">Generative music</h3>
+          <h3 class="section-title">Generative music 生成音樂 <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">節拍 · 音階</em></h3>
           <div class="ctrl">
             <span class="label">BPM</span>
             <span class="val" id="bpmVal">90</span>
@@ -1630,9 +1650,9 @@
         </div>
 
         <div class="section">
-          <h3 class="section-title">Audio reactive</h3>
+          <h3 class="section-title">Audio reactive 聲音反應 <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">麥克風 · 上傳音樂</em></h3>
           <div class="audio-head">
-            <span class="label">Source</span>
+            <span class="label">Source 音源</span>
             <span class="status" id="audioStatus">silent</span>
           </div>
           <div class="audio-row">
@@ -1655,23 +1675,23 @@
         </div>
 
         <div class="section">
-          <h3 class="section-title">Reactivity</h3>
-          <div class="ctrl"><span class="label">Audio gain</span><span class="val" id="aGainVal">1.0×</span>
+          <h3 class="section-title">Reactivity 反應強度 <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">低音 / 中音 / 高音</em></h3>
+          <div class="ctrl"><span class="label">Audio gain 音量增益</span><span class="val" id="aGainVal">1.0×</span>
             <div class="slider"><div class="track"></div><div class="fill" id="aGainFill"></div><div class="thumb" id="aGainThumb"></div>
               <input type="range" min="0" max="250" value="100" id="aGain" />
             </div>
           </div>
-          <div class="ctrl"><span class="label">Bass impact</span><span class="val" id="bImpVal">1.0×</span>
+          <div class="ctrl"><span class="label">Bass impact 低音強度</span><span class="val" id="bImpVal">1.0×</span>
             <div class="slider"><div class="track"></div><div class="fill" id="bImpFill"></div><div class="thumb" id="bImpThumb"></div>
               <input type="range" min="0" max="250" value="100" id="bImp" />
             </div>
           </div>
-          <div class="ctrl"><span class="label">Mid impact</span><span class="val" id="mImpVal">1.0×</span>
+          <div class="ctrl"><span class="label">Mid impact 中音強度</span><span class="val" id="mImpVal">1.0×</span>
             <div class="slider"><div class="track"></div><div class="fill" id="mImpFill"></div><div class="thumb" id="mImpThumb"></div>
               <input type="range" min="0" max="250" value="100" id="mImp" />
             </div>
           </div>
-          <div class="ctrl"><span class="label">Treble impact</span><span class="val" id="tImpVal">1.0×</span>
+          <div class="ctrl"><span class="label">Treble impact 高音強度</span><span class="val" id="tImpVal">1.0×</span>
             <div class="slider"><div class="track"></div><div class="fill" id="tImpFill"></div><div class="thumb" id="tImpThumb"></div>
               <input type="range" min="0" max="250" value="100" id="tImp" />
             </div>
@@ -1709,22 +1729,22 @@
             <button class="audio-btn" id="lyricsToggle" style="flex:1">Sync off</button>
             <button class="audio-btn danger" id="lyricsClear" title="Clear loaded lyrics">✕ clear</button>
           </div>
-          <div class="ctrl"><span class="label">Line display max (sec) · VJ gap control</span><span class="val" id="lyricsMaxDurVal">4s</span>
+          <div class="ctrl"><span class="label">Line display max (sec) · 單行最長秒數 · VJ gap control</span><span class="val" id="lyricsMaxDurVal">8s</span>
             <div class="slider"><div class="track"></div><div class="fill" id="lyricsMaxDurFill"></div><div class="thumb" id="lyricsMaxDurThumb"></div>
-              <input type="range" min="1" max="30" value="4" id="lyricsMaxDur" />
+              <input type="range" min="1" max="30" value="8" id="lyricsMaxDur" />
             </div>
           </div>
-          <div class="ctrl"><span class="label">Fallback: switch every N lines</span><span class="val" id="lyricsEveryVal">5</span>
+          <div class="ctrl"><span class="label">Fallback 後備: switch every N lines 每幾句切一次</span><span class="val" id="lyricsEveryVal">5</span>
             <div class="slider"><div class="track"></div><div class="fill" id="lyricsEveryFill"></div><div class="thumb" id="lyricsEveryThumb"></div>
               <input type="range" min="2" max="12" value="5" id="lyricsEvery" />
             </div>
           </div>
-          <div class="ctrl"><span class="label">Instrumental gap (sec)</span><span class="val" id="lyricsGapVal">4</span>
+          <div class="ctrl"><span class="label">Instrumental gap 樂段間隔 (sec)</span><span class="val" id="lyricsGapVal">4</span>
             <div class="slider"><div class="track"></div><div class="fill" id="lyricsGapFill"></div><div class="thumb" id="lyricsGapThumb"></div>
               <input type="range" min="2" max="15" value="4" id="lyricsGap" />
             </div>
           </div>
-          <div class="ctrl"><span class="label">Gap switch interval</span><span class="val" id="lyricsGapIntVal">2.5s</span>
+          <div class="ctrl"><span class="label">Gap switch interval 間隔切換</span><span class="val" id="lyricsGapIntVal">2.5s</span>
             <div class="slider"><div class="track"></div><div class="fill" id="lyricsGapIntFill"></div><div class="thumb" id="lyricsGapIntThumb"></div>
               <input type="range" min="10" max="80" value="25" id="lyricsGapInt" />
             </div>
@@ -1738,7 +1758,7 @@
         </div>
 
         <div class="section">
-          <h3 class="section-title">Recording <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">output resolution</em></h3>
+          <h3 class="section-title">Recording 錄影 <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">輸出解析度 · output resolution</em></h3>
           <div class="seg" id="recQualitySeg" style="grid-template-columns:repeat(3,1fr)">
             <button data-q="720" class="on">720p<em>免費</em></button>
             <button data-q="1080" data-pro="1">1080p<em><span class="rec-lock">🔒</span> 授權</em></button>
@@ -1750,7 +1770,7 @@
         </div>
 
         <div class="section">
-          <h3 class="section-title">MIDI controller <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">CC + notes</em></h3>
+          <h3 class="section-title">MIDI controller MIDI 控制器 <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">CC + notes</em></h3>
           <div id="midiStatus" class="midi-status">checking for MIDI…</div>
           <div style="display:flex;gap:6px;margin:6px 0 10px;flex-wrap:wrap">
             <button class="audio-btn" id="midiEnableBtn">Enable MIDI</button>
@@ -1765,7 +1785,7 @@
       <!-- LIVE — Camera input + Typography visual -->
       <section class="tab" data-tab="live">
         <div class="section">
-          <h3 class="section-title">Camera input <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">face / hand</em></h3>
+          <h3 class="section-title">Camera input 攝影機輸入 <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">face / hand · 臉 / 手</em></h3>
           <div class="live-section">
             <div class="cam-status" id="camStatus"><span class="dot"></span><span id="camStatusText">camera off</span></div>
             <div class="cam-preview" id="camPreview">
@@ -1778,7 +1798,7 @@
               <button class="audio-btn danger" id="camStop">■ Stop</button>
             </div>
             <div>
-              <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Track</span>
+              <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Track 追蹤目標 <em style="font-family:var(--serif);font-style:italic;text-transform:none;letter-spacing:0;color:var(--ink-faint);font-size:11.5px;margin-left:4px">選臉或手</em></span>
               <div class="seg" id="camTrackSeg">
                 <button data-track="face" class="on">Face</button>
                 <button data-track="hand">Hand</button>
@@ -1803,7 +1823,7 @@
               </div>
             </div>
             <div>
-              <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Effect</span>
+              <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Effect 粒子效果 <em style="font-family:var(--serif);font-style:italic;text-transform:none;letter-spacing:0;color:var(--ink-faint);font-size:11.5px;margin-left:4px">從臉/手長出的粒子</em></span>
               <div class="live-grid" id="camFxGrid">
                 <button data-fx="none">None<em>無效果</em></button>
                 <button data-fx="tendrils" class="on">Tendrils<em>長出觸鬚</em></button>
@@ -1841,7 +1861,7 @@
                 <button data-filter="sketch">Sketch<em>素描線稿</em></button>
               </div>
             </div>
-            <div class="ctrl"><span class="label">Filter intensity</span><span class="val" id="camFilterAmtVal">1.0×</span>
+            <div class="ctrl"><span class="label">Filter intensity 濾鏡強度</span><span class="val" id="camFilterAmtVal">1.0×</span>
               <div class="slider"><div class="track"></div><div class="fill" id="camFilterAmtFill"></div><div class="thumb" id="camFilterAmtThumb"></div>
                 <input type="range" min="0" max="200" value="100" id="camFilterAmt" />
               </div>
@@ -1910,27 +1930,27 @@
                 <button data-motion="spiral">Spiral<em>螺旋</em></button>
               </div>
             </div>
-            <div class="ctrl"><span class="label">Motion intensity</span><span class="val" id="camMotionAmtVal">1.0×</span>
+            <div class="ctrl"><span class="label">Motion intensity 動作強度</span><span class="val" id="camMotionAmtVal">1.0×</span>
               <div class="slider"><div class="track"></div><div class="fill" id="camMotionAmtFill"></div><div class="thumb" id="camMotionAmtThumb"></div>
                 <input type="range" min="0" max="200" value="100" id="camMotionAmt" />
               </div>
             </div>
-            <div class="ctrl"><span class="label">Motion speed</span><span class="val" id="camMotionSpdVal">1.0×</span>
+            <div class="ctrl"><span class="label">Motion speed 動作速度</span><span class="val" id="camMotionSpdVal">1.0×</span>
               <div class="slider"><div class="track"></div><div class="fill" id="camMotionSpdFill"></div><div class="thumb" id="camMotionSpdThumb"></div>
                 <input type="range" min="20" max="300" value="100" id="camMotionSpd" />
               </div>
             </div>
-            <div class="ctrl"><span class="label">Show video</span><span class="val" id="camVidVal">35%</span>
+            <div class="ctrl"><span class="label">Show video 影像透明度</span><span class="val" id="camVidVal">35%</span>
               <div class="slider"><div class="track"></div><div class="fill" id="camVidFill"></div><div class="thumb" id="camVidThumb"></div>
                 <input type="range" min="0" max="100" value="35" id="camVid" />
               </div>
             </div>
-            <div class="ctrl"><span class="label">Effect size</span><span class="val" id="camFxSizeVal">1.0×</span>
+            <div class="ctrl"><span class="label">Effect size 粒子大小</span><span class="val" id="camFxSizeVal">1.0×</span>
               <div class="slider"><div class="track"></div><div class="fill" id="camFxSizeFill"></div><div class="thumb" id="camFxSizeThumb"></div>
                 <input type="range" min="20" max="300" value="100" id="camFxSize" />
               </div>
             </div>
-            <div class="ctrl"><span class="label">Mirror</span><span class="val" id="camMirrorVal">on</span>
+            <div class="ctrl"><span class="label">Mirror 鏡像</span><span class="val" id="camMirrorVal">on</span>
               <div class="slider"><div class="track"></div><div class="fill" id="camMirrorFill"></div><div class="thumb" id="camMirrorThumb"></div>
                 <input type="range" min="0" max="1" value="1" id="camMirror" step="1" />
               </div>
@@ -1943,7 +1963,7 @@
       <!-- TYPE — typography as VJ visual -->
       <section class="tab" data-tab="type">
         <div class="section">
-          <h3 class="section-title">Typography <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">type as VJ</em></h3>
+          <h3 class="section-title">Typography 文字 <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">文字當作 VJ 視覺</em></h3>
           <div class="live-section">
             <textarea class="type-textarea" id="typeText" rows="2" placeholder="輸入文字 · 用 / 分隔多句">輕呼吸 / breathe / 静か / 한 호흡 / 一念</textarea>
             <div class="type-tip">用 / 分隔多個詞 — 系統會隨機輪播。</div>
@@ -1963,7 +1983,7 @@
             </div>
 
             <div>
-              <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Font</span>
+              <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Font 字體</span>
               <div class="seg" id="typeFamilySeg">
                 <button data-family="sans" class="on">Sans</button>
                 <button data-family="serif">Serif</button>
@@ -1971,7 +1991,7 @@
               </div>
             </div>
             <div>
-              <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Script</span>
+              <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Script 語系</span>
               <div class="seg" id="typeLangSeg">
                 <button data-lang="latin" class="on">Aa</button>
                 <button data-lang="sc">简</button>
@@ -1981,7 +2001,7 @@
               </div>
             </div>
             <div>
-              <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Layout</span>
+              <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Layout 排版</span>
               <div class="live-grid" id="typeLayoutGrid">
                 <button data-layout="center" class="on">Center<em>單字置中變化</em></button>
                 <button data-layout="left">Left<em>靠左排列</em></button>
@@ -1990,7 +2010,7 @@
               </div>
             </div>
             <div>
-              <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Size</span>
+              <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Size 大小</span>
               <div class="seg" id="typeSizeSeg">
                 <button data-size="big" class="on">Big</button>
                 <button data-size="small">Small</button>
@@ -1998,13 +2018,13 @@
                 <button data-size="huge">Huge</button>
               </div>
             </div>
-            <div class="ctrl"><span class="label">Size scale</span><span class="val" id="typeSizeScaleVal">1.0×</span>
+            <div class="ctrl"><span class="label">Size scale 大小倍率</span><span class="val" id="typeSizeScaleVal">1.0×</span>
               <div class="slider"><div class="track"></div><div class="fill" id="typeSizeScaleFill"></div><div class="thumb" id="typeSizeScaleThumb"></div>
                 <input type="range" min="20" max="400" value="100" id="typeSizeScale" />
               </div>
             </div>
             <div>
-              <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Style</span>
+              <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Style 樣式</span>
               <div class="seg" id="typeStyleSeg" style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px">
                 <button data-style="solid" class="on">Solid</button>
                 <button data-style="outline">Outline</button>
@@ -2062,7 +2082,7 @@ return {
               </div>
             </details>
             <div>
-              <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Color</span>
+              <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Color 顏色</span>
               <div class="palette-row" id="typePalette">
                 <button data-col="auto" class="on" style="background:var(--ink)" title="Auto (use emotion)"></button>
                 <button data-col="#000000" style="background:#000000;border:1px solid rgba(255,255,255,.2)" title="Black 黑"></button>
@@ -2092,22 +2112,22 @@ return {
                 <input type="range" min="0" max="20" value="4" id="typeOutline" />
               </div>
             </div>
-            <div class="ctrl"><span class="label">Speed</span><span class="val" id="typeSpeedVal">1.0×</span>
+            <div class="ctrl"><span class="label">Speed 速度</span><span class="val" id="typeSpeedVal">1.0×</span>
               <div class="slider"><div class="track"></div><div class="fill" id="typeSpeedFill"></div><div class="thumb" id="typeSpeedThumb"></div>
                 <input type="range" min="5" max="400" value="100" id="typeSpeed" />
               </div>
             </div>
-            <div class="ctrl"><span class="label">Spawn rate</span><span class="val" id="typeRateVal">1.5/s</span>
+            <div class="ctrl"><span class="label">Spawn rate 出字速率</span><span class="val" id="typeRateVal">1.5/s</span>
               <div class="slider"><div class="track"></div><div class="fill" id="typeRateFill"></div><div class="thumb" id="typeRateThumb"></div>
                 <input type="range" min="1" max="60" value="15" id="typeRate" />
               </div>
             </div>
-            <div class="ctrl"><span class="label">Lifetime</span><span class="val" id="typeLifeVal">3.0s</span>
+            <div class="ctrl"><span class="label">Lifetime 字壽命</span><span class="val" id="typeLifeVal">3.0s</span>
               <div class="slider"><div class="track"></div><div class="fill" id="typeLifeFill"></div><div class="thumb" id="typeLifeThumb"></div>
                 <input type="range" min="5" max="80" value="30" id="typeLife" />
               </div>
             </div>
-            <div class="ctrl"><span class="label">Density</span><span class="val" id="typeDensVal">0.6</span>
+            <div class="ctrl"><span class="label">Density 密度</span><span class="val" id="typeDensVal">0.6</span>
               <div class="slider"><div class="track"></div><div class="fill" id="typeDensFill"></div><div class="thumb" id="typeDensThumb"></div>
                 <input type="range" min="0" max="100" value="60" id="typeDens" />
               </div>
@@ -2134,7 +2154,7 @@ return {
         </div>
 
         <div class="section">
-          <h3 class="section-title">My presets <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px" id="myPresetsCount">0 saved</em></h3>
+          <h3 class="section-title">My presets 我的預設 <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px" id="myPresetsCount">0 saved</em></h3>
           <div class="live-section">
             <div class="phrase-row">
               <input id="myPresetName" type="text" placeholder="這個視覺的名字…" />
@@ -2151,7 +2171,7 @@ return {
         </div>
 
         <div class="section">
-          <h3 class="section-title">Built-in presets <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">mood</em></h3>
+          <h3 class="section-title">Built-in presets 內建預設 <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">情緒 · mood</em></h3>
           <div class="actions" style="border:none;padding:0;grid-template-columns:1fr 1fr">
             <button class="btn" data-preset="aurora">Aurora</button>
             <button class="btn" data-preset="ember">Ember</button>
@@ -2162,7 +2182,7 @@ return {
           </div>
         </div>
         <div class="section">
-          <h3 class="section-title">Style presets <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">VJ looks</em></h3>
+          <h3 class="section-title">Style presets 風格預設 <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">VJ 風格 looks</em></h3>
           <div class="actions" style="border:none;padding:0;grid-template-columns:1fr 1fr">
             <button class="btn" data-preset="inkWash">水墨 Ink wash</button>
             <button class="btn" data-preset="popArt">普普 Pop art</button>
@@ -2178,7 +2198,7 @@ return {
       <!-- SETLIST — live show / concert preset slots with hotkeys -->
       <section class="tab" data-tab="setlist">
         <div class="section">
-          <h3 class="section-title">Setlist <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">演唱會 · 20 slots · 快捷鍵切換</em></h3>
+          <h3 class="section-title">Setlist 演出歌單 <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">20 slots · 快捷鍵切換 hotkeys</em></h3>
           <div class="phrase-row">
             <input id="setlistName" type="text" placeholder="setlist 名稱 (e.g. tour 2026)" />
             <button id="setlistSaveLib" title="Save this setlist into your library so you can switch between shows">★ Save to library</button>
@@ -2220,7 +2240,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-22k · 3D Face AR (Three.js + MediaPipe transform matrix): Crown3D/Sunglasses3D/Cat3D/Halo3D/Mask3D/Horns3D/Headband3D + Hand AR (Rings/EnergyBall/Spiderweb/Wand/Lightning/Fireball/Butterflies)');
+console.log('[IW] script booting · build 2026-05-22o · bilingual zh/en pass: tab names, lock chips, action buttons, section titles, slider labels (Visual/Color/Atmosphere/Field/Audio/Image/Type/Live high-visibility controls)');
 
 // Click diagnostics — log every click so we can see where they reach.
 // Capture phase so we see clicks BEFORE any interceptor swallows them.
@@ -2459,6 +2479,14 @@ const state = {
     image:    false,  // Image tab — arrangement + aesthetics
     type:     false,  // Type tab — typography animation, color, weight
     live:     false,  // Live tab — camera fx, background removal
+    // Granular sub-locks — fine-grained Random exclusions within a tab.
+    // When a tab's main lock is OFF, individual sub-locks here still preserve that sub-group.
+    sub: {
+      type:   { font:false, anim:false, style:false, color:false, behavior:false },
+      image:  { arrangement:false, effect:false, filter:false, motion:false, controls:false },
+      live:   { effect:false, filter:false, ar:false, motion:false, camera:false },
+      visual: { color:false, atmosphere:false, geometry:false },
+    },
   },
   // inverse palette — white canvas, dark content. CSS filter (invert + hue-rotate) preserves hue.
   lightMode: false,
@@ -4060,7 +4088,7 @@ const lyrics = window.lyrics = {
   // LRC doesn't have end times — we estimate end = min(next.time, line.time + estimated).
   // Estimate is based on character count (CJK chars sing slower than Latin), capped here.
   // Prevents the line lingering during instrumental gaps.
-  maxLineDurationSec: 4,
+  maxLineDurationSec: 8,
   _lastGapSwitch: 0,
   _lineShowing: false,
   meta: null,             // { trackName, artistName }
@@ -4438,7 +4466,7 @@ function tickLyricsSync(){
   if(_lyrics._lineShowing && _lyrics.currentIdx >= 0){
     const cur = _lyrics.lines[_lyrics.currentIdx];
     const nxt = _lyrics.lines[_lyrics.currentIdx + 1];
-    const cap = _lyrics.maxLineDurationSec || 4;
+    const cap = _lyrics.maxLineDurationSec || 8;
     const untilNext = cap >= 30;
     const lineEnd = untilNext
       ? (nxt ? nxt.time : Infinity)
@@ -8704,16 +8732,21 @@ function randomizeAll(){
     // Type
     typo: (typeof typo !== 'undefined') ? {
       anim: typo.anim, style: typo.style, color: typo.color, weight: typo.weight,
-      outlineWidth: typo.outlineWidth, family: typo.family, layout: typo.layout,
-      sizeMode: typo.sizeMode, speed: typo.speed, rate: typo.rate, life: typo.life,
+      outlineWidth: typo.outlineWidth, family: typo.family, lang: typo.lang, layout: typo.layout,
+      sizeMode: typo.sizeMode, sizeScale: typo.sizeScale, speed: typo.speed,
+      rate: typo.rate, life: typo.life, density: typo.density, loop: typo.loop,
       kaleido: typo.kaleido,
     } : null,
-    // Live (camera)
+    // Live (camera) — full snapshot incl. filter / AR / motion / hand AR
     cam: (typeof cam !== 'undefined') ? {
-      track: cam.track, faceFx: cam.faceFx, handFx: cam.handFx,
+      track: cam.track, fx: cam.fx, faceFx: cam.faceFx, handFx: cam.handFx,
       videoOpacity: cam.videoOpacity, fxSize: cam.fxSize, mirror: cam.mirror,
       kaleido: cam.kaleido, removeBg: cam.removeBg,
       filter: cam.filter, filterIntensity: cam.filterIntensity,
+      ar: cam.ar, arIntensity: cam.arIntensity,
+      handAr: cam.handAr, handArIntensity: cam.handArIntensity,
+      motion: cam.motion, motionIntensity: cam.motionIntensity, motionSpeed: cam.motionSpeed,
+      bgFeather: cam.bgFeather, bgSmooth: cam.bgSmooth, bgModel: cam.bgModel,
     } : null,
   };
   // Always preserve webcamFX + typography modes (camera/text are live streams, not generative).
@@ -8954,6 +8987,38 @@ function randomizeAll(){
     typo.outlineWidth = 0.02 + Math.random()*0.10;
     typo.speed = 0.4 + Math.random()*1.6;
     typo.rate = 0.5 + Math.random()*3.5;
+    // ALL visible Type sliders now randomized — life / density / sizeScale / kaleido / layout / sizeMode / family
+    typo.life = 0.8 + Math.random()*6.5;            // 0.8 .. 7.3 seconds
+    typo.density = Math.random();                   // 0..1
+    typo.sizeScale = 0.4 + Math.random()*2.4;       // 0.4 .. 2.8×
+    // typo.kaleido — independent per-layer; mostly 0, sometimes 4/6/8/12
+    const tkRoll = Math.random();
+    typo.kaleido = tkRoll < 0.65 ? 0 : ([4,6,8,12][Math.floor(Math.random()*4)]);
+    const layoutPool = ['center','left','right','scatter'];
+    typo.layout = layoutPool[Math.floor(Math.random()*layoutPool.length)];
+    const sizePool = ['big','small','mixed','huge'];
+    typo.sizeMode = sizePool[Math.floor(Math.random()*sizePool.length)];
+    const familyPool = ['sans','serif','recursive'];
+    typo.family = familyPool[Math.floor(Math.random()*familyPool.length)];
+    // Loop preference — usually on, sometimes off
+    typo.loop = Math.random() < 0.85;
+    // Sync ALL Type UI controls so the changes are visible
+    const _setSlider = (id, v) => { const el = document.getElementById(id); if(el && v != null){ el.value = v; el.dispatchEvent(new Event('input')); } };
+    _setSlider('typeSpeed',   typo.speed*100);
+    _setSlider('typeRate',    typo.rate*10);
+    _setSlider('typeLife',    typo.life*10);
+    _setSlider('typeDens',    typo.density*100);
+    _setSlider('typeSizeScale', typo.sizeScale*100);
+    _setSlider('typeWeight',  typo.weight);
+    _setSlider('typeOutline', typo.outlineWidth*100);
+    document.querySelectorAll('#typeAnimGrid button').forEach(b => b.classList.toggle('on', b.dataset.anim === typo.anim));
+    document.querySelectorAll('#typeStyleSeg button').forEach(b => b.classList.toggle('on', b.dataset.style === typo.style));
+    document.querySelectorAll('#typeLayoutGrid button').forEach(b => b.classList.toggle('on', b.dataset.layout === typo.layout));
+    document.querySelectorAll('#typeSizeSeg button').forEach(b => b.classList.toggle('on', b.dataset.size === typo.sizeMode));
+    document.querySelectorAll('#typeFamilySeg button').forEach(b => b.classList.toggle('on', b.dataset.family === typo.family));
+    document.querySelectorAll('#typePalette button').forEach(b => b.classList.toggle('on', b.dataset.col === typo.color));
+    const loopEl = document.getElementById('typeLoop'); if(loopEl) loopEl.checked = !!typo.loop;
+    if(typeof setKaleidoUI === 'function'){ try { setKaleidoUI('typo', typo.kaleido); } catch(_){} }
   }
 
   // 11. Live tab — randomize camera fx + filter (camera ON/OFF state itself untouched)
@@ -9044,6 +9109,100 @@ function randomizeAll(){
   if(L.live && snap.cam && typeof cam !== 'undefined'){
     Object.assign(cam, snap.cam);
     cam.fx = cam.track === 'face' ? cam.faceFx : cam.handFx;
+  }
+
+  // —— Sub-locks — fine-grained restoration WITHIN a tab. Honored only when the
+  //    tab's main lock is OFF (main lock already preserves everything).
+  const sub = (state.locks && state.locks.sub) || {};
+  // TYPE sub-locks
+  if(!L.type && snap.typo && typeof typo !== 'undefined' && sub.type){
+    const T = sub.type;
+    if(T.font){
+      typo.family = snap.typo.family; typo.lang = snap.typo.lang;
+      typo.weight = snap.typo.weight; typo.outlineWidth = snap.typo.outlineWidth;
+    }
+    if(T.anim){
+      typo.anim = snap.typo.anim; typo.kaleido = snap.typo.kaleido;
+    }
+    if(T.style){
+      typo.style = snap.typo.style; typo.layout = snap.typo.layout;
+      typo.sizeMode = snap.typo.sizeMode; typo.sizeScale = snap.typo.sizeScale;
+    }
+    if(T.color){
+      typo.color = snap.typo.color;
+    }
+    if(T.behavior){
+      typo.speed = snap.typo.speed; typo.rate = snap.typo.rate;
+      typo.life = snap.typo.life; typo.density = snap.typo.density;
+      typo.loop = snap.typo.loop;
+    }
+  }
+  // IMAGE sub-locks
+  if(!L.image && snap.img && imgState && sub.image){
+    const I = sub.image;
+    if(I.arrangement){
+      imgState.arrangement = snap.img.arrangement;
+      imgState.count = snap.img.count;
+      imgState.spawnRate = snap.img.spawnRate;
+      imgState.scale = snap.img.scale;
+      imgState.blend = snap.img.blend;
+      imgState.useAllImages = snap.img.useAllImages;
+      imgState.cycle = snap.img.cycle;
+    }
+    if(I.controls){
+      imgState.opacity = snap.img.opacity;
+      imgState.effectStrength = snap.img.effectStrength;
+    }
+    if(snap.img.modes){
+      // mode-level restoration by sub-group (matches the Image tab Effect/Filter/Motion groupings)
+      const effectKeys = ['ripple','oil','mannerist','nihilist','occult','shatter','kaleido','melt','pixelSort'];
+      const filterKeys = ['gothic','romantic','glitch','ascii','chromaShift'];
+      const motionKeys = ['shake'];
+      if(I.effect) for(const k of effectKeys) imgState.modes[k] = !!snap.img.modes[k];
+      if(I.filter) for(const k of filterKeys) imgState.modes[k] = !!snap.img.modes[k];
+      if(I.motion) for(const k of motionKeys) imgState.modes[k] = !!snap.img.modes[k];
+    }
+  }
+  // LIVE sub-locks
+  if(!L.live && snap.cam && typeof cam !== 'undefined' && sub.live){
+    const V = sub.live;
+    if(V.effect){
+      cam.fx = snap.cam.fx; cam.faceFx = snap.cam.faceFx;
+      cam.handFx = snap.cam.handFx; cam.fxSize = snap.cam.fxSize;
+    }
+    if(V.filter){
+      cam.filter = snap.cam.filter; cam.filterIntensity = snap.cam.filterIntensity;
+    }
+    if(V.ar){
+      cam.ar = snap.cam.ar; cam.arIntensity = snap.cam.arIntensity;
+      cam.handAr = snap.cam.handAr; cam.handArIntensity = snap.cam.handArIntensity;
+    }
+    if(V.motion){
+      cam.motion = snap.cam.motion;
+      cam.motionIntensity = snap.cam.motionIntensity;
+      cam.motionSpeed = snap.cam.motionSpeed;
+    }
+    if(V.camera){
+      cam.kaleido = snap.cam.kaleido; cam.mirror = snap.cam.mirror;
+      cam.removeBg = snap.cam.removeBg;
+      cam.bgFeather = snap.cam.bgFeather; cam.bgSmooth = snap.cam.bgSmooth;
+      cam.bgModel = snap.cam.bgModel; cam.track = snap.cam.track;
+    }
+  }
+  // VISUAL sub-locks
+  if(!L.visual && sub.visual){
+    const VI = sub.visual;
+    if(VI.color){
+      state.vibrance = snap.vibrance; state.hueShift = snap.hueShift;
+      state.bgDark = snap.bgDark; state.lightMode = snap.lightMode;
+    }
+    if(VI.atmosphere){
+      state.bloom = snap.bloom; state.trails = snap.trails;
+      state.grain = snap.grain; state.vignette = snap.vignette;
+    }
+    if(VI.geometry){
+      state.kaleido = snap.kaleido; state.mirror = snap.mirror;
+    }
   }
 
   // Sync UI for things outside syncAllUI's normal coverage
@@ -10468,6 +10627,93 @@ document.querySelectorAll('.lock-chip').forEach(chip => {
   });
 });
 
+// Sub-lock popovers — fine-grained Random exclusions within a tab
+const SUBLOCK_GROUPS = {
+  type: [
+    { key:'font',     label:'Font 字體',      desc:'family / weight / outline' },
+    { key:'anim',     label:'Animation 動畫', desc:'anim / kaleido' },
+    { key:'style',    label:'Style 風格',     desc:'style / layout / size mode / scale' },
+    { key:'color',    label:'Color 顏色',     desc:'color' },
+    { key:'behavior', label:'Behavior 行為',  desc:'speed / rate / life / density / loop' },
+  ],
+  image: [
+    { key:'arrangement', label:'Arrangement 排版', desc:'layout / count / scale / blend / cycle' },
+    { key:'effect',      label:'Effect 變形',      desc:'ripple / oil / shatter / kaleido / etc' },
+    { key:'filter',      label:'Filter 濾鏡',      desc:'gothic / glitch / ascii / chroma / romantic' },
+    { key:'motion',      label:'Motion 晃動',      desc:'shake' },
+    { key:'controls',    label:'Controls 控制',    desc:'opacity / effect strength' },
+  ],
+  live: [
+    { key:'effect', label:'Effect 粒子', desc:'face / hand FX, fx size' },
+    { key:'filter', label:'Filter 濾鏡', desc:'8-bit / glitch / chroma / etc' },
+    { key:'ar',     label:'AR 貼圖',     desc:'face AR + hand AR' },
+    { key:'motion', label:'Motion 晃動', desc:'shake / zoom / sway / etc' },
+    { key:'camera', label:'Camera 相機', desc:'kaleido / mirror / bg removal' },
+  ],
+  visual: [
+    { key:'color',      label:'Color 顏色',    desc:'vibrance / hue / bg / light mode' },
+    { key:'atmosphere', label:'Atmosphere 氛圍', desc:'bloom / trails / grain / vignette' },
+    { key:'geometry',   label:'Geometry 幾何', desc:'kaleido / mirror' },
+  ],
+};
+let _activeSubPopover = null;
+function _closeSubPopover(){
+  if(_activeSubPopover && _activeSubPopover.parentNode){
+    _activeSubPopover.parentNode.removeChild(_activeSubPopover);
+  }
+  _activeSubPopover = null;
+}
+function _renderSubPopover(caret, tab){
+  _closeSubPopover();
+  const groups = SUBLOCK_GROUPS[tab];
+  if(!groups) return;
+  if(!state.locks.sub) state.locks.sub = {};
+  if(!state.locks.sub[tab]) state.locks.sub[tab] = {};
+  const sub = state.locks.sub[tab];
+  const pop = document.createElement('div');
+  pop.className = 'lock-sub-popover';
+  pop.innerHTML = `<div class="ttl">🔒 lock from random 鎖定不要 random</div>`;
+  groups.forEach(g => {
+    const lbl = document.createElement('label');
+    lbl.title = g.desc;
+    lbl.innerHTML = `<input type="checkbox" data-subkey="${g.key}" ${sub[g.key] ? 'checked' : ''} /><span>${g.label}</span>`;
+    lbl.querySelector('input').addEventListener('change', e => {
+      sub[g.key] = e.target.checked;
+      // mark caret as having active sub-locks
+      const anyActive = Object.values(sub).some(Boolean);
+      caret.classList.toggle('has-active', anyActive);
+    });
+    pop.appendChild(lbl);
+  });
+  caret.parentNode.appendChild(pop);
+  _activeSubPopover = pop;
+  // close on outside click
+  setTimeout(() => {
+    const outside = (e) => {
+      if(_activeSubPopover && !_activeSubPopover.contains(e.target) && e.target !== caret){
+        _closeSubPopover();
+        document.removeEventListener('mousedown', outside, true);
+      }
+    };
+    document.addEventListener('mousedown', outside, true);
+  }, 0);
+}
+document.querySelectorAll('.lock-sub-caret').forEach(caret => {
+  // Reflect initial "any sub-lock active" state
+  const tab = caret.dataset.sub;
+  const sub = (state.locks.sub && state.locks.sub[tab]) || {};
+  if(Object.values(sub).some(Boolean)) caret.classList.add('has-active');
+  caret.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if(_activeSubPopover && _activeSubPopover.dataset.tab === tab){
+      _closeSubPopover();
+      return;
+    }
+    _renderSubPopover(caret, tab);
+    if(_activeSubPopover) _activeSubPopover.dataset.tab = tab;
+  });
+});
+
 // Registration gate — first-visit gate. Stored in localStorage, persists across sessions.
 // On submit, calls /api/license-check to see if this email is on the whitelist;
 // if yes, sets state.noWatermark so saves/recordings come out clean.
@@ -11858,24 +12104,33 @@ if(_camBgModelSeg){
 /* —————————————————————————————————————————————————————————————————————
    MediaPipe detection loop (decoupled from main RAF; faster)
    ————————————————————————————————————————————————————————————————————— */
+// Throttle MediaPipe detection to 30fps (still smooth visually, halves cost).
+// When the page is showing video items + image effects too, drop further to 20fps.
+let _detectLastT = 0;
 async function detectLoop(){
   if(!cam.ready){ requestAnimationFrame(detectLoop); return; }
   const v = cam.video;
+  const now = performance.now();
+  const videoItemActive = imgState && imgState.images && imgState.images.some(e => e && e.isVideo);
+  const imgFxActive = imgState && imgState.modes && Object.values(imgState.modes).filter(Boolean).length > 1;
+  const minIntervalMs = (videoItemActive || imgFxActive) ? 50 : 33; // 20fps under load, else 30fps
+  if(now - _detectLastT < minIntervalMs){
+    requestAnimationFrame(detectLoop);
+    return;
+  }
+  _detectLastT = now;
   if(v.readyState >= 2){
-    const t = performance.now();
     try{
       if(cam.track === 'face' && cam.faceLM){
-        const r = cam.faceLM.detectForVideo(v, t);
+        const r = cam.faceLM.detectForVideo(v, now);
         cam.faceLandmarks = (r.faceLandmarks && r.faceLandmarks[0]) || null;
-        // 4×4 column-major head pose matrix (translation + rotation) — used by Three.js AR
         cam.faceTransformMatrix = (r.facialTransformationMatrixes && r.facialTransformationMatrixes[0] && r.facialTransformationMatrixes[0].data) || null;
       } else if(cam.track === 'hand' && cam.handLM){
-        const r = cam.handLM.detectForVideo(v, t);
+        const r = cam.handLM.detectForVideo(v, now);
         cam.handLandmarks = (r.landmarks && r.landmarks.length) ? r.landmarks : null;
       }
-      // Background-removal segmentation runs in parallel when toggled on
       if(cam.removeBg && cam.segLM){
-        cam.segLM.segmentForVideo(v, t, (result) => {
+        cam.segLM.segmentForVideo(v, now, (result) => {
           const cm = result.categoryMask;
           if(!cm) return;
           cam.segMaskData = cm.getAsUint8Array();
@@ -11979,9 +12234,21 @@ const _filterCv  = document.createElement('canvas');
 const _filterCtx = _filterCv.getContext('2d');
 const _filterAuxCv  = document.createElement('canvas');
 const _filterAuxCtx = _filterAuxCv.getContext('2d');
+let _filterFrameCounter = 0;
 function applyVideoFilter(src, vw, vh){
   const f = cam.filter || 'none';
   if(f === 'none') return src;
+  // Adaptive throttle: when multiple heavy sources are active (video item + image effects + Live),
+  // skip the filter every other frame and re-use the last result. Halves filter CPU/GPU cost.
+  _filterFrameCounter++;
+  const heavyFilters = new Set(['glitch','halftone','sketch','edge','8bit','mosaic','chroma']);
+  const videoItemActive = imgState && imgState.images && imgState.images.some(e => e && e.isVideo);
+  const imgFxActive = imgState && imgState.modes && Object.values(imgState.modes).filter(Boolean).length > 1; // 1 = "enabled" baseline
+  const arActive = cam.ar && cam.ar !== 'none';
+  const stackedLoad = (videoItemActive ? 1 : 0) + (imgFxActive ? 1 : 0) + (arActive ? 1 : 0);
+  if(stackedLoad >= 2 && heavyFilters.has(f) && (_filterFrameCounter & 1) && _filterCv.width === vw && _filterCv.height === vh){
+    return _filterCv;  // re-use last frame
+  }
   if(_filterCv.width !== vw || _filterCv.height !== vh){
     _filterCv.width = vw; _filterCv.height = vh;
   }
@@ -13195,10 +13462,16 @@ async function _loadAR3D(){
     const THREE = mod;
     // offscreen canvas matching main canvas size (rebuilt on demand if size changes)
     ar3d.cv = document.createElement('canvas');
-    ar3d.cv.width = W; ar3d.cv.height = H;
+    // Render at half-res — composite scales up to full canvas. Negligible quality
+    // loss for 3D AR elements (which are usually small overlays), big perf win
+    // when stacked with video + image + filter pipelines.
+    const AR3D_SCALE = 0.5;
+    ar3d._scale = AR3D_SCALE;
+    ar3d.cv.width = Math.max(64, Math.round(W * AR3D_SCALE));
+    ar3d.cv.height = Math.max(64, Math.round(H * AR3D_SCALE));
     ar3d.renderer = new THREE.WebGLRenderer({ canvas: ar3d.cv, alpha: true, antialias: true });
     ar3d.renderer.setClearColor(0x000000, 0);
-    ar3d.renderer.setSize(W, H, false);
+    ar3d.renderer.setSize(ar3d.cv.width, ar3d.cv.height, false);
     ar3d.scene = new THREE.Scene();
     // Lights
     ar3d.scene.add(new THREE.AmbientLight(0xffffff, 0.55));
@@ -13345,10 +13618,12 @@ function renderAR3D(g){
   const THREE = ar3d.THREE;
   const m = cam.faceTransformMatrix;
   if(!m || m.length !== 16) return;
-  // Resize renderer if canvas changed
-  if(ar3d.cv.width !== W || ar3d.cv.height !== H){
-    ar3d.cv.width = W; ar3d.cv.height = H;
-    ar3d.renderer.setSize(W, H, false);
+  // Resize renderer if canvas changed (keep half-res)
+  const targetW = Math.max(64, Math.round(W * (ar3d._scale || 0.5)));
+  const targetH = Math.max(64, Math.round(H * (ar3d._scale || 0.5)));
+  if(ar3d.cv.width !== targetW || ar3d.cv.height !== targetH){
+    ar3d.cv.width = targetW; ar3d.cv.height = targetH;
+    ar3d.renderer.setSize(targetW, targetH, false);
     ar3d.camera.aspect = W/H;
     ar3d.camera.updateProjectionMatrix();
   }
