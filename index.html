@@ -1471,35 +1471,62 @@
         </div>
 
         <div class="section">
-          <h3 class="section-title">Upload</h3>
+          <h3 class="section-title">Media library <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px" id="mediaCount">0 items</em></h3>
+          <!-- Folder tabs -->
+          <div class="seg" id="mediaTypeSeg" style="grid-template-columns:1fr 1fr;margin-bottom:6px">
+            <button data-mtype="image" class="on">🖼 Images</button>
+            <button data-mtype="video">🎬 Videos</button>
+          </div>
+          <!-- Folder picker -->
+          <div style="display:flex;gap:4px;align-items:center;margin-bottom:6px">
+            <select id="mediaFolderSel" style="flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);color:var(--ink);border-radius:7px;padding:6px 8px;font-family:var(--sans);font-size:11.5px;outline:none">
+              <option value="Images">Images</option>
+            </select>
+            <button class="audio-btn" id="mediaNewFolder" style="flex:0 0 auto;padding:6px 9px;font-size:11.5px" title="新增資料夾">+ Folder</button>
+            <button class="audio-btn danger" id="mediaDelFolder" style="flex:0 0 auto;padding:6px 9px;font-size:11.5px" title="刪除空資料夾">✕</button>
+          </div>
+          <!-- Drop zone -->
           <div class="img-drop" id="imgDrop">
-            <input type="file" id="imgInput" accept="image/*" multiple style="display:none" />
+            <input type="file" id="imgInput" accept="image/*,video/*" multiple style="display:none" />
             <div class="img-drop-inner">
               <div class="img-drop-icon">⌬</div>
-              <div class="img-drop-text"><strong>Drop images here</strong><em>or click to choose · multiple OK</em></div>
+              <div class="img-drop-text"><strong>拖放圖片 / 影片到此</strong><em>or click — 自動依類型分類 · 存在本機 IndexedDB</em></div>
             </div>
           </div>
-          <div class="img-list" id="imgList"></div>
+          <!-- Library grid (all items in current folder) -->
+          <div class="img-list" id="mediaGrid" style="margin-top:8px"></div>
+          <div class="type-tip" style="margin-top:6px">點縮圖載入到下方使用 · ⋮ 移動到其他資料夾 · ✕ 永久刪除</div>
+          <!-- Currently loaded -->
+          <div style="margin-top:10px">
+            <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Loaded <em style="font-family:var(--serif);font-style:italic;text-transform:none;letter-spacing:0;color:var(--ink-faint);font-size:11.5px;margin-left:4px" id="loadedCount">0 active</em></span>
+            <div class="img-list" id="imgList"></div>
+          </div>
         </div>
 
         <div class="section">
-          <h3 class="section-title">Aesthetic <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">stackable</em></h3>
+          <h3 class="section-title">Image treatment <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">stackable</em></h3>
           <div class="modes" id="imgModes">
-            <label class="mode-chip"><input type="checkbox" data-imode="enabled" checked /><span><strong>Show image</strong><em>render uploaded image as canvas</em></span></label>
+            <label class="mode-chip" style="grid-column:1/-1"><input type="checkbox" data-imode="enabled" checked /><span><strong>Show image</strong><em>render uploaded image as canvas</em></span></label>
+            <!-- EFFECT — content distortions -->
+            <div style="grid-column:1/-1;font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);margin:6px 0 2px 0">Effect <em style="font-family:var(--serif);font-style:italic;text-transform:none;letter-spacing:0;color:var(--ink-faint);font-size:11.5px;margin-left:4px">內容變形</em></div>
             <label class="mode-chip"><input type="checkbox" data-imode="ripple" /><span><strong>Liquid ripple</strong><em>concentric water distortion</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-imode="oil" /><span><strong>Oil painting</strong><em>thick impasto smear</em></span></label>
-            <label class="mode-chip"><input type="checkbox" data-imode="gothic" /><span><strong>Gothic</strong><em>cathedral shadow · stained glass</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-imode="mannerist" /><span><strong>Mannerist</strong><em>elongated · distorted scale</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-imode="nihilist" /><span><strong>Nihilist</strong><em>dissolving · static · void</em></span></label>
-            <label class="mode-chip"><input type="checkbox" data-imode="romantic" /><span><strong>Romantic</strong><em>misty · sublime · golden bloom</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-imode="occult" /><span><strong>Occult / 玄學</strong><em>sigil overlays · sacred geometry</em></span></label>
-            <label class="mode-chip"><input type="checkbox" data-imode="glitch" /><span><strong>Glitch</strong><em>RGB shift · scanline tear</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-imode="shatter" /><span><strong>Shatter</strong><em>break into fragments</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-imode="kaleido" /><span><strong>Image kaleidoscope</strong><em>radial mirror through image</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-imode="melt" /><span><strong>Melt / 化水</strong><em>vertical drip distortion</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-imode="pixelSort" /><span><strong>Pixel Sort</strong><em>像素排序 · vaporwave glitch</em></span></label>
+            <!-- FILTER — color / overlay / style -->
+            <div style="grid-column:1/-1;font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);margin:8px 0 2px 0">Filter <em style="font-family:var(--serif);font-style:italic;text-transform:none;letter-spacing:0;color:var(--ink-faint);font-size:11.5px;margin-left:4px">色彩 / 風格</em></div>
+            <label class="mode-chip"><input type="checkbox" data-imode="gothic" /><span><strong>Gothic</strong><em>cathedral shadow · stained glass</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-imode="romantic" /><span><strong>Romantic</strong><em>misty · sublime · golden bloom</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-imode="glitch" /><span><strong>Glitch</strong><em>RGB shift · scanline tear</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-imode="ascii" /><span><strong>ASCII</strong><em>字元化 · brightness → chars</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-imode="chromaShift" /><span><strong>Chroma Shift</strong><em>RGB 通道分離</em></span></label>
+            <!-- MOTION — movement / animation -->
+            <div style="grid-column:1/-1;font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);margin:8px 0 2px 0">Motion <em style="font-family:var(--serif);font-style:italic;text-transform:none;letter-spacing:0;color:var(--ink-faint);font-size:11.5px;margin-left:4px">畫面晃動</em></div>
             <label class="mode-chip"><input type="checkbox" data-imode="shake" /><span><strong>Shake / 搖晃</strong><em>jiggle 抖動 · audio-reactive</em></span></label>
           </div>
         </div>
@@ -1787,6 +1814,77 @@
                 <button data-fx="emit">Emit<em>不停噴發</em></button>
               </div>
             </div>
+            <div>
+              <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Filter <em style="font-family:var(--serif);font-style:italic;text-transform:none;letter-spacing:0;color:var(--ink-faint);font-size:11.5px;margin-left:4px">畫面濾鏡 · 獨立於 Effect</em></span>
+              <div class="live-grid" id="camFilterGrid">
+                <button data-filter="none" class="on">None<em>無濾鏡</em></button>
+                <button data-filter="8bit">8-bit<em>像素遊戲機</em></button>
+                <button data-filter="mosaic">Mosaic<em>馬賽克</em></button>
+                <button data-filter="chroma">Chroma<em>RGB 分離</em></button>
+                <button data-filter="glitch">Glitch<em>故障切片</em></button>
+                <button data-filter="threshold">Threshold<em>高反差黑白</em></button>
+                <button data-filter="invert">Invert<em>負片反相</em></button>
+                <button data-filter="vapor">Vapor<em>蒸氣波</em></button>
+                <button data-filter="sepia">Sepia<em>復古褐調</em></button>
+                <button data-filter="mono">Mono<em>單色灰階</em></button>
+                <button data-filter="edge">Edge<em>邊緣偵測</em></button>
+                <button data-filter="scanlines">Scanlines<em>CRT 掃描線</em></button>
+                <button data-filter="halftone">Halftone<em>網點半色調 · 較重</em></button>
+                <button data-filter="sketch">Sketch<em>素描線稿</em></button>
+              </div>
+            </div>
+            <div class="ctrl"><span class="label">Filter intensity</span><span class="val" id="camFilterAmtVal">1.0×</span>
+              <div class="slider"><div class="track"></div><div class="fill" id="camFilterAmtFill"></div><div class="thumb" id="camFilterAmtThumb"></div>
+                <input type="range" min="0" max="200" value="100" id="camFilterAmt" />
+              </div>
+            </div>
+            <div>
+              <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">AR <em style="font-family:var(--serif);font-style:italic;text-transform:none;letter-spacing:0;color:var(--ink-faint);font-size:11.5px;margin-left:4px">人臉貼圖 · 跟著臉動</em></span>
+              <div class="live-grid" id="camArGrid">
+                <button data-ar="none" class="on">None<em>無</em></button>
+                <button data-ar="mesh">Mesh<em>人臉網格</em></button>
+                <button data-ar="glasses">Glasses<em>圓框眼鏡</em></button>
+                <button data-ar="sunglasses">Sunglasses<em>墨鏡</em></button>
+                <button data-ar="cat">Cat<em>貓耳鬍鬚</em></button>
+                <button data-ar="crown">Crown<em>皇冠</em></button>
+                <button data-ar="halo">Halo<em>天使光環</em></button>
+                <button data-ar="tears">Tears<em>哭泣淚水</em></button>
+                <button data-ar="laserEyes">Laser eyes<em>激光眼</em></button>
+                <button data-ar="thirdEye">Third eye<em>第三隻眼</em></button>
+                <button data-ar="mask">Mask<em>面具</em></button>
+                <button data-ar="aura">Aura<em>能量光環</em></button>
+              </div>
+            </div>
+            <div class="ctrl"><span class="label">AR intensity</span><span class="val" id="camArAmtVal">1.0×</span>
+              <div class="slider"><div class="track"></div><div class="fill" id="camArAmtFill"></div><div class="thumb" id="camArAmtThumb"></div>
+                <input type="range" min="0" max="200" value="100" id="camArAmt" />
+              </div>
+            </div>
+            <div>
+              <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Motion <em style="font-family:var(--serif);font-style:italic;text-transform:none;letter-spacing:0;color:var(--ink-faint);font-size:11.5px;margin-left:4px">畫面晃動 · 縮放 · 旋轉</em></span>
+              <div class="live-grid" id="camMotionGrid">
+                <button data-motion="none" class="on">None<em>靜止</em></button>
+                <button data-motion="shake">Shake<em>抖動</em></button>
+                <button data-motion="zoomPulse">Zoom pulse<em>放大縮小</em></button>
+                <button data-motion="sway">Sway<em>左右搖擺</em></button>
+                <button data-motion="breathe">Breathe<em>呼吸縮放</em></button>
+                <button data-motion="orbit">Orbit<em>環繞</em></button>
+                <button data-motion="tilt">Tilt<em>傾斜搖晃</em></button>
+                <button data-motion="bounce">Bounce<em>彈跳</em></button>
+                <button data-motion="jitter">Jitter<em>高頻抽動</em></button>
+                <button data-motion="spiral">Spiral<em>螺旋</em></button>
+              </div>
+            </div>
+            <div class="ctrl"><span class="label">Motion intensity</span><span class="val" id="camMotionAmtVal">1.0×</span>
+              <div class="slider"><div class="track"></div><div class="fill" id="camMotionAmtFill"></div><div class="thumb" id="camMotionAmtThumb"></div>
+                <input type="range" min="0" max="200" value="100" id="camMotionAmt" />
+              </div>
+            </div>
+            <div class="ctrl"><span class="label">Motion speed</span><span class="val" id="camMotionSpdVal">1.0×</span>
+              <div class="slider"><div class="track"></div><div class="fill" id="camMotionSpdFill"></div><div class="thumb" id="camMotionSpdThumb"></div>
+                <input type="range" min="20" max="300" value="100" id="camMotionSpd" />
+              </div>
+            </div>
             <div class="ctrl"><span class="label">Show video</span><span class="val" id="camVidVal">35%</span>
               <div class="slider"><div class="track"></div><div class="fill" id="camVidFill"></div><div class="thumb" id="camVidThumb"></div>
                 <input type="range" min="0" max="100" value="35" id="camVid" />
@@ -1880,7 +1978,7 @@
               </div>
             </div>
             <div>
-              <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Animation</span>
+              <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Motion <em style="font-family:var(--serif);font-style:italic;text-transform:none;letter-spacing:0;color:var(--ink-faint);font-size:11.5px;margin-left:4px">動畫效果</em></span>
               <div class="live-grid" id="typeAnimGrid">
                 <button data-anim="breathe" class="on">Breathe<em>呼吸明暗</em></button>
                 <button data-anim="flow">Flow<em>序列流動</em></button>
@@ -2087,7 +2185,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-22a · improved bg removal (soft mask + temporal smooth + multiclass model)');
+console.log('[IW] script booting · build 2026-05-22g · UI relabel: Image modes → Effect/Filter/Motion subgroups; Type Animation → Motion (functionality unchanged)');
 
 // Click diagnostics — log every click so we can see where they reach.
 // Capture phase so we see clicks BEFORE any interceptor swallows them.
@@ -7890,6 +7988,40 @@ function applySnapshot(snap, opts){
   document.querySelectorAll('#modes input').forEach(cb=>{
     cb.checked = !!state.modes[cb.dataset.mode];
   });
+  // cam — apply settings + start/stop the stream so setlist slots can mean "camera on/off"
+  if(snap.cam){
+    const { running, ...camFields } = snap.cam;
+    Object.assign(cam, camFields);
+    document.querySelectorAll('#camTrackSeg button').forEach(b => b.classList.toggle('on', b.dataset.track === cam.track));
+    document.querySelectorAll('#camFxGrid button').forEach(b => b.classList.toggle('on', b.dataset.fx === cam.fx));
+    document.querySelectorAll('#camFilterGrid button').forEach(b => b.classList.toggle('on', b.dataset.filter === cam.filter));
+    document.querySelectorAll('#camArGrid button').forEach(b => b.classList.toggle('on', b.dataset.ar === cam.ar));
+    document.querySelectorAll('#camMotionGrid button').forEach(b => b.classList.toggle('on', b.dataset.motion === cam.motion));
+    document.querySelectorAll('#camBgModelSeg button').forEach(b => b.classList.toggle('on', b.dataset.segmodel === cam.bgModel));
+    const _setSlider = (id, v) => { const el = document.getElementById(id); if(el && v != null){ el.value = v; el.dispatchEvent(new Event('input')); } };
+    if(snap.cam.videoOpacity !== undefined) _setSlider('camVid', snap.cam.videoOpacity*100);
+    if(snap.cam.fxSize !== undefined)       _setSlider('camFxSize', snap.cam.fxSize*100);
+    if(snap.cam.mirror !== undefined)       _setSlider('camMirror', snap.cam.mirror ? 1 : 0);
+    if(snap.cam.filterIntensity !== undefined) _setSlider('camFilterAmt', snap.cam.filterIntensity*100);
+    if(snap.cam.arIntensity !== undefined)  _setSlider('camArAmt', snap.cam.arIntensity*100);
+    if(snap.cam.motionIntensity !== undefined) _setSlider('camMotionAmt', snap.cam.motionIntensity*100);
+    if(snap.cam.motionSpeed !== undefined)  _setSlider('camMotionSpd', snap.cam.motionSpeed*100);
+    if(snap.cam.bgFeather !== undefined)    _setSlider('camBgFeather', snap.cam.bgFeather*100);
+    if(snap.cam.bgSmooth !== undefined)     _setSlider('camBgSmooth', snap.cam.bgSmooth*100);
+    const _cbBg = document.getElementById('camRemoveBg');
+    if(_cbBg && snap.cam.removeBg !== undefined){
+      _cbBg.checked = !!snap.cam.removeBg;
+      cam.removeBg = !!snap.cam.removeBg;
+      if(cam.removeBg && !cam.segLM){ try { loadMediaPipe('seg'); } catch(_){} }
+      if(!cam.removeBg) cam.segMaskData = null;
+    }
+    // Start / stop the stream to match what was saved.
+    if(running === true && !cam.ready){
+      try { camStart(); } catch(_){}
+    } else if(running === false && cam.ready){
+      camStop();
+    }
+  }
   updateReadout();
 }
 
@@ -8478,6 +8610,7 @@ function randomizeAll(){
       track: cam.track, faceFx: cam.faceFx, handFx: cam.handFx,
       videoOpacity: cam.videoOpacity, fxSize: cam.fxSize, mirror: cam.mirror,
       kaleido: cam.kaleido, removeBg: cam.removeBg,
+      filter: cam.filter, filterIntensity: cam.filterIntensity,
     } : null,
   };
   // Always preserve webcamFX + typography modes (camera/text are live streams, not generative).
@@ -8708,7 +8841,9 @@ function randomizeAll(){
 
   // 10. Type tab — randomize typography params (only when typography is on AND unlocked)
   if(state.modes.typography && typeof typo !== 'undefined'){
-    const animPool = ['breathe','flow','wave','popIn','glitch','drift','scalePulse','rotate','shimmer','comic','strobe','flipStyle','charBurst','sizeShake','marquee','extrude3d','neon','vapor','liquid','dotmatrix','smoke','scramble','pathSine','staggerBounce','holo'];
+    // 'dotmatrix' excluded from Random — does per-frame getImageData on offscreen
+    // canvas, which costs FPS when sampled randomly. Still available manually.
+    const animPool = ['breathe','flow','wave','popIn','glitch','drift','scalePulse','rotate','shimmer','comic','strobe','flipStyle','charBurst','sizeShake','marquee','extrude3d','neon','vapor','liquid','smoke','scramble','pathSine','staggerBounce','holo'];
     typo.anim = animPool[Math.floor(Math.random()*animPool.length)];
     const stylePool = ['solid','outline','mix','split'];
     typo.style = stylePool[Math.floor(Math.random()*stylePool.length)];
@@ -8733,7 +8868,7 @@ function randomizeAll(){
     typo.rate = 0.5 + Math.random()*3.5;
   }
 
-  // 11. Live tab — randomize camera fx pick (camera state itself untouched)
+  // 11. Live tab — randomize camera fx + filter (camera ON/OFF state itself untouched)
   if(typeof cam !== 'undefined'){
     const faceFxPool = ['tendrils','petals','rays','orbits','ribbon','pulse','confetti','prism','stars','hearts','duplicate','splitTile','trail','emit'];
     const handFxPool = faceFxPool;
@@ -8741,6 +8876,42 @@ function randomizeAll(){
     cam.handFx = handFxPool[Math.floor(Math.random()*handFxPool.length)];
     cam.fx = cam.track === 'face' ? cam.faceFx : cam.handFx;
     cam.fxSize = 0.5 + Math.random()*1.5;
+    // Filter — weight 'none' so it's not always on. 'halftone' excluded (heavy, uses getImageData)
+    const filterPool = ['none','none','none','8bit','mosaic','chroma','glitch','threshold','invert','vapor','sepia','mono','edge','scanlines','sketch'];
+    cam.filter = filterPool[Math.floor(Math.random()*filterPool.length)];
+    cam.filterIntensity = 0.6 + Math.random()*1.1;   // 0.6 .. 1.7
+    // AR — weight 'none' so face isn't always covered. All AR effects are landmark-driven & cheap.
+    const arPool = ['none','none','none','none','mesh','glasses','sunglasses','cat','crown','halo','tears','laserEyes','thirdEye','mask','aura'];
+    cam.ar = arPool[Math.floor(Math.random()*arPool.length)];
+    cam.arIntensity = 0.7 + Math.random()*0.9;       // 0.7 .. 1.6
+    // Motion — weight 'none' so camera isn't always shaking
+    const motionPool = ['none','none','none','shake','zoomPulse','sway','breathe','orbit','tilt','bounce','jitter','spiral'];
+    cam.motion = motionPool[Math.floor(Math.random()*motionPool.length)];
+    cam.motionIntensity = 0.5 + Math.random()*1.0;   // 0.5 .. 1.5
+    cam.motionSpeed = 0.6 + Math.random()*1.2;       // 0.6 .. 1.8
+    // Light cam kaleido bias: mostly off, occasionally low segments
+    const kPick = Math.random();
+    cam.kaleido = kPick < 0.7 ? 0 : ([2,3,4,6,8][Math.floor(Math.random()*5)]);
+    // Mirror — 70% on (most natural for face)
+    cam.mirror = Math.random() < 0.7;
+    // Sync all Live UI controls so the change is visible
+    document.querySelectorAll('#camFxGrid button').forEach(b => b.classList.toggle('on', b.dataset.fx === cam.fx));
+    document.querySelectorAll('#camFilterGrid button').forEach(b => b.classList.toggle('on', b.dataset.filter === cam.filter));
+    document.querySelectorAll('#camArGrid button').forEach(b => b.classList.toggle('on', b.dataset.ar === cam.ar));
+    document.querySelectorAll('#camMotionGrid button').forEach(b => b.classList.toggle('on', b.dataset.motion === cam.motion));
+    const _fInt = document.getElementById('camFilterAmt');
+    if(_fInt){ _fInt.value = Math.round(cam.filterIntensity*100); _fInt.dispatchEvent(new Event('input')); }
+    const _aInt = document.getElementById('camArAmt');
+    if(_aInt){ _aInt.value = Math.round(cam.arIntensity*100); _aInt.dispatchEvent(new Event('input')); }
+    const _mInt = document.getElementById('camMotionAmt');
+    if(_mInt){ _mInt.value = Math.round(cam.motionIntensity*100); _mInt.dispatchEvent(new Event('input')); }
+    const _mSpd = document.getElementById('camMotionSpd');
+    if(_mSpd){ _mSpd.value = Math.round(cam.motionSpeed*100); _mSpd.dispatchEvent(new Event('input')); }
+    const _fSize = document.getElementById('camFxSize');
+    if(_fSize){ _fSize.value = Math.round(cam.fxSize*100); _fSize.dispatchEvent(new Event('input')); }
+    const _mir = document.getElementById('camMirror');
+    if(_mir){ _mir.value = cam.mirror ? 1 : 0; _mir.dispatchEvent(new Event('input')); }
+    if(typeof setKaleidoUI === 'function'){ try { setKaleidoUI('cam', cam.kaleido); } catch(_){} }
   }
 
   // 12. Honor locks — restore snapshotted groups. Each lock = one tab.
@@ -8964,10 +9135,315 @@ function renderImgList(){
     imgListEl.appendChild(div);
   });
 }
+// ============================================================
+// MEDIA LIBRARY — IndexedDB-backed image + video storage with folders
+// Each browser keeps its own library (effectively per-user-per-device).
+// ============================================================
+const MEDIA_DB_NAME = 'inner-weather-media';
+const MEDIA_DB_VERSION = 1;
+let _mediaDB = null;
+const media = {
+  currentType: 'image',   // 'image' | 'video'
+  currentFolder: 'Images',
+  items: [],              // metadata of items in current folder (no blob until loaded)
+  folders: [],            // all folder records
+};
+
+function _mediaOpenDB(){
+  if(_mediaDB) return Promise.resolve(_mediaDB);
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(MEDIA_DB_NAME, MEDIA_DB_VERSION);
+    req.onerror = () => reject(req.error);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if(!db.objectStoreNames.contains('items')){
+        const s = db.createObjectStore('items', { keyPath:'id', autoIncrement:true });
+        s.createIndex('folder', 'folder', { unique:false });
+        s.createIndex('type', 'type', { unique:false });
+      }
+      if(!db.objectStoreNames.contains('folders')){
+        db.createObjectStore('folders', { keyPath:'path' });
+      }
+    };
+    req.onsuccess = () => { _mediaDB = req.result; resolve(_mediaDB); };
+  });
+}
+async function _mediaTx(store, mode){
+  const db = await _mediaOpenDB();
+  return db.transaction(store, mode || 'readonly').objectStore(store);
+}
+function _idbReq(req){ return new Promise((res, rej) => { req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); }); }
+
+async function mediaAddItem(item){
+  const s = await _mediaTx('items', 'readwrite');
+  return _idbReq(s.add(item));
+}
+async function mediaGetItem(id){
+  const s = await _mediaTx('items');
+  return _idbReq(s.get(id));
+}
+async function mediaListByFolder(folder){
+  const s = await _mediaTx('items');
+  return new Promise((res, rej) => {
+    const out = [];
+    const r = s.index('folder').openCursor(IDBKeyRange.only(folder));
+    r.onsuccess = e => {
+      const c = e.target.result;
+      if(c){
+        const v = c.value;
+        // strip the blob from list-view metadata to keep memory small
+        out.push({ id:v.id, name:v.name, type:v.type, folder:v.folder, mime:v.mime, thumb:v.thumb, createdAt:v.createdAt, width:v.width, height:v.height });
+        c.continue();
+      } else res(out);
+    };
+    r.onerror = () => rej(r.error);
+  });
+}
+async function mediaCountByType(type){
+  const s = await _mediaTx('items');
+  return _idbReq(s.index('type').count(IDBKeyRange.only(type)));
+}
+async function mediaDeleteItem(id){
+  const s = await _mediaTx('items', 'readwrite');
+  return _idbReq(s.delete(id));
+}
+async function mediaMoveItem(id, newFolder){
+  const s = await _mediaTx('items', 'readwrite');
+  const item = await _idbReq(s.get(id));
+  if(!item) return;
+  item.folder = newFolder;
+  return _idbReq(s.put(item));
+}
+async function mediaAddFolder(path, type){
+  const s = await _mediaTx('folders', 'readwrite');
+  return _idbReq(s.put({ path, type, createdAt: Date.now() }));
+}
+async function mediaListFolders(){
+  const s = await _mediaTx('folders');
+  return new Promise((res, rej) => {
+    const out = [];
+    const r = s.openCursor();
+    r.onsuccess = e => { const c = e.target.result; if(c){ out.push(c.value); c.continue(); } else res(out); };
+    r.onerror = () => rej(r.error);
+  });
+}
+async function mediaDeleteFolder(path){
+  const s = await _mediaTx('folders', 'readwrite');
+  return _idbReq(s.delete(path));
+}
+
+// Thumbnail: 256-wide JPEG blob from image or video element
+function _mediaMakeThumb(srcEl, srcW, srcH){
+  const TW = 256;
+  const TH = Math.max(1, Math.round(srcH * (TW / Math.max(1,srcW))));
+  const c = document.createElement('canvas');
+  c.width = TW; c.height = TH;
+  try { c.getContext('2d').drawImage(srcEl, 0, 0, TW, TH); } catch(_){}
+  return new Promise(res => c.toBlob(b => res(b), 'image/jpeg', 0.78));
+}
+
+// Upload a file → save to IDB with auto-categorization
+async function mediaUploadFile(file, folder){
+  const isImg = file.type.startsWith('image/');
+  const isVid = file.type.startsWith('video/');
+  if(!isImg && !isVid){ console.warn('[media] unsupported file', file.type); return null; }
+  const type = isImg ? 'image' : 'video';
+  if(!folder) folder = (type === 'image') ? media.currentFolder : 'Videos';
+  // Make sure folder type matches file type — if user is in Images folder uploading a video, route to Videos.
+  const folderRec = media.folders.find(f => f.path === folder);
+  if(folderRec && folderRec.type !== type){
+    folder = (type === 'image') ? 'Images' : 'Videos';
+  }
+  const url = URL.createObjectURL(file);
+  let thumb = null, width = 0, height = 0;
+  try {
+    if(isImg){
+      const img = await new Promise((res, rej) => {
+        const i = new Image();
+        i.onload = () => res(i);
+        i.onerror = rej;
+        i.src = url;
+      });
+      width = img.naturalWidth; height = img.naturalHeight;
+      thumb = await _mediaMakeThumb(img, width, height);
+    } else {
+      const v = document.createElement('video');
+      v.src = url; v.muted = true; v.playsInline = true; v.preload = 'auto';
+      await new Promise(res => {
+        let done = false;
+        const f = () => { if(done) return; done = true; res(); };
+        v.onloadeddata = f; v.onerror = f;
+        setTimeout(f, 3000);  // hard timeout
+      });
+      width = v.videoWidth || 1; height = v.videoHeight || 1;
+      // seek to a moment in to avoid black first frame
+      try { v.currentTime = Math.min(0.5, (v.duration || 1) * 0.1); await new Promise(r => setTimeout(r, 100)); } catch(_){}
+      thumb = await _mediaMakeThumb(v, width, height);
+      try { v.pause(); v.removeAttribute('src'); v.load(); } catch(_){}
+    }
+  } catch(e){ console.warn('[media] thumb failed', e); }
+  URL.revokeObjectURL(url);
+  const id = await mediaAddItem({
+    name: file.name, type, folder, mime: file.type,
+    blob: file, thumb, createdAt: Date.now(), width, height,
+  });
+  return id;
+}
+
+// Take an item from IDB and load it into imgState.images for rendering
+async function mediaLoadIntoCanvas(id){
+  const item = await mediaGetItem(id);
+  if(!item || !item.blob) return;
+  const url = URL.createObjectURL(item.blob);
+  if(item.type === 'image'){
+    // Reuse existing image path — but bypass the file-input route
+    const img = new Image();
+    const isGif = item.mime === 'image/gif' || /\.gif$/i.test(item.name || '');
+    if(isGif){
+      img.style.cssText = 'position:fixed;left:0;bottom:0;width:2px;height:2px;opacity:.01;pointer-events:none;z-index:0';
+      document.body.appendChild(img);
+    }
+    img.onload = () => {
+      const entry = { img, url, isGif, mediaId: id, name: item.name };
+      imgState.images.push(entry);
+      const idx = imgState.images.length - 1;
+      if(isGif){ _decodeGifFrames(item.blob, entry); }
+      imgState.selected.push(idx);
+      if(imgState.images.length === 1) imgState.active = 0;
+      if(imgState.images.length === 2){
+        imgState.useAllImages = true;
+        const useEl = document.getElementById('imgUseAll'); if(useEl) useEl.checked = true;
+      }
+      renderImgList();
+    };
+    img.src = url;
+  } else {
+    // Video: <video> element that we drawImage() per frame. Aliased as entry.img
+    // so the existing render pipeline (drawImage(entry.img, ...)) works as-is.
+    const v = document.createElement('video');
+    v.src = url; v.muted = true; v.playsInline = true; v.loop = true; v.autoplay = true;
+    v.crossOrigin = 'anonymous';
+    v.style.cssText = 'position:fixed;left:0;bottom:0;width:2px;height:2px;opacity:.01;pointer-events:none;z-index:0';
+    document.body.appendChild(v);
+    v.onloadeddata = () => {
+      try { v.play().catch(()=>{}); } catch(_){}
+      // For pipeline compat, expose width/height like an image
+      Object.defineProperty(v, 'width',  { configurable: true, get: () => v.videoWidth || 1 });
+      Object.defineProperty(v, 'height', { configurable: true, get: () => v.videoHeight || 1 });
+      const entry = { img: v, url, isVideo: true, video: v, mediaId: id, name: item.name };
+      imgState.images.push(entry);
+      const idx = imgState.images.length - 1;
+      imgState.selected.push(idx);
+      if(imgState.images.length === 1) imgState.active = 0;
+      if(imgState.images.length === 2){
+        imgState.useAllImages = true;
+        const useEl = document.getElementById('imgUseAll'); if(useEl) useEl.checked = true;
+      }
+      renderImgList();
+    };
+  }
+}
+
+// Init: ensure default folders exist, then render UI
+async function mediaInit(){
+  try {
+    await _mediaOpenDB();
+    const folders = await mediaListFolders();
+    const have = new Set(folders.map(f => f.path));
+    if(!have.has('Images')) await mediaAddFolder('Images', 'image');
+    if(!have.has('Videos')) await mediaAddFolder('Videos', 'video');
+    media.folders = await mediaListFolders();
+    await mediaRefresh();
+  } catch(e){ console.warn('[media] init failed', e); }
+}
+async function mediaRefresh(){
+  // Refresh folder dropdown
+  media.folders = await mediaListFolders();
+  const sel = document.getElementById('mediaFolderSel');
+  if(sel){
+    const prev = sel.value;
+    sel.innerHTML = '';
+    media.folders
+      .filter(f => f.type === media.currentType)
+      .sort((a,b) => a.path.localeCompare(b.path))
+      .forEach(f => {
+        const o = document.createElement('option');
+        o.value = f.path; o.textContent = f.path;
+        sel.appendChild(o);
+      });
+    // Restore selection if possible, else pick first folder of current type
+    if([...sel.options].find(o => o.value === prev)) sel.value = prev;
+    else if(sel.options.length) sel.value = sel.options[0].value;
+    media.currentFolder = sel.value;
+  }
+  // Refresh grid
+  media.items = await mediaListByFolder(media.currentFolder);
+  mediaRenderGrid();
+  // Count
+  const total = await mediaCountByType(media.currentType);
+  const el = document.getElementById('mediaCount');
+  if(el) el.textContent = `${total} ${media.currentType}${total===1?'':'s'}`;
+}
+function mediaRenderGrid(){
+  const grid = document.getElementById('mediaGrid');
+  if(!grid) return;
+  grid.innerHTML = '';
+  if(!media.items.length){
+    grid.innerHTML = '<div class="type-tip" style="text-align:center;padding:18px 8px;opacity:.6">這個資料夾是空的 · 拖檔案進來</div>';
+    return;
+  }
+  media.items.sort((a,b) => b.createdAt - a.createdAt);
+  media.items.forEach(item => {
+    const thumbUrl = item.thumb ? URL.createObjectURL(item.thumb) : '';
+    const div = document.createElement('div');
+    div.className = 'img-thumb';
+    div.title = item.name;
+    div.innerHTML = `
+      <img src="${thumbUrl}" alt="" />
+      ${item.type === 'video' ? '<div class="sel-badge" style="left:4px;right:auto;background:rgba(0,0,0,.7);color:#fff;font-size:10px">▶</div>' : ''}
+      <button class="x" title="刪除">×</button>
+      <button class="x" style="right:22px;background:rgba(0,0,0,.65);color:#fff" title="移到其他資料夾">⋮</button>
+    `;
+    const [delBtn, moveBtn] = div.querySelectorAll('button.x');
+    delBtn.addEventListener('click', async e => {
+      e.stopPropagation();
+      if(!confirm(`刪除 "${item.name}"？`)) return;
+      await mediaDeleteItem(item.id);
+      await mediaRefresh();
+    });
+    moveBtn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const targetFolders = media.folders.filter(f => f.type === item.type && f.path !== item.folder);
+      if(!targetFolders.length){ alert('沒有其他相同類型的資料夾 — 先新增一個'); return; }
+      const choice = prompt(`移到哪個資料夾？\n可選：${targetFolders.map(f => f.path).join(', ')}`, targetFolders[0].path);
+      if(!choice) return;
+      if(!targetFolders.find(f => f.path === choice)){ alert('資料夾不存在或類型不符'); return; }
+      await mediaMoveItem(item.id, choice);
+      await mediaRefresh();
+    });
+    div.addEventListener('click', () => {
+      mediaLoadIntoCanvas(item.id);
+    });
+    grid.appendChild(div);
+  });
+}
+
+// ===== Wire upload / drop to media library =====
 imgDrop.addEventListener('click', ()=> imgInput.click());
-imgInput.addEventListener('change', e=>{
-  for(const f of e.target.files) addImage(f);
+imgInput.addEventListener('change', async e => {
+  const newIds = [];
+  for(const f of e.target.files){
+    if(f.type.startsWith('image/') || f.type.startsWith('video/')){
+      const id = await mediaUploadFile(f);
+      if(id) newIds.push(id);
+    } else {
+      addImage(f);  // fallback for legacy
+    }
+  }
   imgInput.value = '';
+  await mediaRefresh();
+  // Auto-load freshly uploaded items into canvas
+  for(const id of newIds){ await mediaLoadIntoCanvas(id); }
 });
 ['dragover','dragenter'].forEach(ev=>{
   imgDrop.addEventListener(ev, e=>{ e.preventDefault(); imgDrop.classList.add('dragover'); });
@@ -8975,18 +9451,69 @@ imgInput.addEventListener('change', e=>{
 ['dragleave','drop'].forEach(ev=>{
   imgDrop.addEventListener(ev, e=>{ e.preventDefault(); imgDrop.classList.remove('dragover'); });
 });
-imgDrop.addEventListener('drop', e=>{
+imgDrop.addEventListener('drop', async e=>{
   for(const f of e.dataTransfer.files){
-    if(f.type.startsWith('image/')) addImage(f);
+    if(f.type.startsWith('image/') || f.type.startsWith('video/')){
+      await mediaUploadFile(f);
+    }
   }
+  await mediaRefresh();
 });
+
+// Type tabs (Images / Videos)
+document.querySelectorAll('#mediaTypeSeg button').forEach(b => {
+  b.addEventListener('click', async () => {
+    document.querySelectorAll('#mediaTypeSeg button').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    media.currentType = b.dataset.mtype;
+    // Default to root folder of that type
+    media.currentFolder = (media.currentType === 'image') ? 'Images' : 'Videos';
+    await mediaRefresh();
+  });
+});
+// Folder select change
+document.getElementById('mediaFolderSel')?.addEventListener('change', async e => {
+  media.currentFolder = e.target.value;
+  media.items = await mediaListByFolder(media.currentFolder);
+  mediaRenderGrid();
+});
+// New folder
+document.getElementById('mediaNewFolder')?.addEventListener('click', async () => {
+  const name = (prompt(`新增 ${media.currentType === 'image' ? '圖片' : '影片'} 資料夾名稱：`) || '').trim();
+  if(!name) return;
+  const path = (media.currentType === 'image' ? 'Images' : 'Videos') + '/' + name.replace(/\//g, '_');
+  await mediaAddFolder(path, media.currentType);
+  await mediaRefresh();
+  const sel = document.getElementById('mediaFolderSel');
+  if(sel){ sel.value = path; sel.dispatchEvent(new Event('change')); }
+});
+// Delete folder (only if empty, and never the root)
+document.getElementById('mediaDelFolder')?.addEventListener('click', async () => {
+  const folder = media.currentFolder;
+  if(folder === 'Images' || folder === 'Videos'){ alert('根資料夾不能刪除'); return; }
+  const items = await mediaListByFolder(folder);
+  if(items.length){ alert('資料夾不是空的 — 先清空或移動裡面的素材'); return; }
+  if(!confirm(`刪除資料夾 "${folder}"？`)) return;
+  await mediaDeleteFolder(folder);
+  media.currentFolder = (media.currentType === 'image') ? 'Images' : 'Videos';
+  await mediaRefresh();
+});
+
+// Init on load
+mediaInit();
+
 // Allow global drag-drop on canvas too
 window.addEventListener('dragover', e=>{ e.preventDefault(); });
-window.addEventListener('drop', e=>{
+window.addEventListener('drop', async e=>{
   e.preventDefault();
+  let dropped = 0;
   for(const f of e.dataTransfer.files){
-    if(f.type.startsWith('image/')) addImage(f);
+    if(f.type.startsWith('image/') || f.type.startsWith('video/')){
+      await mediaUploadFile(f);
+      dropped++;
+    }
   }
+  if(dropped) await mediaRefresh();
 });
 
 // Mode checkboxes
@@ -10935,6 +11462,16 @@ const cam = {
   videoOpacity: 0.35,
   fxSize: 1.0,
   mirror: true,
+  // Video filter (independent from face/hand FX particles)
+  filter: 'none',          // 'none'|'8bit'|'mosaic'|'chroma'|'glitch'|'threshold'|'invert'|'vapor'|'sepia'|'mono'|'edge'|'scanlines'|'halftone'|'sketch'
+  filterIntensity: 1.0,    // 0..2 — multiplier for filter strength
+  // AR overlays (face-landmark driven; independent of Effect particles + Filter)
+  ar: 'none',              // 'none'|'mesh'|'glasses'|'sunglasses'|'cat'|'crown'|'halo'|'tears'|'laserEyes'|'thirdEye'|'mask'|'aura'
+  arIntensity: 1.0,        // 0..2
+  // Motion — transforms applied to the entire webcam plane (like text animations: shake/zoom/sway/etc)
+  motion: 'none',          // 'none'|'shake'|'zoomPulse'|'sway'|'breathe'|'orbit'|'tilt'|'bounce'|'jitter'|'spiral'
+  motionIntensity: 1.0,    // 0..2 — multiplier
+  motionSpeed: 1.0,        // 0.2..3 — speed multiplier
   // latest detection
   faceLandmarks: null,
   handLandmarks: null,
@@ -11107,6 +11644,44 @@ wireCamSlider('camVid','camVidFill','camVidThumb','camVidVal','videoOpacity', v 
 wireCamSlider('camFxSize','camFxSizeFill','camFxSizeThumb','camFxSizeVal','fxSize', v => (v/100).toFixed(1)+'×', v => v/100);
 wireCamSlider('camMirror','camMirrorFill','camMirrorThumb','camMirrorVal','mirror', v => v ? 'on' : 'off');
 
+// Video filter grid — independent of FX particles
+$$('#camFilterGrid button').forEach(b => b.addEventListener('click', () => {
+  $$('#camFilterGrid button').forEach(x => x.classList.remove('on'));
+  b.classList.add('on');
+  cam.filter = b.dataset.filter;
+  // ensure webcamFX visual mode is on so the user can see the filter applied
+  if(cam.filter !== 'none') ensureMode('webcamFX', true);
+}));
+wireCamSlider('camFilterAmt','camFilterAmtFill','camFilterAmtThumb','camFilterAmtVal','filterIntensity', v => (v/100).toFixed(1)+'×', v => v/100);
+
+// AR overlays grid — face-landmark driven, independent of Filter + Effect
+$$('#camArGrid button').forEach(b => b.addEventListener('click', () => {
+  $$('#camArGrid button').forEach(x => x.classList.remove('on'));
+  b.classList.add('on');
+  cam.ar = b.dataset.ar;
+  if(cam.ar !== 'none'){
+    ensureMode('webcamFX', true);
+    // auto-switch to face track if hand is active (AR needs face)
+    if(cam.track !== 'face'){
+      cam.track = 'face';
+      $$('#camTrackSeg button').forEach(x => x.classList.toggle('on', x.dataset.track === 'face'));
+      syncFxGrid();
+      if(cam.ready) loadMediaPipe('face').catch(()=>{});
+    }
+  }
+}));
+wireCamSlider('camArAmt','camArAmtFill','camArAmtThumb','camArAmtVal','arIntensity', v => (v/100).toFixed(1)+'×', v => v/100);
+
+// Motion — transforms applied to whole webcam plane
+$$('#camMotionGrid button').forEach(b => b.addEventListener('click', () => {
+  $$('#camMotionGrid button').forEach(x => x.classList.remove('on'));
+  b.classList.add('on');
+  cam.motion = b.dataset.motion;
+  if(cam.motion !== 'none') ensureMode('webcamFX', true);
+}));
+wireCamSlider('camMotionAmt','camMotionAmtFill','camMotionAmtThumb','camMotionAmtVal','motionIntensity', v => (v/100).toFixed(1)+'×', v => v/100);
+wireCamSlider('camMotionSpd','camMotionSpdFill','camMotionSpdThumb','camMotionSpdVal','motionSpeed', v => (v/100).toFixed(1)+'×', v => v/100);
+
 // Background removal toggle — lazy-loads the selfie segmenter on first enable
 const camRemoveBg = document.getElementById('camRemoveBg');
 if(camRemoveBg){
@@ -11262,12 +11837,286 @@ function getMaskedVideo(rawVideo, vw, vh){
   return _segVidCv;
 }
 
+// ————————————————————————————————————————————————————————————————————
+// Video filters — applied to the (optionally-masked) video frame before
+// the face/hand FX particles draw on top. Independent of cam.fx Effects.
+// GPU-friendly: prefer canvas `filter` CSS + composite ops over getImageData.
+// ————————————————————————————————————————————————————————————————————
+const _filterCv  = document.createElement('canvas');
+const _filterCtx = _filterCv.getContext('2d');
+const _filterAuxCv  = document.createElement('canvas');
+const _filterAuxCtx = _filterAuxCv.getContext('2d');
+function applyVideoFilter(src, vw, vh){
+  const f = cam.filter || 'none';
+  if(f === 'none') return src;
+  if(_filterCv.width !== vw || _filterCv.height !== vh){
+    _filterCv.width = vw; _filterCv.height = vh;
+  }
+  const c = _filterCtx;
+  const k = Math.max(0, Math.min(2, cam.filterIntensity != null ? cam.filterIntensity : 1));
+  c.setTransform(1,0,0,1,0,0);
+  c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; c.filter = 'none';
+  c.clearRect(0,0,vw,vh);
+
+  switch(f){
+    case '8bit': {
+      const blocks = Math.max(2, Math.round(6 + k*18));     // smaller = chunkier
+      const lw = Math.max(8, Math.round(vw/blocks));
+      const lh = Math.max(8, Math.round(vh/blocks));
+      if(_filterAuxCv.width !== lw || _filterAuxCv.height !== lh){
+        _filterAuxCv.width = lw; _filterAuxCv.height = lh;
+      }
+      _filterAuxCtx.imageSmoothingEnabled = false;
+      _filterAuxCtx.clearRect(0,0,lw,lh);
+      // posterize-ish via saturation + contrast bump pre-resize
+      _filterAuxCtx.filter = `saturate(${1.3 + k*0.6}) contrast(${1.1 + k*0.5})`;
+      _filterAuxCtx.drawImage(src, 0, 0, lw, lh);
+      _filterAuxCtx.filter = 'none';
+      c.imageSmoothingEnabled = false;
+      c.drawImage(_filterAuxCv, 0, 0, vw, vh);
+      c.imageSmoothingEnabled = true;
+      break;
+    }
+    case 'mosaic': {
+      // Same scale-down trick, larger blocks, no color punch (just chunky)
+      const blocks = Math.max(2, Math.round(4 + k*10));
+      const lw = Math.max(6, Math.round(vw/blocks));
+      const lh = Math.max(6, Math.round(vh/blocks));
+      if(_filterAuxCv.width !== lw || _filterAuxCv.height !== lh){
+        _filterAuxCv.width = lw; _filterAuxCv.height = lh;
+      }
+      _filterAuxCtx.imageSmoothingEnabled = false;
+      _filterAuxCtx.clearRect(0,0,lw,lh);
+      _filterAuxCtx.drawImage(src, 0, 0, lw, lh);
+      c.imageSmoothingEnabled = false;
+      c.drawImage(_filterAuxCv, 0, 0, vw, vh);
+      c.imageSmoothingEnabled = true;
+      break;
+    }
+    case 'chroma': {
+      // RGB split via hue-rotated copies on 'lighter' (additive)
+      const dx = Math.round(vw * 0.012 * k);
+      c.drawImage(src, 0, 0, vw, vh);                       // base
+      c.globalCompositeOperation = 'lighter';
+      c.globalAlpha = 0.55;
+      c.filter = 'hue-rotate(120deg) saturate(2.2)';
+      c.drawImage(src, dx, 0, vw, vh);
+      c.filter = 'hue-rotate(240deg) saturate(2.2)';
+      c.drawImage(src, -dx, 0, vw, vh);
+      c.filter = 'none'; c.globalAlpha = 1; c.globalCompositeOperation = 'source-over';
+      break;
+    }
+    case 'glitch': {
+      // base + random horizontal slice offsets + chroma tinge
+      c.drawImage(src, 0, 0, vw, vh);
+      const slices = Math.floor(3 + k*8);
+      const burst = (Math.random() < 0.08 + k*0.12) ? 1 : 0;
+      for(let i=0;i<slices;i++){
+        const sy = Math.random()*vh;
+        const sh = 4 + Math.random()*(vh*0.08);
+        const ox = (Math.random()-0.5) * vw * 0.18 * k * (burst?2.2:1);
+        c.drawImage(src, 0, sy, vw, sh, ox, sy, vw, sh);
+      }
+      const dx = Math.round(vw * 0.008 * k * (burst?2:1));
+      c.globalCompositeOperation = 'lighter';
+      c.globalAlpha = 0.45;
+      c.filter = 'hue-rotate(120deg) saturate(2.5)';
+      c.drawImage(src, dx, 0, vw, vh);
+      c.filter = 'hue-rotate(240deg) saturate(2.5)';
+      c.drawImage(src, -dx, 0, vw, vh);
+      c.filter = 'none'; c.globalAlpha = 1; c.globalCompositeOperation = 'source-over';
+      break;
+    }
+    case 'threshold': {
+      c.filter = `grayscale(1) contrast(${4 + k*8}) brightness(${1 + k*0.15})`;
+      c.drawImage(src, 0, 0, vw, vh);
+      c.filter = 'none';
+      break;
+    }
+    case 'invert': {
+      c.filter = `invert(${Math.min(1, 0.6 + k*0.4)}) hue-rotate(${k*60}deg)`;
+      c.drawImage(src, 0, 0, vw, vh);
+      c.filter = 'none';
+      break;
+    }
+    case 'vapor': {
+      // vaporwave purple/cyan duotone
+      c.filter = `hue-rotate(${260 + k*30}deg) saturate(${1.6 + k*0.7}) contrast(${1.05 + k*0.2})`;
+      c.drawImage(src, 0, 0, vw, vh);
+      c.filter = 'none';
+      // pink/cyan gradient wash
+      const grd = c.createLinearGradient(0,0,vw,vh);
+      grd.addColorStop(0, `rgba(255,90,200,${0.15*k})`);
+      grd.addColorStop(1, `rgba(120,230,255,${0.15*k})`);
+      c.globalCompositeOperation = 'overlay';
+      c.fillStyle = grd; c.fillRect(0,0,vw,vh);
+      c.globalCompositeOperation = 'source-over';
+      break;
+    }
+    case 'sepia': {
+      c.filter = `sepia(${Math.min(1, 0.6 + k*0.4)}) contrast(${1.05 + k*0.2}) brightness(${1 + k*0.05})`;
+      c.drawImage(src, 0, 0, vw, vh);
+      c.filter = 'none';
+      break;
+    }
+    case 'mono': {
+      c.filter = `grayscale(1) contrast(${1 + k*0.4}) brightness(${1 + k*0.05})`;
+      c.drawImage(src, 0, 0, vw, vh);
+      c.filter = 'none';
+      break;
+    }
+    case 'edge': {
+      // edge detect = difference between sharp and blurred copies, then boost
+      c.filter = `blur(${1.5 + k*2}px)`;
+      c.drawImage(src, 0, 0, vw, vh);
+      c.filter = 'none';
+      c.globalCompositeOperation = 'difference';
+      c.drawImage(src, 0, 0, vw, vh);
+      c.globalCompositeOperation = 'source-over';
+      // boost edges to white
+      c.filter = `grayscale(1) brightness(${1.5 + k*1.5}) contrast(${2 + k*2}) invert(1)`;
+      c.drawImage(_filterCv, 0, 0, vw, vh);
+      c.filter = 'none';
+      break;
+    }
+    case 'scanlines': {
+      c.drawImage(src, 0, 0, vw, vh);
+      const line = Math.max(2, Math.round(2 + k*3));
+      c.globalCompositeOperation = 'multiply';
+      c.fillStyle = `rgba(0,0,0,${0.35 + k*0.25})`;
+      for(let y=0;y<vh;y+=line*2){
+        c.fillRect(0, y, vw, line);
+      }
+      // slight scanline color cast
+      c.globalCompositeOperation = 'screen';
+      c.fillStyle = `rgba(80,255,180,${0.04*k})`;
+      c.fillRect(0,0,vw,vh);
+      c.globalCompositeOperation = 'source-over';
+      break;
+    }
+    case 'halftone': {
+      // simplified: chunky pixelate + circular punch via radial mask grid is heavy.
+      // Use dotted overlay: pixelate down, then redraw with high contrast + dot-grid blend.
+      const blocks = Math.max(40, Math.round(40 + k*60));
+      const lw = Math.max(20, Math.round(vw/(vw/blocks)));
+      const lh = Math.max(20, Math.round(vh/(vw/blocks)));
+      const cell = Math.round(vw/blocks);
+      if(_filterAuxCv.width !== lw || _filterAuxCv.height !== lh){
+        _filterAuxCv.width = lw; _filterAuxCv.height = lh;
+      }
+      _filterAuxCtx.imageSmoothingEnabled = true;
+      _filterAuxCtx.filter = 'grayscale(1) contrast(1.4)';
+      _filterAuxCtx.drawImage(src, 0, 0, lw, lh);
+      _filterAuxCtx.filter = 'none';
+      // sample once
+      let data;
+      try { data = _filterAuxCtx.getImageData(0,0,lw,lh).data; } catch(_) { data = null; }
+      c.fillStyle = '#000';
+      c.fillRect(0,0,vw,vh);
+      c.fillStyle = '#fff';
+      if(data){
+        for(let y=0;y<lh;y++){
+          for(let x=0;x<lw;x++){
+            const i = (y*lw+x)*4;
+            const lum = (data[i]+data[i+1]+data[i+2])/3 / 255;
+            const r = (lum * cell * 0.6);
+            if(r < 0.3) continue;
+            c.beginPath();
+            c.arc(x*cell + cell/2, y*cell + cell/2, r, 0, Math.PI*2);
+            c.fill();
+          }
+        }
+      } else {
+        // fallback: just draw mono if getImageData blocked
+        c.fillStyle = '#000'; c.fillRect(0,0,vw,vh);
+        c.filter = 'grayscale(1) contrast(1.6)';
+        c.drawImage(src, 0, 0, vw, vh);
+        c.filter = 'none';
+      }
+      break;
+    }
+    case 'sketch': {
+      // edge + threshold over a desaturated base — gives a charcoal-line look
+      c.filter = `blur(${1.5 + k*1.5}px)`;
+      c.drawImage(src, 0, 0, vw, vh);
+      c.filter = 'none';
+      c.globalCompositeOperation = 'difference';
+      c.drawImage(src, 0, 0, vw, vh);
+      c.globalCompositeOperation = 'source-over';
+      c.filter = `grayscale(1) brightness(${2 + k}) contrast(${3 + k*2}) invert(1)`;
+      c.drawImage(_filterCv, 0, 0, vw, vh);
+      c.filter = 'none';
+      break;
+    }
+    default:
+      c.drawImage(src, 0, 0, vw, vh);
+  }
+  return _filterCv;
+}
+
+// Webcam Motion — transforms applied to the whole webcam plane (video + FX + AR move together)
+function applyWebcamMotion(g, T){
+  if(!cam.motion || cam.motion === 'none') return false;
+  const k  = Math.max(0, Math.min(2, cam.motionIntensity || 1));
+  const sp = Math.max(0.1, Math.min(3, cam.motionSpeed || 1));
+  const t  = T * sp;
+  const audioK = (typeof reactor !== 'undefined' && reactor && reactor.vol) ? (1 + reactor.vol*1.5) : 1;
+  const cx = W/2, cy = H/2;
+  let dx=0, dy=0, rot=0, sc=1;
+  switch(cam.motion){
+    case 'shake':
+      dx = (Math.random()-0.5) * 22 * k * audioK;
+      dy = (Math.random()-0.5) * 22 * k * audioK;
+      break;
+    case 'zoomPulse':
+      sc = 1 + Math.sin(t*2.2) * 0.10 * k * audioK;
+      break;
+    case 'sway':
+      dx = Math.sin(t*1.5) * 35 * k;
+      rot = Math.sin(t*1.5) * 0.05 * k;
+      break;
+    case 'breathe':
+      sc = 1 + Math.sin(t*0.8) * 0.06 * k;
+      break;
+    case 'orbit':
+      dx = Math.cos(t*1.0) * 25 * k;
+      dy = Math.sin(t*1.0) * 25 * k;
+      break;
+    case 'tilt':
+      rot = Math.sin(t*0.6) * 0.14 * k;
+      break;
+    case 'bounce':
+      dy = -Math.abs(Math.sin(t*3)) * 30 * k * audioK;
+      break;
+    case 'jitter':
+      dx = (Math.sin(t*30) + Math.sin(t*47)) * 5 * k * audioK;
+      dy = (Math.cos(t*33) + Math.sin(t*51)) * 5 * k * audioK;
+      rot = Math.sin(t*23) * 0.018 * k;
+      break;
+    case 'spiral': {
+      const r = (1 + Math.sin(t*0.5)) * 18 * k;
+      dx = Math.cos(t*2) * r;
+      dy = Math.sin(t*2) * r;
+      sc = 1 + Math.sin(t*0.5)*0.06*k;
+      break;
+    }
+  }
+  g.save();
+  g.translate(cx + dx, cy + dy);
+  if(rot) g.rotate(rot);
+  if(sc !== 1) g.scale(sc, sc);
+  g.translate(-cx, -cy);
+  return true;
+}
+
 function drawWebcamFX(g, dt, T){
   if(!cam.ready) return;
   const rawV = cam.video;
   if(!rawV.videoWidth) return;
+  const _motionWrapped = applyWebcamMotion(g, T);
   const vw = rawV.videoWidth, vh = rawV.videoHeight;
-  const v = getMaskedVideo(rawV, vw, vh);
+  const _maskedV = getMaskedVideo(rawV, vw, vh);
+  const v = applyVideoFilter(_maskedV, vw, vh);
   // cover-fit: scale video to fill canvas, mirrored if requested
   const sCanvas = Math.max(W/vw, H/vh);
   const dW = vw*sCanvas, dH = vh*sCanvas;
@@ -11688,6 +12537,290 @@ function drawWebcamFX(g, dt, T){
     }
     g.restore();
   }
+
+  // ——————————————————————————————————————————————————————————————
+  // AR overlay (face-landmark driven — independent of Effect + Filter)
+  // ——————————————————————————————————————————————————————————————
+  if(cam.ar && cam.ar !== 'none' && cam.faceLandmarks){
+    const lm = cam.faceLandmarks;
+    const k = Math.max(0, Math.min(2, cam.arIntensity != null ? cam.arIntensity : 1));
+    // key landmarks (MediaPipe FaceLandmarker indices)
+    const _rEyeOut = lm[33],   _rEyeIn = lm[133];
+    const _lEyeOut = lm[263],  _lEyeIn = lm[362];
+    const _rEyeTop = lm[159],  _rEyeBot = lm[145];
+    const _lEyeTop = lm[386],  _lEyeBot = lm[374];
+    const _foreheadMid = lm[10];     // upper forehead center
+    const _chin = lm[152];           // chin bottom
+    const _noseTip = lm[1];          // nose tip
+    const _mouthL = lm[61], _mouthR = lm[291];
+    const _browL  = lm[105], _browR = lm[334];   // mid-brows
+    if(_rEyeOut && _lEyeOut && _foreheadMid && _chin){
+      // compute face metrics in screen space
+      const reC = { x:(_rEyeOut.x+_rEyeIn.x)/2, y:(_rEyeOut.y+_rEyeIn.y)/2 };
+      const leC = { x:(_lEyeOut.x+_lEyeIn.x)/2, y:(_lEyeOut.y+_lEyeIn.y)/2 };
+      const [reSx, reSy] = N2S(reC.x, reC.y);
+      const [leSx, leSy] = N2S(leC.x, leC.y);
+      const [fhSx, fhSy] = N2S(_foreheadMid.x, _foreheadMid.y);
+      const [chinSx, chinSy] = N2S(_chin.x, _chin.y);
+      const eyeDist = Math.hypot(leSx-reSx, leSy-reSy);    // px
+      const faceH   = Math.hypot(chinSx-fhSx, chinSy-fhSy);
+      const angle   = Math.atan2(leSy-reSy, leSx-reSx);
+      const eyeMidX = (reSx+leSx)/2, eyeMidY = (reSy+leSy)/2;
+      const baseHue = (dominantEmo && typeof dominantEmo === 'function') ? (dominantEmo().hue || 200) : 200;
+
+      g.save();
+      switch(cam.ar){
+        case 'mesh': {
+          // wireframe: draw small dots at every Nth landmark
+          g.fillStyle = `hsla(${baseHue},80%,75%,${0.5+k*0.3})`;
+          const step = Math.max(1, Math.round(4 - k*2));
+          for(let i=0;i<lm.length;i+=step){
+            const p = lm[i];
+            if(!p) continue;
+            const [px, py] = N2S(p.x, p.y);
+            g.beginPath();
+            g.arc(px, py, 1.2 + k*0.6, 0, TAU);
+            g.fill();
+          }
+          break;
+        }
+        case 'glasses': {
+          // round retro glasses
+          g.translate(eyeMidX, eyeMidY); g.rotate(angle);
+          const r = eyeDist * 0.4;
+          g.strokeStyle = `hsla(${baseHue},80%,60%,${0.85})`;
+          g.lineWidth = Math.max(2, eyeDist*0.06);
+          g.beginPath(); g.arc(-eyeDist/2, 0, r, 0, TAU); g.stroke();
+          g.beginPath(); g.arc(+eyeDist/2, 0, r, 0, TAU); g.stroke();
+          // bridge
+          g.beginPath(); g.moveTo(-eyeDist/2+r*0.85, 0); g.lineTo(+eyeDist/2-r*0.85, 0); g.stroke();
+          // glow
+          g.shadowColor = `hsla(${baseHue},90%,70%,0.7)`; g.shadowBlur = 10*k;
+          g.beginPath(); g.arc(-eyeDist/2, 0, r, 0, TAU); g.stroke();
+          g.beginPath(); g.arc(+eyeDist/2, 0, r, 0, TAU); g.stroke();
+          break;
+        }
+        case 'sunglasses': {
+          // chunky black wayfarer-style bars
+          g.translate(eyeMidX, eyeMidY); g.rotate(angle);
+          const w = eyeDist*0.85, h = eyeDist*0.45;
+          g.fillStyle = 'rgba(10,10,18,0.92)';
+          g.fillRect(-eyeDist/2-w/2, -h/2, w, h);
+          g.fillRect(+eyeDist/2-w/2, -h/2, w, h);
+          // bridge
+          g.fillRect(-eyeDist*0.08, -h*0.15, eyeDist*0.16, h*0.18);
+          // shine
+          g.fillStyle = `hsla(${baseHue},90%,75%,0.45)`;
+          g.fillRect(-eyeDist/2-w/2 + w*0.15, -h/2 + h*0.18, w*0.4, h*0.12);
+          g.fillRect(+eyeDist/2-w/2 + w*0.15, -h/2 + h*0.18, w*0.4, h*0.12);
+          break;
+        }
+        case 'cat': {
+          // triangle ears above head + whiskers
+          const headTopX = fhSx, headTopY = fhSy - faceH*0.25;
+          g.fillStyle = `hsla(${baseHue},70%,60%,0.85)`;
+          // outer
+          const earW = eyeDist*0.75, earH = faceH*0.45;
+          const leftBaseX = headTopX - eyeDist*0.7;
+          const rightBaseX = headTopX + eyeDist*0.7;
+          [[leftBaseX, -1], [rightBaseX, 1]].forEach(([bx, side]) => {
+            g.beginPath();
+            g.moveTo(bx - earW*0.5, headTopY);
+            g.lineTo(bx + earW*0.5, headTopY);
+            g.lineTo(bx + side*earW*0.15, headTopY - earH);
+            g.closePath(); g.fill();
+            // inner pink
+            g.fillStyle = 'rgba(255,160,200,0.85)';
+            g.beginPath();
+            g.moveTo(bx - earW*0.25, headTopY - earH*0.05);
+            g.lineTo(bx + earW*0.25, headTopY - earH*0.05);
+            g.lineTo(bx + side*earW*0.10, headTopY - earH*0.6);
+            g.closePath(); g.fill();
+            g.fillStyle = `hsla(${baseHue},70%,60%,0.85)`;
+          });
+          // whiskers
+          if(_noseTip && _mouthL && _mouthR){
+            const [nx, ny] = N2S(_noseTip.x, _noseTip.y);
+            g.strokeStyle = 'rgba(255,255,255,0.7)';
+            g.lineWidth = 1.5;
+            for(let i=-1;i<=1;i++){
+              g.beginPath();
+              g.moveTo(nx - eyeDist*0.15, ny + i*eyeDist*0.07);
+              g.lineTo(nx - eyeDist*0.7, ny + i*eyeDist*0.22);
+              g.stroke();
+              g.beginPath();
+              g.moveTo(nx + eyeDist*0.15, ny + i*eyeDist*0.07);
+              g.lineTo(nx + eyeDist*0.7, ny + i*eyeDist*0.22);
+              g.stroke();
+            }
+          }
+          break;
+        }
+        case 'crown': {
+          // 5-pointed crown above forehead
+          const cx = fhSx, cy = fhSy - faceH*0.20;
+          const cw = eyeDist*1.6, ch = faceH*0.30;
+          g.translate(cx, cy); g.rotate(angle);
+          const grd = g.createLinearGradient(0, -ch, 0, ch*0.5);
+          grd.addColorStop(0, `hsl(${(baseHue+30)%360}, 95%, 70%)`);
+          grd.addColorStop(1, `hsl(${baseHue}, 85%, 50%)`);
+          g.fillStyle = grd;
+          g.beginPath();
+          g.moveTo(-cw/2, 0);
+          for(let i=0;i<5;i++){
+            const x1 = -cw/2 + (i+0.5)*cw/5;
+            const x2 = -cw/2 + (i+1)*cw/5;
+            g.lineTo(x1, -ch);
+            g.lineTo(x2, 0);
+          }
+          g.closePath(); g.fill();
+          g.strokeStyle = `hsla(${baseHue},100%,90%,0.85)`;
+          g.lineWidth = 2; g.stroke();
+          // gems
+          for(let i=0;i<5;i++){
+            const x = -cw/2 + (i+0.5)*cw/5;
+            g.fillStyle = ['#ff3366','#33ccff','#ffcc33','#9c33ff','#33ff99'][i];
+            g.beginPath(); g.arc(x, -ch*0.2, ch*0.10, 0, TAU); g.fill();
+          }
+          break;
+        }
+        case 'halo': {
+          const cx = fhSx, cy = fhSy - faceH*0.30;
+          const rx = eyeDist*1.4, ry = eyeDist*0.35;
+          g.strokeStyle = `hsla(60, 100%, 70%, ${0.85})`;
+          g.lineWidth = Math.max(3, eyeDist*0.08);
+          g.shadowColor = 'rgba(255,230,120,0.95)';
+          g.shadowBlur = 25*k;
+          g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, TAU); g.stroke();
+          break;
+        }
+        case 'tears': {
+          // streams of teardrops from each eye downward
+          const sources = [
+            { x: reSx, y: reSy + eyeDist*0.18 },
+            { x: leSx, y: leSy + eyeDist*0.18 },
+          ];
+          const tArr = (cam.fxState._arTears = cam.fxState._arTears || []);
+          // spawn
+          if(Math.random() < 0.3+k*0.4){
+            sources.forEach(s => tArr.push({ x:s.x + (Math.random()-0.5)*4, y:s.y, v: 40+Math.random()*40, life: 1.2, age: 0 }));
+          }
+          if(tArr.length > 200) tArr.splice(0, tArr.length-200);
+          const dts = dt/1000;
+          for(let i=tArr.length-1;i>=0;i--){
+            const tr = tArr[i];
+            tr.age += dts;
+            tr.y += tr.v * dts * (1 + tr.age*1.5);
+            if(tr.age > tr.life){ tArr.splice(i, 1); continue; }
+            const a = 1 - tr.age/tr.life;
+            g.fillStyle = `hsla(200, 90%, 75%, ${a*0.9})`;
+            g.beginPath();
+            // teardrop shape
+            g.ellipse(tr.x, tr.y, 3+k, 5+k*1.5, 0, 0, TAU);
+            g.fill();
+          }
+          break;
+        }
+        case 'laserEyes': {
+          // beams from eyes outward
+          const beamLen = Math.max(W, H);
+          const aim = angle + Math.PI/2;  // perpendicular = facing forward; we want forward (downward-ish from eyes outward toward viewer/horizontal)
+          // simpler: laser shoots horizontally (away from face) in mirror-aware direction
+          const dirX = cam.mirror ? -1 : 1;   // unused — laser blasts horizontally outward to both sides
+          [[reSx, reSy], [leSx, leSy]].forEach(([ex, ey]) => {
+            const grd = g.createLinearGradient(ex, ey, ex + beamLen*1, ey);
+            grd.addColorStop(0, `hsla(0, 100%, 65%, ${0.9})`);
+            grd.addColorStop(1, 'hsla(0, 100%, 65%, 0)');
+            g.fillStyle = grd;
+            g.fillRect(ex, ey - eyeDist*0.06*k, beamLen, eyeDist*0.12*k);
+            // opposite direction
+            const grd2 = g.createLinearGradient(ex, ey, ex - beamLen, ey);
+            grd2.addColorStop(0, `hsla(0, 100%, 65%, ${0.9})`);
+            grd2.addColorStop(1, 'hsla(0, 100%, 65%, 0)');
+            g.fillStyle = grd2;
+            g.fillRect(ex - beamLen, ey - eyeDist*0.06*k, beamLen, eyeDist*0.12*k);
+            // core hot spot
+            g.fillStyle = `hsla(0, 100%, 90%, 0.95)`;
+            g.beginPath(); g.arc(ex, ey, eyeDist*0.08, 0, TAU); g.fill();
+          });
+          break;
+        }
+        case 'thirdEye': {
+          // glowing eye between brows
+          const bx = (reSx+leSx)/2;
+          const by = (reSy+leSy)/2 - eyeDist*0.65;
+          const r = eyeDist*0.22;
+          g.translate(bx, by); g.rotate(angle);
+          // eye white
+          g.fillStyle = 'rgba(245,235,220,0.95)';
+          g.beginPath(); g.ellipse(0, 0, r*1.4, r*0.85, 0, 0, TAU); g.fill();
+          // iris
+          const phase = T*0.7;
+          g.fillStyle = `hsl(${(baseHue+(Math.sin(phase)*60))%360}, 85%, 50%)`;
+          g.beginPath(); g.arc(0, 0, r*0.6, 0, TAU); g.fill();
+          // pupil
+          g.fillStyle = '#000';
+          g.beginPath(); g.arc(0, 0, r*0.28, 0, TAU); g.fill();
+          // shine
+          g.fillStyle = 'rgba(255,255,255,0.9)';
+          g.beginPath(); g.arc(-r*0.18, -r*0.18, r*0.12, 0, TAU); g.fill();
+          // glow
+          g.shadowColor = `hsla(${baseHue}, 100%, 70%, 1)`;
+          g.shadowBlur = 30*k;
+          g.beginPath(); g.arc(0, 0, r*0.6, 0, TAU); g.fill();
+          break;
+        }
+        case 'mask': {
+          // geometric carnival/venetian mask outline
+          const cx = eyeMidX, cy = eyeMidY;
+          g.translate(cx, cy); g.rotate(angle);
+          const w = eyeDist*2.3, h = faceH*0.65;
+          g.fillStyle = `hsla(${baseHue}, 60%, 25%, 0.85)`;
+          g.beginPath();
+          g.moveTo(-w/2, -h*0.2);
+          g.bezierCurveTo(-w/2, -h*0.55, -w*0.3, -h*0.6,  0, -h*0.5);
+          g.bezierCurveTo( w*0.3, -h*0.6,  w/2, -h*0.55,  w/2, -h*0.2);
+          g.bezierCurveTo( w/2,   h*0.4,   w*0.25, h*0.55,  0,  h*0.45);
+          g.bezierCurveTo(-w*0.25, h*0.55, -w/2,   h*0.4,  -w/2, -h*0.2);
+          g.closePath(); g.fill();
+          // eye holes
+          g.globalCompositeOperation = 'destination-out';
+          g.beginPath(); g.ellipse(-eyeDist*0.5, 0, eyeDist*0.32, eyeDist*0.20, 0, 0, TAU); g.fill();
+          g.beginPath(); g.ellipse(+eyeDist*0.5, 0, eyeDist*0.32, eyeDist*0.20, 0, 0, TAU); g.fill();
+          g.globalCompositeOperation = 'source-over';
+          // ornament
+          g.strokeStyle = `hsla(50, 90%, 70%, 0.9)`;
+          g.lineWidth = 2;
+          for(let i=0;i<6;i++){
+            const a = (i/6) * TAU;
+            const rx = Math.cos(a)*eyeDist*0.5;
+            const ry = -h*0.4 + Math.sin(a)*eyeDist*0.12;
+            g.beginPath(); g.arc(rx, ry, 4, 0, TAU); g.stroke();
+          }
+          break;
+        }
+        case 'aura': {
+          // glowing aura around the face — pulsing rings around chin-to-forehead center
+          const cx = (fhSx+chinSx)/2;
+          const cy = (fhSy+chinSy)/2;
+          const baseR = faceH*0.6;
+          for(let i=0;i<3;i++){
+            const phase = (T*0.5 + i*0.33) % 1;
+            const r = baseR * (1 + phase*0.8);
+            const a = (1-phase) * 0.5 * k;
+            g.strokeStyle = `hsla(${(baseHue + i*40)%360}, 90%, 70%, ${a})`;
+            g.lineWidth = Math.max(3, eyeDist*0.12)*(1-phase*0.5);
+            g.beginPath(); g.arc(cx, cy, r, 0, TAU); g.stroke();
+          }
+          break;
+        }
+      }
+      g.restore();
+    }
+  }
+
+  // Close the Motion transform (opened at the top of drawWebcamFX)
+  if(_motionWrapped) g.restore();
 }
 const FONT = {
   sans:{
@@ -12641,6 +13774,9 @@ function snapshotCam(){
   return {
     track: cam.track, fx: cam.fx, faceFx: cam.faceFx, handFx: cam.handFx,
     videoOpacity: cam.videoOpacity, fxSize: cam.fxSize, mirror: cam.mirror,
+    filter: cam.filter, filterIntensity: cam.filterIntensity,
+    ar: cam.ar, arIntensity: cam.arIntensity,
+    motion: cam.motion, motionIntensity: cam.motionIntensity, motionSpeed: cam.motionSpeed,
   };
 }
 function snapshotTypo(){
@@ -12685,6 +13821,7 @@ function preserveLayersAround(btnId){
       // sync FX grid + track buttons (in case track/fx changed back)
       document.querySelectorAll('#camTrackSeg button').forEach(b => b.classList.toggle('on', b.dataset.track === cam.track));
       document.querySelectorAll('#camFxGrid button').forEach(b => b.classList.toggle('on', b.dataset.fx === cam.fx));
+      document.querySelectorAll('#camFilterGrid button').forEach(b => b.classList.toggle('on', b.dataset.filter === cam.filter));
     }, 0);
   }, true);  // <-- capture phase
 }
@@ -12728,10 +13865,16 @@ function captureSnapshot(){
       paths: [...state.sketch.paths], anim: state.sketch.anim,
       viewBox: [...state.sketch.viewBox],
     } : null,
-    // camera fx settings (NOT the stream)
+    // camera — including running state, so a preset can mean "camera on" or "camera off"
     cam: {
-      track: cam.track, fx: cam.fx,
+      running: !!cam.ready,
+      track: cam.track, fx: cam.fx, faceFx: cam.faceFx, handFx: cam.handFx,
       videoOpacity: cam.videoOpacity, fxSize: cam.fxSize, mirror: cam.mirror,
+      kaleido: cam.kaleido,
+      removeBg: !!cam.removeBg, bgFeather: cam.bgFeather, bgSmooth: cam.bgSmooth, bgModel: cam.bgModel,
+      filter: cam.filter, filterIntensity: cam.filterIntensity,
+      ar: cam.ar, arIntensity: cam.arIntensity,
+      motion: cam.motion, motionIntensity: cam.motionIntensity, motionSpeed: cam.motionSpeed,
     },
   };
 }
@@ -12819,12 +13962,39 @@ function applyFullSnapshot(snap){
   }
   // cam settings
   if(snap.cam){
-    Object.assign(cam, snap.cam);
+    // Apply settings first (don't write `running` into the cam object — it's a state flag, not config)
+    const { running, ...camFields } = snap.cam;
+    Object.assign(cam, camFields);
     document.querySelectorAll('#camTrackSeg button').forEach(b => b.classList.toggle('on', b.dataset.track === cam.track));
     document.querySelectorAll('#camFxGrid button').forEach(b => b.classList.toggle('on', b.dataset.fx === cam.fx));
+    document.querySelectorAll('#camFilterGrid button').forEach(b => b.classList.toggle('on', b.dataset.filter === cam.filter));
+    document.querySelectorAll('#camArGrid button').forEach(b => b.classList.toggle('on', b.dataset.ar === cam.ar));
+    document.querySelectorAll('#camMotionGrid button').forEach(b => b.classList.toggle('on', b.dataset.motion === cam.motion));
+    document.querySelectorAll('#camBgModelSeg button').forEach(b => b.classList.toggle('on', b.dataset.segmodel === cam.bgModel));
     if(snap.cam.videoOpacity !== undefined) setSlider('camVid', snap.cam.videoOpacity*100);
     if(snap.cam.fxSize !== undefined) setSlider('camFxSize', snap.cam.fxSize*100);
     if(snap.cam.mirror !== undefined) setSlider('camMirror', snap.cam.mirror ? 1 : 0);
+    if(snap.cam.filterIntensity !== undefined) setSlider('camFilterAmt', snap.cam.filterIntensity*100);
+    if(snap.cam.arIntensity !== undefined) setSlider('camArAmt', snap.cam.arIntensity*100);
+    if(snap.cam.motionIntensity !== undefined) setSlider('camMotionAmt', snap.cam.motionIntensity*100);
+    if(snap.cam.motionSpeed !== undefined) setSlider('camMotionSpd', snap.cam.motionSpeed*100);
+    if(snap.cam.bgFeather !== undefined) setSlider('camBgFeather', snap.cam.bgFeather*100);
+    if(snap.cam.bgSmooth !== undefined) setSlider('camBgSmooth', snap.cam.bgSmooth*100);
+    // bg-removal checkbox
+    const _cbBg = document.getElementById('camRemoveBg');
+    if(_cbBg && snap.cam.removeBg !== undefined){
+      _cbBg.checked = !!snap.cam.removeBg;
+      cam.removeBg = !!snap.cam.removeBg;
+      if(cam.removeBg && !cam.segLM){ loadMediaPipe('seg').catch(()=>{}); }
+      if(!cam.removeBg){ cam.segMaskData = null; }
+    }
+    // Start / stop the camera stream to match what was saved.
+    // If running === undefined (old preset), don't touch the stream.
+    if(running === true && !cam.ready){
+      camStart().catch(err => console.warn('preset camStart failed', err));
+    } else if(running === false && cam.ready){
+      camStop();
+    }
   }
   if(typeof updateReadout === 'function') updateReadout();
 }
