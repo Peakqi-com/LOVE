@@ -1592,6 +1592,30 @@
             <input type="checkbox" id="imgRemoveBg" />
             <span><strong>Remove background 影片/圖片去背</strong><em>套用 MediaPipe selfie segmenter · 保留人/主體 · video frames auto-refresh</em></span>
           </label>
+          <div style="margin-top:10px">
+            <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Filter 圖片濾鏡 <em style="font-family:var(--serif);font-style:italic;text-transform:none;letter-spacing:0;color:var(--ink-faint);font-size:11.5px;margin-left:4px">同 Live tab 的 14 種濾鏡</em></span>
+            <div class="live-grid" id="imgFilterGrid">
+              <button data-imgfilter="none" class="on">None<em>無 None</em></button>
+              <button data-imgfilter="8bit">8-bit<em>像素遊戲機</em></button>
+              <button data-imgfilter="mosaic">Mosaic<em>馬賽克</em></button>
+              <button data-imgfilter="chroma">Chroma<em>RGB 分離</em></button>
+              <button data-imgfilter="glitch">Glitch<em>故障切片</em></button>
+              <button data-imgfilter="threshold">Threshold<em>高反差黑白</em></button>
+              <button data-imgfilter="invert">Invert<em>負片反相</em></button>
+              <button data-imgfilter="vapor">Vapor<em>蒸氣波</em></button>
+              <button data-imgfilter="sepia">Sepia<em>復古褐調</em></button>
+              <button data-imgfilter="mono">Mono<em>單色灰階</em></button>
+              <button data-imgfilter="edge">Edge<em>邊緣偵測</em></button>
+              <button data-imgfilter="scanlines">Scanlines<em>CRT 掃描線</em></button>
+              <button data-imgfilter="halftone">Halftone<em>網點半色調 · 較重</em></button>
+              <button data-imgfilter="sketch">Sketch<em>素描線稿</em></button>
+            </div>
+          </div>
+          <div class="ctrl" style="margin-top:4px"><span class="label">Filter intensity 濾鏡強度</span><span class="val" id="imgFilterAmtVal">1.0×</span>
+            <div class="slider"><div class="track"></div><div class="fill" id="imgFilterAmtFill"></div><div class="thumb" id="imgFilterAmtThumb"></div>
+              <input type="range" min="0" max="200" value="100" id="imgFilterAmt" />
+            </div>
+          </div>
         </div>
 
         <div class="section">
@@ -2244,7 +2268,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-22q · 3D AR cm-units fix + image/video bg removal (Image controls → Remove background 影片/圖片去背)');
+console.log('[IW] script booting · build 2026-05-22r · image filter (Live tab 14 filters now also on uploaded image/video) + bg removal perf (10fps + downscale to 360p before segmentation)');
 
 // Click diagnostics — log every click so we can see where they reach.
 // Capture phase so we see clicks BEFORE any interceptor swallows them.
@@ -8089,6 +8113,7 @@ function applySnapshot(snap, opts){
       arrangement:'single', count:8, spawnRate:1.0, opacity:0.85,
       effectStrength:1.0, scale:1.0, blend:'source-over',
       useAllImages:false, cycle:false, stretchToFill:false, removeBg:false,
+      filter:'none', filterIntensity:1.0,
     };
     for(const k in imgDefaults){
       imgState[k] = (snap.img[k] !== undefined) ? snap.img[k] : imgDefaults[k];
@@ -8109,6 +8134,9 @@ function applySnapshot(snap, opts){
     const stEl  = document.getElementById('imgStretchFill'); if(stEl) stEl.checked = !!imgState.stretchToFill;
     const rbEl  = document.getElementById('imgRemoveBg'); if(rbEl) rbEl.checked = !!imgState.removeBg;
     if(imgState.removeBg && typeof _loadImgSegmenter === 'function') _loadImgSegmenter();
+    document.querySelectorAll('#imgFilterGrid button').forEach(b => b.classList.toggle('on', b.dataset.imgfilter === imgState.filter));
+    const ifInt = document.getElementById('imgFilterAmt');
+    if(ifInt){ ifInt.value = Math.round((imgState.filterIntensity||1)*100); ifInt.dispatchEvent(new Event('input')); }
   }
   // cam — apply settings + start/stop the stream so setlist slots can mean "camera on/off"
   if(snap.cam){
@@ -9264,6 +9292,8 @@ const imgState = {
   },
   stretchToFill: false,  // VJ option: ignore native aspect ratio
   removeBg: false,       // Background removal for uploaded image/video (MediaPipe selfie segmenter)
+  filter: 'none',        // Image/video filter (same set as Live tab)
+  filterIntensity: 1.0,
   t0: performance.now(),
 };
 
@@ -9337,20 +9367,46 @@ function getMaskedMediaSource(src, entry){
   // Decide whether to (re)run segmentation:
   //  - never segmented yet
   //  - source changed (e.g. swap between GIF frames)
-  //  - video: every ~50ms (20fps for segmentation, smooth enough)
+  //  - video: every ~100ms (10fps for segmentation — smooth enough since masks change slowly).
+  //    The mask is reused for ~3 frames between segmentations.
   const needSeg = !cache.done
     || cache.lastSrc !== src
-    || (isVideo && (now - cache.lastSegT) > 50);
+    || (isVideo && (now - cache.lastSegT) > 100);
   if(needSeg){
     try {
-      _imgSegLM.segmentForVideo(src, now, (result) => {
-        const cm = result.categoryMask;
-        if(!cm) return;
-        cache.maskData = cm.getAsUint8Array();
-        cache.mw = cm.width; cache.mh = cm.height;
-        cm.close();
-        cache.done = true;
-      });
+      // Downscale the source to ~360p before segmentation so MediaPipe runs faster on big videos.
+      // Selfie segmenter only outputs ~256px masks anyway, so reducing input is lossless for quality.
+      const SEG_TARGET = 360;
+      if(sw > SEG_TARGET){
+        const scale = SEG_TARGET / sw;
+        const ssw = Math.round(sw * scale);
+        const ssh = Math.round(sh * scale);
+        if(!cache.segInputCv){
+          cache.segInputCv = document.createElement('canvas');
+          cache.segInputCtx = cache.segInputCv.getContext('2d');
+        }
+        if(cache.segInputCv.width !== ssw || cache.segInputCv.height !== ssh){
+          cache.segInputCv.width = ssw; cache.segInputCv.height = ssh;
+        }
+        cache.segInputCtx.drawImage(src, 0, 0, ssw, ssh);
+        _imgSegLM.segmentForVideo(cache.segInputCv, now, (result) => {
+          const cm = result.categoryMask;
+          if(!cm) return;
+          cache.maskData = cm.getAsUint8Array();
+          cache.mw = cm.width; cache.mh = cm.height;
+          cm.close();
+          cache.done = true;
+        });
+      } else {
+        _imgSegLM.segmentForVideo(src, now, (result) => {
+          const cm = result.categoryMask;
+          if(!cm) return;
+          cache.maskData = cm.getAsUint8Array();
+          cache.mw = cm.width; cache.mh = cm.height;
+          cm.close();
+          cache.done = true;
+        });
+      }
       cache.lastSegT = now;
       cache.lastSrc = src;
     } catch(e){ /* swallow — return un-masked */ }
@@ -9942,6 +9998,32 @@ if(_imgRemoveBgEl){
     if(imgState.removeBg) _loadImgSegmenter();
   });
 }
+// Image filter grid + intensity (same set as Live tab Filter)
+document.querySelectorAll('#imgFilterGrid button').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('#imgFilterGrid button').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    imgState.filter = b.dataset.imgfilter;
+  });
+});
+{
+  const el = document.getElementById('imgFilterAmt');
+  const fill = document.getElementById('imgFilterAmtFill');
+  const thumb = document.getElementById('imgFilterAmtThumb');
+  const val = document.getElementById('imgFilterAmtVal');
+  if(el && fill && thumb && val){
+    const upd = () => {
+      const raw = +el.value;
+      imgState.filterIntensity = raw / 100;
+      const p = (raw - +el.min) / (+el.max - +el.min) * 100;
+      fill.style.width = p + '%';
+      thumb.style.left = p + '%';
+      val.textContent = (raw/100).toFixed(1) + '×';
+    };
+    el.addEventListener('input', upd);
+    upd();
+  }
+}
 
 // Arrangement segmented control
 document.querySelectorAll('#imgArrSeg button[data-arr]').forEach(b=>{
@@ -10002,6 +10084,15 @@ function fitImageToCanvas(img){
   if(imgState.removeBg){
     const masked = getMaskedMediaSource(source, entry);
     if(masked) source = masked;
+  }
+  // Apply image filter (same 14-filter set as Live tab) when imgState.filter is set
+  if(imgState.filter && imgState.filter !== 'none'){
+    const fw = source.videoWidth || source.naturalWidth || source.width || 0;
+    const fh = source.videoHeight || source.naturalHeight || source.height || 0;
+    if(fw && fh){
+      const filtered = applyImageFilter(source, fw, fh);
+      if(filtered) source = filtered;
+    }
   }
   const srcW = source.width || img.width;
   const srcH = source.height || img.height;
@@ -12373,26 +12464,42 @@ const _filterCv  = document.createElement('canvas');
 const _filterCtx = _filterCv.getContext('2d');
 const _filterAuxCv  = document.createElement('canvas');
 const _filterAuxCtx = _filterAuxCv.getContext('2d');
+// Separate scratch buffers for image filter so it can co-exist with camera filter in the same frame
+const _imgFilterCv  = document.createElement('canvas');
+const _imgFilterCtx = _imgFilterCv.getContext('2d');
+const _imgFilterAuxCv  = document.createElement('canvas');
+const _imgFilterAuxCtx = _imgFilterAuxCv.getContext('2d');
 let _filterFrameCounter = 0;
-function applyVideoFilter(src, vw, vh){
-  const f = cam.filter || 'none';
+// Generic filter — handles both webcam (mode='cam') and image (mode='img') sources.
+// Uses separate scratch buffers per mode so they don't collide within a frame.
+function applyVideoFilter(src, vw, vh, mode){
+  mode = mode || 'cam';
+  const isImg = (mode === 'img');
+  const f = isImg ? (imgState.filter || 'none') : (cam.filter || 'none');
   if(f === 'none') return src;
-  // Adaptive throttle: when multiple heavy sources are active (video item + image effects + Live),
-  // skip the filter every other frame and re-use the last result. Halves filter CPU/GPU cost.
-  _filterFrameCounter++;
-  const heavyFilters = new Set(['glitch','halftone','sketch','edge','8bit','mosaic','chroma']);
-  const videoItemActive = imgState && imgState.images && imgState.images.some(e => e && e.isVideo);
-  const imgFxActive = imgState && imgState.modes && Object.values(imgState.modes).filter(Boolean).length > 1; // 1 = "enabled" baseline
-  const arActive = cam.ar && cam.ar !== 'none';
-  const stackedLoad = (videoItemActive ? 1 : 0) + (imgFxActive ? 1 : 0) + (arActive ? 1 : 0);
-  if(stackedLoad >= 2 && heavyFilters.has(f) && (_filterFrameCounter & 1) && _filterCv.width === vw && _filterCv.height === vh){
-    return _filterCv;  // re-use last frame
+  // Adaptive throttle (camera only — image filter is user-explicit, no need to throttle)
+  if(!isImg){
+    _filterFrameCounter++;
+    const heavyFilters = new Set(['glitch','halftone','sketch','edge','8bit','mosaic','chroma']);
+    const videoItemActive = imgState && imgState.images && imgState.images.some(e => e && e.isVideo);
+    const imgFxActive = imgState && imgState.modes && Object.values(imgState.modes).filter(Boolean).length > 1;
+    const arActive = cam.ar && cam.ar !== 'none';
+    const stackedLoad = (videoItemActive ? 1 : 0) + (imgFxActive ? 1 : 0) + (arActive ? 1 : 0);
+    if(stackedLoad >= 2 && heavyFilters.has(f) && (_filterFrameCounter & 1) && _filterCv.width === vw && _filterCv.height === vh){
+      return _filterCv;
+    }
   }
-  if(_filterCv.width !== vw || _filterCv.height !== vh){
-    _filterCv.width = vw; _filterCv.height = vh;
+  // Pick scratch buffers based on mode
+  const _cv    = isImg ? _imgFilterCv    : _filterCv;
+  const _ctx   = isImg ? _imgFilterCtx   : _filterCtx;
+  const _auxCv = isImg ? _imgFilterAuxCv : _filterAuxCv;
+  const _auxCtx = isImg ? _imgFilterAuxCtx : _filterAuxCtx;
+  if(_cv.width !== vw || _cv.height !== vh){
+    _cv.width = vw; _cv.height = vh;
   }
-  const c = _filterCtx;
-  const k = Math.max(0, Math.min(2, cam.filterIntensity != null ? cam.filterIntensity : 1));
+  const c = _ctx;
+  const _intensity = isImg ? imgState.filterIntensity : cam.filterIntensity;
+  const k = Math.max(0, Math.min(2, _intensity != null ? _intensity : 1));
   c.setTransform(1,0,0,1,0,0);
   c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; c.filter = 'none';
   c.clearRect(0,0,vw,vh);
@@ -12402,17 +12509,17 @@ function applyVideoFilter(src, vw, vh){
       const blocks = Math.max(2, Math.round(6 + k*18));     // smaller = chunkier
       const lw = Math.max(8, Math.round(vw/blocks));
       const lh = Math.max(8, Math.round(vh/blocks));
-      if(_filterAuxCv.width !== lw || _filterAuxCv.height !== lh){
-        _filterAuxCv.width = lw; _filterAuxCv.height = lh;
+      if(_auxCv.width !== lw || _auxCv.height !== lh){
+        _auxCv.width = lw; _auxCv.height = lh;
       }
-      _filterAuxCtx.imageSmoothingEnabled = false;
-      _filterAuxCtx.clearRect(0,0,lw,lh);
+      _auxCtx.imageSmoothingEnabled = false;
+      _auxCtx.clearRect(0,0,lw,lh);
       // posterize-ish via saturation + contrast bump pre-resize
-      _filterAuxCtx.filter = `saturate(${1.3 + k*0.6}) contrast(${1.1 + k*0.5})`;
-      _filterAuxCtx.drawImage(src, 0, 0, lw, lh);
-      _filterAuxCtx.filter = 'none';
+      _auxCtx.filter = `saturate(${1.3 + k*0.6}) contrast(${1.1 + k*0.5})`;
+      _auxCtx.drawImage(src, 0, 0, lw, lh);
+      _auxCtx.filter = 'none';
       c.imageSmoothingEnabled = false;
-      c.drawImage(_filterAuxCv, 0, 0, vw, vh);
+      c.drawImage(_auxCv, 0, 0, vw, vh);
       c.imageSmoothingEnabled = true;
       break;
     }
@@ -12421,14 +12528,14 @@ function applyVideoFilter(src, vw, vh){
       const blocks = Math.max(2, Math.round(4 + k*10));
       const lw = Math.max(6, Math.round(vw/blocks));
       const lh = Math.max(6, Math.round(vh/blocks));
-      if(_filterAuxCv.width !== lw || _filterAuxCv.height !== lh){
-        _filterAuxCv.width = lw; _filterAuxCv.height = lh;
+      if(_auxCv.width !== lw || _auxCv.height !== lh){
+        _auxCv.width = lw; _auxCv.height = lh;
       }
-      _filterAuxCtx.imageSmoothingEnabled = false;
-      _filterAuxCtx.clearRect(0,0,lw,lh);
-      _filterAuxCtx.drawImage(src, 0, 0, lw, lh);
+      _auxCtx.imageSmoothingEnabled = false;
+      _auxCtx.clearRect(0,0,lw,lh);
+      _auxCtx.drawImage(src, 0, 0, lw, lh);
       c.imageSmoothingEnabled = false;
-      c.drawImage(_filterAuxCv, 0, 0, vw, vh);
+      c.drawImage(_auxCv, 0, 0, vw, vh);
       c.imageSmoothingEnabled = true;
       break;
     }
@@ -12514,7 +12621,7 @@ function applyVideoFilter(src, vw, vh){
       c.globalCompositeOperation = 'source-over';
       // boost edges to white
       c.filter = `grayscale(1) brightness(${1.5 + k*1.5}) contrast(${2 + k*2}) invert(1)`;
-      c.drawImage(_filterCv, 0, 0, vw, vh);
+      c.drawImage(_cv, 0, 0, vw, vh);
       c.filter = 'none';
       break;
     }
@@ -12540,16 +12647,16 @@ function applyVideoFilter(src, vw, vh){
       const lw = Math.max(20, Math.round(vw/(vw/blocks)));
       const lh = Math.max(20, Math.round(vh/(vw/blocks)));
       const cell = Math.round(vw/blocks);
-      if(_filterAuxCv.width !== lw || _filterAuxCv.height !== lh){
-        _filterAuxCv.width = lw; _filterAuxCv.height = lh;
+      if(_auxCv.width !== lw || _auxCv.height !== lh){
+        _auxCv.width = lw; _auxCv.height = lh;
       }
-      _filterAuxCtx.imageSmoothingEnabled = true;
-      _filterAuxCtx.filter = 'grayscale(1) contrast(1.4)';
-      _filterAuxCtx.drawImage(src, 0, 0, lw, lh);
-      _filterAuxCtx.filter = 'none';
+      _auxCtx.imageSmoothingEnabled = true;
+      _auxCtx.filter = 'grayscale(1) contrast(1.4)';
+      _auxCtx.drawImage(src, 0, 0, lw, lh);
+      _auxCtx.filter = 'none';
       // sample once
       let data;
-      try { data = _filterAuxCtx.getImageData(0,0,lw,lh).data; } catch(_) { data = null; }
+      try { data = _auxCtx.getImageData(0,0,lw,lh).data; } catch(_) { data = null; }
       c.fillStyle = '#000';
       c.fillRect(0,0,vw,vh);
       c.fillStyle = '#fff';
@@ -12583,15 +12690,18 @@ function applyVideoFilter(src, vw, vh){
       c.drawImage(src, 0, 0, vw, vh);
       c.globalCompositeOperation = 'source-over';
       c.filter = `grayscale(1) brightness(${2 + k}) contrast(${3 + k*2}) invert(1)`;
-      c.drawImage(_filterCv, 0, 0, vw, vh);
+      c.drawImage(_cv, 0, 0, vw, vh);
       c.filter = 'none';
       break;
     }
     default:
       c.drawImage(src, 0, 0, vw, vh);
   }
-  return _filterCv;
+  return _cv;
 }
+
+// Thin wrapper — call with 'img' mode to filter uploaded images/videos using imgState.filter
+function applyImageFilter(src, vw, vh){ return applyVideoFilter(src, vw, vh, 'img'); }
 
 // Webcam Motion — transforms applied to the whole webcam plane (video + FX + AR move together)
 function applyWebcamMotion(g, T){
@@ -14842,6 +14952,7 @@ function captureSnapshot(){
       opacity: imgState.opacity, effectStrength: imgState.effectStrength, scale: imgState.scale,
       blend: imgState.blend, useAllImages: imgState.useAllImages, cycle: imgState.cycle,
       stretchToFill: !!imgState.stretchToFill, removeBg: !!imgState.removeBg,
+      filter: imgState.filter, filterIntensity: imgState.filterIntensity,
       modes: imgState.modes ? { ...imgState.modes } : null,
     } : null,
     // light mode + sketch (line-art glyph)
@@ -14918,6 +15029,7 @@ function applyFullSnapshot(snap){
       arrangement:'single', count:8, spawnRate:1.0, opacity:0.85,
       effectStrength:1.0, scale:1.0, blend:'source-over',
       useAllImages:false, cycle:false, stretchToFill:false, removeBg:false,
+      filter:'none', filterIntensity:1.0,
     };
     for(const k in imgDefaults){
       if(snap.img[k] === undefined) imgState[k] = imgDefaults[k];
@@ -14940,6 +15052,9 @@ function applyFullSnapshot(snap){
     const stEl  = document.getElementById('imgStretchFill'); if(stEl) stEl.checked = !!imgState.stretchToFill;
     const rbEl  = document.getElementById('imgRemoveBg'); if(rbEl) rbEl.checked = !!imgState.removeBg;
     if(imgState.removeBg && typeof _loadImgSegmenter === 'function') _loadImgSegmenter();
+    document.querySelectorAll('#imgFilterGrid button').forEach(b => b.classList.toggle('on', b.dataset.imgfilter === imgState.filter));
+    const ifInt = document.getElementById('imgFilterAmt');
+    if(ifInt){ ifInt.value = Math.round((imgState.filterIntensity||1)*100); ifInt.dispatchEvent(new Event('input')); }
   }
   // typo
   if(snap.typo){
