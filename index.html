@@ -1025,37 +1025,9 @@
                 <input type="range" min="0" max="200" value="100" id="camFilterAmt" />
               </div>
             </div>
-            <div>
-              <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Face AR <em style="font-family:var(--serif);font-style:italic;text-transform:none;letter-spacing:0;color:var(--ink-faint);font-size:11.5px;margin-left:4px">臉部貼圖 · 跟頭轉動 · 3D 標 ✨</em></span>
-              <div class="live-grid" id="camArGrid">
-                <button data-ar="none" class="on">None<em>無 None</em></button>
-                <!-- 3D effects (Three.js) -->
-                <button data-ar="crown3d">✨ Crown 3D<em>3D 皇冠 · 帶寶石</em></button>
-                <button data-ar="sunglasses3d">✨ Sunglasses 3D<em>3D 墨鏡 · 反光</em></button>
-                <button data-ar="cat3d">✨ Cat ears 3D<em>3D 貓耳</em></button>
-                <button data-ar="halo3d">✨ Halo 3D<em>3D 天使光環</em></button>
-                <button data-ar="mask3d">✨ Mask 3D<em>3D 歌劇魅影面具</em></button>
-                <button data-ar="horns3d">✨ Devil horns 3D<em>3D 惡魔角</em></button>
-                <button data-ar="headband3d">✨ Headband 3D<em>3D 蝴蝶結頭帶</em></button>
-                <!-- 2D effects (cheap, no Three.js) -->
-                <button data-ar="mesh">Mesh<em>人臉網格 Face mesh</em></button>
-                <button data-ar="glasses">Glasses<em>圓框眼鏡 Round</em></button>
-                <button data-ar="sunglasses">Sunglasses<em>墨鏡 Wayfarer</em></button>
-                <button data-ar="cat">Cat<em>貓耳鬍鬚 Cat ears</em></button>
-                <button data-ar="crown">Crown<em>皇冠 Crown</em></button>
-                <button data-ar="halo">Halo<em>天使光環 Halo</em></button>
-                <button data-ar="tears">Tears<em>哭泣淚水 Tears</em></button>
-                <button data-ar="laserEyes">Laser eyes<em>激光眼 Laser</em></button>
-                <button data-ar="thirdEye">Third eye<em>第三隻眼 Third eye</em></button>
-                <button data-ar="mask">Mask<em>面具 Mask</em></button>
-                <button data-ar="aura">Aura<em>能量光環 Aura</em></button>
-              </div>
-            </div>
-            <div class="ctrl"><span class="label">Face AR intensity 強度</span><span class="val" id="camArAmtVal">1.0×</span>
-              <div class="slider"><div class="track"></div><div class="fill" id="camArAmtFill"></div><div class="thumb" id="camArAmtThumb"></div>
-                <input type="range" min="0" max="200" value="100" id="camArAmt" />
-              </div>
-            </div>
+            <!-- Face AR section removed temporarily — 3D crown/glasses etc. weren't tracking
+                 head pose well enough. cam.ar still defaults to 'none' in camera-fx.js and the
+                 click handler is guarded so the missing UI doesn't break anything. -->
             <div>
               <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Hand AR <em style="font-family:var(--serif);font-style:italic;text-transform:none;letter-spacing:0;color:var(--ink-faint);font-size:11.5px;margin-left:4px">手部貼圖 · 跟手指動</em></span>
               <div class="live-grid" id="camHandArGrid">
@@ -1399,7 +1371,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-22-fix2 · CRITICAL build.js fix: String.replace() with string replacement was interpreting $$ in module code as $-escape, silently breaking every $$(query) call. Switched to replacement function.');
+console.log('[IW] script booting · build 2026-05-22-fix3 · Face AR section hidden (3D crown/glasses/etc. did not track well enough). cam.ar locked to none in Random; Hand AR + Motion + Filter all stay.');
 
 // Global helpers — MUST be declared at top-level (not inside any IIFE) so
 // external modules (visual-modes.js / camera-fx.js / typography.js / media-library.js
@@ -5167,10 +5139,9 @@ function randomizeAll(){
     const filterPool = ['none','none','none','8bit','mosaic','chroma','glitch','threshold','invert','vapor','sepia','mono','edge','scanlines','sketch','halftone'];
     cam.filter = filterPool[Math.floor(Math.random()*filterPool.length)];
     cam.filterIntensity = 0.6 + Math.random()*1.1;   // 0.6 .. 1.7
-    // Face AR — weight 'none' so face isn't always covered. 3D effects included.
-    const arPool = ['none','none','none','none','mesh','glasses','sunglasses','cat','crown','halo','tears','laserEyes','thirdEye','mask','aura','crown3d','sunglasses3d','cat3d','halo3d','mask3d','horns3d','headband3d'];
-    cam.ar = arPool[Math.floor(Math.random()*arPool.length)];
-    cam.arIntensity = 0.7 + Math.random()*0.9;       // 0.7 .. 1.6
+    // Face AR removed temporarily — keep cam.ar = 'none' so drawWebcamFX skips it.
+    cam.ar = 'none';
+    cam.arIntensity = 1.0;
     // Hand AR — independent, hand track needed (auto-switched if non-none selected manually)
     const handArPool = ['none','none','none','none','rings','energyBall','spiderweb','wand','lightning','fireball','butterflies'];
     cam.handAr = handArPool[Math.floor(Math.random()*handArPool.length)];
