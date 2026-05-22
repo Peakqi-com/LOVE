@@ -1399,7 +1399,14 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-22x · build pipeline: external .css/.js modules now copied + minified into dist/; FILE MAP comment + popup HTML template fixed so build regex stops matching their literal <script> text');
+console.log('[IW] script booting · build 2026-05-22y · CRITICAL FIX: $ and $$ helpers were declared inside an IIFE so external modules (camera-fx, media-library, ar-3d) hit ReferenceError on load. Now declared globally before the IIFE.');
+
+// Global helpers — MUST be declared at top-level (not inside any IIFE) so
+// external modules (visual-modes.js / camera-fx.js / typography.js / media-library.js
+// / ar-3d.js) can use them. These modules load AFTER the main IIFE finishes,
+// so anything declared inside the IIFE is out of scope by then.
+const $ = (id) => document.getElementById(id);
+const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
 // Click diagnostics — log every click so we can see where they reach.
 // Capture phase so we see clicks BEFORE any interceptor swallows them.
@@ -6559,8 +6566,7 @@ requestAnimationFrame(frame);
    ============================================================ */
 (() => {
 
-const $ = (id) => document.getElementById(id);
-const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+// $ and $$ are declared at the top of main script (global) — no local shadow.
 
 /* —————————————————————————————————————————————————————————————————————
    Quick action bar wiring
