@@ -338,17 +338,9 @@ async function detectLoop(){
         cam.handLandmarks = (r.landmarks && r.landmarks.length) ? r.landmarks : null;
       }
       if(cam.removeBg && cam.segLM){
-        // segmenter needs its own monotonic clock, separate from face/hand detectors.
-        // Mixing makes MediaPipe reject earlier timestamps for "INVALID_ARGUMENT".
-        cam._segLastT = (cam._segLastT || 0) + 1;
-        const segT = Math.max(now, cam._segLastT);
-        cam._segLastT = segT;
-        cam.segLM.segmentForVideo(v, segT, (result) => {
+        cam.segLM.segmentForVideo(v, now, (result) => {
           const cm = result.categoryMask;
-          if(!cm){
-            if(!cam._segLoggedNoMask){ console.warn('[IW][seg] segmentForVideo returned no categoryMask'); cam._segLoggedNoMask = true; }
-            return;
-          }
+          if(!cm) return;
           cam.segMaskData = cm.getAsUint8Array();
           cam.segMaskW = cm.width; cam.segMaskH = cm.height;
           if(!cam._segLoggedFirst){
