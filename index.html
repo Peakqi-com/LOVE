@@ -3101,7 +3101,9 @@ class AudioReactor {
       this.ac = new (window.AudioContext||window.webkitAudioContext)();
       this.analyser = this.ac.createAnalyser();
       this.analyser.fftSize = 1024;
-      this.analyser.smoothingTimeConstant = 0.78;
+      // Heavier smoothing: was 0.78 (twitchy), now 0.88 — visuals react to
+      // broader trends, not every micro-spike. Gives a calmer feel.
+      this.analyser.smoothingTimeConstant = 0.88;
       this.freqBuf = new Uint8Array(this.analyser.frequencyBinCount);
     }
     if(this.ac.state === 'suspended') this.ac.resume().catch(()=>{});
@@ -3176,13 +3178,24 @@ class AudioReactor {
     for(let i=1;i<bEnd;i++) bSum += this.freqBuf[i];
     for(let i=bEnd;i<mEnd;i++) mSum += this.freqBuf[i];
     for(let i=mEnd;i<tEnd;i++) tSum += this.freqBuf[i];
-    const rawBass   = bSum / ((bEnd-1)*255);
-    const rawMid    = mSum / ((mEnd-bEnd)*255);
-    const rawTreble = tSum / ((tEnd-mEnd)*255);
+    let rawBass   = bSum / ((bEnd-1)*255);
+    let rawMid    = mSum / ((mEnd-bEnd)*255);
+    let rawTreble = tSum / ((tEnd-mEnd)*255);
+    // Mic input is way more sensitive than file input (close-mic + room noise).
+    // Knock the raw bands down so visuals don't go nuclear from breathing /
+    // typing / ambient.
+    if(this.mode === 'mic'){
+      rawBass   *= 0.55;
+      rawMid    *= 0.55;
+      rawTreble *= 0.55;
+    }
 
-    // Beat detection on RAW bass (before AGC) so loud tracks still register transients
+    // Beat detection on RAW bass (before AGC) so loud tracks still register transients.
+    // Higher thresholds = less likely to trigger from ambient mic noise.
     const now = performance.now();
-    if(rawBass - this._smoothBass > 0.12 && rawBass > 0.18 && now - this._lastBeat > 160){
+    const beatJumpReq  = this.mode === 'mic' ? 0.18 : 0.12;  // jump size needed
+    const beatFloorReq = this.mode === 'mic' ? 0.28 : 0.18;  // absolute floor
+    if(rawBass - this._smoothBass > beatJumpReq && rawBass > beatFloorReq && now - this._lastBeat > 160){
       this._lastBeat = now;
       state.beatFlash = Math.min(1, state.beatFlash + 0.5 + rawBass*0.4);
       if(beatDot){ beatDot.classList.add('on'); setTimeout(()=>beatDot.classList.remove('on'), 90); }
