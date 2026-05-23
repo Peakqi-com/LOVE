@@ -87,16 +87,29 @@ async function loadMediaPipe(which){
   }
   if(which === 'seg' && !cam.segLM && ImageSegmenter){
     cam.segLoading = true;
-    // 'fast': selfie_segmenter (single-class person/bg, fastest, default)
-    // 'multiclass': selfie_multiclass_256x256 (hair / body-skin / face / clothes / accessories / bg)
-    //               combines all person classes; better edges around hair
     const modelUrl = (cam.bgModel === 'multiclass')
       ? 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/1/selfie_multiclass_256x256.tflite'
       : 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/1/selfie_segmenter.tflite';
-    cam.segLM = await ImageSegmenter.createFromOptions(vision, {
-      baseOptions: { modelAssetPath: modelUrl, delegate:'GPU' },
-      runningMode: 'VIDEO', outputCategoryMask: true, outputConfidenceMasks: false,
-    });
+    console.log('[IW][seg] loading selfie segmenter model (' + (cam.bgModel || 'fast') + ') …');
+    // Try GPU first, fall back to CPU if GPU delegate fails (some browsers / drivers).
+    try {
+      cam.segLM = await ImageSegmenter.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: modelUrl, delegate:'GPU' },
+        runningMode: 'VIDEO', outputCategoryMask: true, outputConfidenceMasks: false,
+      });
+      console.log('[IW][seg] segmenter ready (GPU)');
+    } catch(eGpu){
+      console.warn('[IW][seg] GPU delegate failed, trying CPU:', eGpu && eGpu.message);
+      try {
+        cam.segLM = await ImageSegmenter.createFromOptions(vision, {
+          baseOptions: { modelAssetPath: modelUrl, delegate:'CPU' },
+          runningMode: 'VIDEO', outputCategoryMask: true, outputConfidenceMasks: false,
+        });
+        console.log('[IW][seg] segmenter ready (CPU fallback)');
+      } catch(eCpu){
+        console.error('[IW][seg] segmenter failed on both GPU and CPU:', eCpu && eCpu.message);
+      }
+    }
     cam.segLoading = false;
   }
   return which === 'seg' ? cam.segLM : cam[which==='face'?'faceLM':'handLM'];
@@ -334,11 +347,23 @@ async function detectLoop(){
         cam.handLandmarks = (r.landmarks && r.landmarks.length) ? r.landmarks : null;
       }
       if(cam.removeBg && cam.segLM){
-        cam.segLM.segmentForVideo(v, now, (result) => {
+        // segmenter needs its own monotonic clock, separate from face/hand detectors.
+        // Mixing makes MediaPipe reject earlier timestamps for "INVALID_ARGUMENT".
+        cam._segLastT = (cam._segLastT || 0) + 1;
+        const segT = Math.max(now, cam._segLastT);
+        cam._segLastT = segT;
+        cam.segLM.segmentForVideo(v, segT, (result) => {
           const cm = result.categoryMask;
-          if(!cm) return;
+          if(!cm){
+            if(!cam._segLoggedNoMask){ console.warn('[IW][seg] segmentForVideo returned no categoryMask'); cam._segLoggedNoMask = true; }
+            return;
+          }
           cam.segMaskData = cm.getAsUint8Array();
           cam.segMaskW = cm.width; cam.segMaskH = cm.height;
+          if(!cam._segLoggedFirst){
+            console.log('[IW][seg] first mask received', cm.width + '×' + cm.height);
+            cam._segLoggedFirst = true;
+          }
           cm.close();
         });
       }
