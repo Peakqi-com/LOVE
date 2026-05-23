@@ -788,19 +788,19 @@ function applyVideoFilter(src, vw, vh, mode){
       c.filter = `brightness(${1.08 + k*0.1}) contrast(${1.15 + k*0.15})`;
       c.drawImage(src, 0, 0, vw, vh);
       c.filter = 'none';
-      // RGB subpixel
+      // RGB subpixel — bigger cells so 1080p doesn't generate thousands of fillRect calls
       c.globalCompositeOperation = 'multiply';
-      const cellW = Math.max(2, Math.round(3 + k*1.5));
+      const cellW = Math.max(4, Math.round(6 + k*3));   // was 3+k*1.5 → now 6+k*3 (~half the iterations)
       for(let x = 0; x < vw; x += cellW * 3){
         c.fillStyle = `rgba(255, 90, 90, 0.85)`;  c.fillRect(x,             0, cellW, vh);
         c.fillStyle = `rgba(90, 255, 90, 0.85)`;  c.fillRect(x + cellW,     0, cellW, vh);
         c.fillStyle = `rgba(90, 90, 255, 0.85)`;  c.fillRect(x + cellW*2,   0, cellW, vh);
       }
       c.globalCompositeOperation = 'source-over';
-      // horizontal scanlines
+      // horizontal scanlines (sparser — every 5px not 3px)
       c.globalCompositeOperation = 'multiply';
       c.fillStyle = 'rgba(0,0,0,0.4)';
-      for(let y = 0; y < vh; y += 3) c.fillRect(0, y, vw, 1);
+      for(let y = 0; y < vh; y += 5) c.fillRect(0, y, vw, 1);
       c.globalCompositeOperation = 'source-over';
       // edge vignette to round off
       const cg = c.createRadialGradient(vw/2, vh/2, Math.min(vw,vh)*0.45, vw/2, vh/2, Math.max(vw,vh)*0.55);
@@ -855,28 +855,29 @@ function applyVideoFilter(src, vw, vh, mode){
       break;
     }
     case 'bloom': {
-      // heavy soft bloom — dreamy / overexposed look
+      // soft bloom — capped blur so large videos don't freeze the browser
       c.drawImage(src, 0, 0, vw, vh);
       c.globalCompositeOperation = 'lighter';
       c.globalAlpha = 0.45 + k*0.2;
-      c.filter = `blur(${6 + k*8}px) brightness(1.4)`;
+      // blur capped: was 6+k*8 (up to 22px), now 2+k*3 (up to 8px). still dreamy, way cheaper.
+      c.filter = `blur(${2 + k*3}px) brightness(1.4)`;
       c.drawImage(src, 0, 0, vw, vh);
       c.filter = 'none'; c.globalAlpha = 1; c.globalCompositeOperation = 'source-over';
       break;
     }
     case 'frost': {
-      // frozen-glass — heavy blur with cool tint and noise lines
-      c.filter = `blur(${3 + k*4}px) brightness(${1.1 + k*0.1}) saturate(0.6)`;
+      // frozen-glass — blur capped so it doesn't lock the main thread on big sources
+      c.filter = `blur(${1.5 + k*2.5}px) brightness(${1.1 + k*0.1}) saturate(0.6)`;
       c.drawImage(src, 0, 0, vw, vh);
       c.filter = 'none';
       c.globalCompositeOperation = 'screen';
       c.fillStyle = `rgba(160, 220, 255, ${0.18 + k*0.10})`;
       c.fillRect(0, 0, vw, vh);
       c.globalCompositeOperation = 'source-over';
-      // refraction lines
+      // refraction lines (just a few — cheap)
       c.strokeStyle = `rgba(255,255,255,${0.06 + k*0.03})`;
       c.lineWidth = 1;
-      for(let i = 0; i < 12; i++){
+      for(let i = 0; i < 6; i++){
         const y = Math.random()*vh;
         c.beginPath();
         c.moveTo(0, y);

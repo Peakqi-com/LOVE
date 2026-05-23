@@ -1395,7 +1395,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-22-fix4 · 12 new filters: noir/cyberpunk/nightvision/thermal/gameboy/vhs/crt/xray/duotone/emboss/bloom/frost. Total 26 filters in Live + Image tabs. All in Random pool.');
+console.log('[IW] script booting · build 2026-05-22-fix5 · perf: image filter cache for static images + downscale to 720p before filtering; bloom/frost blur values capped; crt cells coarser. Stops main-thread freeze on 1080p+ sources.');
 
 // Global helpers — MUST be declared at top-level (not inside any IIFE) so
 // external modules (visual-modes.js / camera-fx.js / typography.js / media-library.js
@@ -5810,12 +5810,61 @@ function fitImageToCanvas(img){
     const masked = getMaskedMediaSource(source, entry);
     if(masked) source = masked;
   }
-  // Apply image filter (same 14-filter set as Live tab) when imgState.filter is set
+  // Apply image filter (same 14-filter set as Live tab) when imgState.filter is set.
+  // For static images: cache the filtered result on the entry — same source/filter ⇒ no re-work.
+  // For video items: downscale source first (1080p+ × heavy filter every frame = death).
   if(imgState.filter && imgState.filter !== 'none'){
-    const fw = source.videoWidth || source.naturalWidth || source.width || 0;
-    const fh = source.videoHeight || source.naturalHeight || source.height || 0;
-    if(fw && fh){
-      const filtered = applyImageFilter(source, fw, fh);
+    const fw0 = source.videoWidth || source.naturalWidth || source.width || 0;
+    const fh0 = source.videoHeight || source.naturalHeight || source.height || 0;
+    if(fw0 && fh0){
+      const isVid = !!(source.videoWidth || (entry && entry.isVideo));
+      const isAnimImg = !!(entry && entry.frames && entry.frames.length);   // GIF: source swaps each frame
+      const cacheKey = `${imgState.filter}|${(imgState.filterIntensity||1).toFixed(2)}|${fw0}x${fh0}`;
+      let filtered = null;
+
+      if(!isVid && !isAnimImg && entry){
+        // STATIC image — cache by (filter, intensity, source identity).
+        if(entry._filteredCv && entry._filteredKey === cacheKey && entry._filteredSrc === source){
+          filtered = entry._filteredCv;
+        }
+      }
+
+      if(!filtered){
+        // Downscale large sources before filtering — keep it small so heavy filters
+        // (bloom/frost/crt) don't lock the main thread on 1080p+ video.
+        const FILTER_MAX = 720;
+        let fSrc = source, fw = fw0, fh = fh0;
+        if(fw0 > FILTER_MAX){
+          const s = FILTER_MAX / fw0;
+          fw = FILTER_MAX; fh = Math.round(fh0 * s);
+          if(!entry._filterDownCv){
+            entry._filterDownCv = document.createElement('canvas');
+            entry._filterDownCtx = entry._filterDownCv.getContext('2d');
+          }
+          if(entry._filterDownCv.width !== fw || entry._filterDownCv.height !== fh){
+            entry._filterDownCv.width = fw; entry._filterDownCv.height = fh;
+          }
+          entry._filterDownCtx.drawImage(source, 0, 0, fw, fh);
+          fSrc = entry._filterDownCv;
+        }
+        filtered = applyImageFilter(fSrc, fw, fh);
+        if(filtered && !isVid && !isAnimImg && entry){
+          // Save into a per-entry canvas so the cached result persists across frames
+          // (the global _imgFilterCv is reused/overwritten on the next call).
+          if(!entry._filteredCv){
+            entry._filteredCv = document.createElement('canvas');
+            entry._filteredCtx = entry._filteredCv.getContext('2d');
+          }
+          if(entry._filteredCv.width !== filtered.width || entry._filteredCv.height !== filtered.height){
+            entry._filteredCv.width = filtered.width; entry._filteredCv.height = filtered.height;
+          }
+          entry._filteredCtx.clearRect(0, 0, entry._filteredCv.width, entry._filteredCv.height);
+          entry._filteredCtx.drawImage(filtered, 0, 0);
+          entry._filteredKey = cacheKey;
+          entry._filteredSrc = source;
+          filtered = entry._filteredCv;
+        }
+      }
       if(filtered) source = filtered;
     }
   }
