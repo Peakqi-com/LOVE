@@ -6584,11 +6584,11 @@ document.querySelectorAll('.lock-chip').forEach(chip => {
 // Sub-lock popovers — fine-grained Random exclusions within a tab
 const SUBLOCK_GROUPS = {
   type: [
-    { key:'font',     label:'Font 字體',      desc:'family / weight / outline' },
-    { key:'anim',     label:'Animation 動畫', desc:'anim / kaleido' },
-    { key:'style',    label:'Style 風格',     desc:'style / layout / size mode / scale' },
-    { key:'color',    label:'Color 顏色',     desc:'color' },
-    { key:'behavior', label:'Behavior 行為',  desc:'speed / rate / life / density / loop' },
+    { key:'font',     label:'Font 字體 + 語系',  desc:'family (Sans/Serif/Recursive) + script (Aa/简/繁/あ/한) + weight + outline' },
+    { key:'anim',     label:'Animation 動畫',    desc:'anim (breathe / glitch / etc) + text kaleido' },
+    { key:'style',    label:'Style + Layout 樣式排版', desc:'style (solid/outline/mix/half) + layout (center/left/right/scatter) + size mode + size scale' },
+    { key:'color',    label:'Color 顏色',        desc:'text color (auto / palette / picker)' },
+    { key:'behavior', label:'Behavior 行為',     desc:'speed / spawn rate / lifetime / density / loop' },
   ],
   image: [
     { key:'arrangement', label:'Arrangement 排版', desc:'layout / count / scale / blend / cycle' },
