@@ -464,10 +464,13 @@ function applyVideoFilter(src, vw, vh, mode){
   if(!isImg && stackedLoad >= 2 && heavyFilters.has(f) && (_filterFrameCounter & 1) && _filterCv.width === vw && _filterCv.height === vh){
     return _filterCv;
   }
-  // IMG filter: more aggressive on big videos under stacked load
-  if(isImg && stackedLoad >= 2 && _imgFilterCv.width === vw && _imgFilterCv.height === vh){
-    if(heavyFilters.has(f) && (_filterFrameCounter % 3) !== 0) return _imgFilterCv;
-    else if(stackedLoad >= 3 && (_filterFrameCounter & 1)) return _imgFilterCv;
+  // IMG filter: very aggressive throttle. Image is typically a video being filtered
+  // each frame; even at 480p the bigger filters are too slow at 60fps. Cap to ~20fps
+  // baseline (every 3rd frame), 10fps under stacked load.
+  const heavyImgFilters = new Set(['bloom','frost','crt','vhs','nightvision','thermal','duotone','emboss','cyberpunk','glitch','halftone','sketch','edge']);
+  if(isImg && _imgFilterCv.width === vw && _imgFilterCv.height === vh){
+    if(heavyImgFilters.has(f) && (_filterFrameCounter % 3) !== 0) return _imgFilterCv;
+    else if(stackedLoad >= 2 && (_filterFrameCounter & 1)) return _imgFilterCv;
   }
   // Pick scratch buffers based on mode
   const _cv    = isImg ? _imgFilterCv    : _filterCv;

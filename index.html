@@ -1395,7 +1395,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-22-fix5 · perf: image filter cache for static images + downscale to 720p before filtering; bloom/frost blur values capped; crt cells coarser. Stops main-thread freeze on 1080p+ sources.');
+console.log('[IW] script booting · build 2026-05-22-fix6 · MORE perf: image filter source capped to 480p (was 720p); heavy filters skip 2-of-3 frames unconditionally on image mode (20fps), 10fps under stacked load. Stops freeze on slower machines.');
 
 // Global helpers — MUST be declared at top-level (not inside any IIFE) so
 // external modules (visual-modes.js / camera-fx.js / typography.js / media-library.js
@@ -5830,9 +5830,10 @@ function fitImageToCanvas(img){
       }
 
       if(!filtered){
-        // Downscale large sources before filtering — keep it small so heavy filters
-        // (bloom/frost/crt) don't lock the main thread on 1080p+ video.
-        const FILTER_MAX = 720;
+        // Downscale large sources hard before filtering — 480p is enough to look
+        // right at typical canvas sizes after the upscale, and keeps heavy filter
+        // work bounded. 1080p source × 60fps × heavy blur = main thread death.
+        const FILTER_MAX = 480;
         let fSrc = source, fw = fw0, fh = fh0;
         if(fw0 > FILTER_MAX){
           const s = FILTER_MAX / fw0;
