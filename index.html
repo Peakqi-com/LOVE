@@ -5003,7 +5003,11 @@ function randomizeAll(){
     beatStrobe:1, bpmKaleido:0,
   };
   // ALL randomizable mode keys (excludes "Sources" — webcamFX/typography are preserved separately)
-  const ALL_MODES = Object.keys(MODE_COST).filter(m => m !== 'base');  // base is always-on
+  // Modes banned from Random — still selectable manually via the Visual modes
+  // checkbox grid, but Random won't pick them. Add to this set when a mode looks
+  // bad in random combinations (e.g. polygon's huge single shape covers the screen).
+  const RANDOM_BANNED = new Set(['polygon']);
+  const ALL_MODES = Object.keys(MODE_COST).filter(m => m !== 'base' && !RANDOM_BANNED.has(m));
   // Modes that don't render well on a white canvas
   const lightHostile = new Set(['matrix','aurora','ribbons','petals']);
   // Budget — tuned for 60fps. Lower on high-DPI screens. Dynamic perf throttle
