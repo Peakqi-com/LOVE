@@ -674,6 +674,217 @@ function applyVideoFilter(src, vw, vh, mode){
       c.filter = 'none';
       break;
     }
+    case 'noir': {
+      // film-noir — heavy B&W with crushed shadows and bright highlights
+      c.filter = `grayscale(1) contrast(${1.6 + k*0.6}) brightness(${0.92 - k*0.05})`;
+      c.drawImage(src, 0, 0, vw, vh);
+      c.filter = 'none';
+      // soft dark vignette
+      const ng = c.createRadialGradient(vw/2, vh/2, Math.min(vw,vh)*0.3, vw/2, vh/2, Math.max(vw,vh)*0.7);
+      ng.addColorStop(0, 'rgba(0,0,0,0)');
+      ng.addColorStop(1, `rgba(0,0,0,${0.55*k})`);
+      c.fillStyle = ng;
+      c.fillRect(0, 0, vw, vh);
+      break;
+    }
+    case 'cyberpunk': {
+      // neon: chroma split + magenta/cyan shift + saturation pump
+      c.filter = `saturate(${1.7 + k*0.6}) contrast(${1.15 + k*0.2}) hue-rotate(${290 + k*40}deg)`;
+      c.drawImage(src, 0, 0, vw, vh);
+      c.filter = 'none';
+      const dx = Math.round(vw * 0.014 * k);
+      c.globalCompositeOperation = 'screen';
+      c.globalAlpha = 0.55;
+      c.filter = 'hue-rotate(50deg) saturate(3)';
+      c.drawImage(src, dx, 0, vw, vh);
+      c.filter = 'hue-rotate(180deg) saturate(3)';
+      c.drawImage(src, -dx, 0, vw, vh);
+      c.filter = 'none'; c.globalAlpha = 1; c.globalCompositeOperation = 'source-over';
+      break;
+    }
+    case 'nightvision': {
+      // green-channel only, brightened — military night-vision feel
+      c.filter = `grayscale(1) brightness(${1.2 + k*0.3}) contrast(${1.2 + k*0.3})`;
+      c.drawImage(src, 0, 0, vw, vh);
+      c.filter = 'none';
+      c.globalCompositeOperation = 'multiply';
+      c.fillStyle = `rgba(80, 255, 110, ${0.55 + k*0.2})`;
+      c.fillRect(0, 0, vw, vh);
+      c.globalCompositeOperation = 'source-over';
+      // subtle scanlines
+      c.globalCompositeOperation = 'multiply';
+      c.fillStyle = `rgba(0,0,0,${0.18 + k*0.08})`;
+      for(let y=0;y<vh;y+=3) c.fillRect(0, y, vw, 1);
+      c.globalCompositeOperation = 'source-over';
+      break;
+    }
+    case 'thermal': {
+      // heat-map: brightness → warm/cold gradient (hue cycle on luminance)
+      c.filter = `grayscale(1) contrast(${1.3 + k*0.4})`;
+      c.drawImage(src, 0, 0, vw, vh);
+      c.filter = 'none';
+      // overlay: dark blue at the bottom (cold), red-yellow at top (hot)
+      const tg = c.createLinearGradient(0, 0, 0, vh);
+      tg.addColorStop(0, `rgba(255, 60, 30, ${0.55*k})`);
+      tg.addColorStop(0.5, `rgba(255, 220, 40, ${0.40*k})`);
+      tg.addColorStop(1, `rgba(20, 30, 130, ${0.55*k})`);
+      c.globalCompositeOperation = 'screen';
+      c.fillStyle = tg;
+      c.fillRect(0, 0, vw, vh);
+      c.globalCompositeOperation = 'source-over';
+      // saturate
+      c.filter = `saturate(${2 + k}) hue-rotate(${k*-15}deg)`;
+      c.drawImage(_cv, 0, 0, vw, vh);
+      c.filter = 'none';
+      break;
+    }
+    case 'gameboy': {
+      // 4-tone green palette like an original Game Boy
+      const blocks = Math.max(4, Math.round(6 + k*12));
+      const lw = Math.max(8, Math.round(vw/blocks));
+      const lh = Math.max(8, Math.round(vh/blocks));
+      if(_auxCv.width !== lw || _auxCv.height !== lh){ _auxCv.width = lw; _auxCv.height = lh; }
+      _auxCtx.imageSmoothingEnabled = false;
+      _auxCtx.filter = 'grayscale(1) contrast(1.4) brightness(1.1)';
+      _auxCtx.drawImage(src, 0, 0, lw, lh);
+      _auxCtx.filter = 'none';
+      c.imageSmoothingEnabled = false;
+      c.drawImage(_auxCv, 0, 0, vw, vh);
+      c.imageSmoothingEnabled = true;
+      c.globalCompositeOperation = 'multiply';
+      c.fillStyle = `rgba(155, 188, 15, 1)`;
+      c.fillRect(0, 0, vw, vh);
+      c.globalCompositeOperation = 'source-over';
+      break;
+    }
+    case 'vhs': {
+      // chroma noise + scanline + slight horizontal jitter
+      c.drawImage(src, 0, 0, vw, vh);
+      // chroma fringe
+      const dxv = Math.round(vw * 0.006 * k);
+      c.globalCompositeOperation = 'lighter';
+      c.globalAlpha = 0.35;
+      c.filter = 'hue-rotate(120deg) saturate(2)';
+      c.drawImage(src, dxv, 0, vw, vh);
+      c.filter = 'hue-rotate(240deg) saturate(2)';
+      c.drawImage(src, -dxv, 0, vw, vh);
+      c.filter = 'none'; c.globalAlpha = 1; c.globalCompositeOperation = 'source-over';
+      // noise lines
+      c.fillStyle = 'rgba(255,255,255,0.06)';
+      for(let i = 0; i < 8 + Math.random()*8; i++){
+        const y = Math.random() * vh;
+        const h2 = 1 + Math.random()*2;
+        c.fillRect(0, y, vw, h2);
+      }
+      // scanlines
+      c.globalCompositeOperation = 'multiply';
+      c.fillStyle = `rgba(0,0,0,${0.20 + k*0.10})`;
+      for(let y = 0; y < vh; y += 4) c.fillRect(0, y, vw, 1.5);
+      c.globalCompositeOperation = 'source-over';
+      break;
+    }
+    case 'crt': {
+      // CRT phosphor: scanlines + slight RGB subpixel + edge fade
+      c.filter = `brightness(${1.08 + k*0.1}) contrast(${1.15 + k*0.15})`;
+      c.drawImage(src, 0, 0, vw, vh);
+      c.filter = 'none';
+      // RGB subpixel
+      c.globalCompositeOperation = 'multiply';
+      const cellW = Math.max(2, Math.round(3 + k*1.5));
+      for(let x = 0; x < vw; x += cellW * 3){
+        c.fillStyle = `rgba(255, 90, 90, 0.85)`;  c.fillRect(x,             0, cellW, vh);
+        c.fillStyle = `rgba(90, 255, 90, 0.85)`;  c.fillRect(x + cellW,     0, cellW, vh);
+        c.fillStyle = `rgba(90, 90, 255, 0.85)`;  c.fillRect(x + cellW*2,   0, cellW, vh);
+      }
+      c.globalCompositeOperation = 'source-over';
+      // horizontal scanlines
+      c.globalCompositeOperation = 'multiply';
+      c.fillStyle = 'rgba(0,0,0,0.4)';
+      for(let y = 0; y < vh; y += 3) c.fillRect(0, y, vw, 1);
+      c.globalCompositeOperation = 'source-over';
+      // edge vignette to round off
+      const cg = c.createRadialGradient(vw/2, vh/2, Math.min(vw,vh)*0.45, vw/2, vh/2, Math.max(vw,vh)*0.55);
+      cg.addColorStop(0, 'rgba(0,0,0,0)');
+      cg.addColorStop(1, 'rgba(0,0,0,0.65)');
+      c.fillStyle = cg;
+      c.fillRect(0, 0, vw, vh);
+      break;
+    }
+    case 'xray': {
+      // negative + boost — looks like a medical x-ray
+      c.filter = `invert(1) grayscale(1) brightness(${1.1 + k*0.2}) contrast(${1.6 + k*0.4})`;
+      c.drawImage(src, 0, 0, vw, vh);
+      c.filter = 'none';
+      // cyan tint
+      c.globalCompositeOperation = 'screen';
+      c.fillStyle = `rgba(120, 200, 255, ${0.18*k})`;
+      c.fillRect(0, 0, vw, vh);
+      c.globalCompositeOperation = 'source-over';
+      break;
+    }
+    case 'duotone': {
+      // map luminance to a two-color ramp (purple → yellow)
+      c.filter = `grayscale(1) contrast(${1.2 + k*0.3})`;
+      c.drawImage(src, 0, 0, vw, vh);
+      c.filter = 'none';
+      // shadows: deep purple
+      c.globalCompositeOperation = 'multiply';
+      c.fillStyle = `rgba(70, 30, 140, ${0.85 + k*0.1})`;
+      c.fillRect(0, 0, vw, vh);
+      c.globalCompositeOperation = 'source-over';
+      // highlights: warm yellow
+      c.globalCompositeOperation = 'screen';
+      c.fillStyle = `rgba(255, 200, 80, ${0.55 + k*0.15})`;
+      c.fillRect(0, 0, vw, vh);
+      c.globalCompositeOperation = 'source-over';
+      break;
+    }
+    case 'emboss': {
+      // 3D-relief: offset difference of bright vs dark
+      c.fillStyle = '#808080';
+      c.fillRect(0, 0, vw, vh);
+      c.globalCompositeOperation = 'difference';
+      c.drawImage(src, 0, 0, vw, vh);
+      c.globalCompositeOperation = 'difference';
+      const ox = Math.round(2 + k*4);
+      c.drawImage(src, ox, ox, vw, vh);
+      c.globalCompositeOperation = 'source-over';
+      c.filter = `grayscale(1) brightness(${1.4 + k*0.4}) contrast(${1.4 + k*0.4})`;
+      c.drawImage(_cv, 0, 0, vw, vh);
+      c.filter = 'none';
+      break;
+    }
+    case 'bloom': {
+      // heavy soft bloom — dreamy / overexposed look
+      c.drawImage(src, 0, 0, vw, vh);
+      c.globalCompositeOperation = 'lighter';
+      c.globalAlpha = 0.45 + k*0.2;
+      c.filter = `blur(${6 + k*8}px) brightness(1.4)`;
+      c.drawImage(src, 0, 0, vw, vh);
+      c.filter = 'none'; c.globalAlpha = 1; c.globalCompositeOperation = 'source-over';
+      break;
+    }
+    case 'frost': {
+      // frozen-glass — heavy blur with cool tint and noise lines
+      c.filter = `blur(${3 + k*4}px) brightness(${1.1 + k*0.1}) saturate(0.6)`;
+      c.drawImage(src, 0, 0, vw, vh);
+      c.filter = 'none';
+      c.globalCompositeOperation = 'screen';
+      c.fillStyle = `rgba(160, 220, 255, ${0.18 + k*0.10})`;
+      c.fillRect(0, 0, vw, vh);
+      c.globalCompositeOperation = 'source-over';
+      // refraction lines
+      c.strokeStyle = `rgba(255,255,255,${0.06 + k*0.03})`;
+      c.lineWidth = 1;
+      for(let i = 0; i < 12; i++){
+        const y = Math.random()*vh;
+        c.beginPath();
+        c.moveTo(0, y);
+        c.lineTo(vw, y + (Math.random()-0.5)*40);
+        c.stroke();
+      }
+      break;
+    }
     default:
       c.drawImage(src, 0, 0, vw, vh);
   }

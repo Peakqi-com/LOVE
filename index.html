@@ -740,6 +740,18 @@
               <button data-imgfilter="scanlines">Scanlines<em>CRT 掃描線</em></button>
               <button data-imgfilter="halftone">Halftone<em>網點半色調 · 較重</em></button>
               <button data-imgfilter="sketch">Sketch<em>素描線稿</em></button>
+              <button data-imgfilter="noir">Noir<em>黑白電影 · 重對比</em></button>
+              <button data-imgfilter="cyberpunk">Cyberpunk<em>賽博龐克 · 霓虹</em></button>
+              <button data-imgfilter="nightvision">Night vision<em>夜視鏡 · 軍綠</em></button>
+              <button data-imgfilter="thermal">Thermal<em>熱影像 · 紅藍漸層</em></button>
+              <button data-imgfilter="gameboy">Game Boy<em>4 色綠 · 像素</em></button>
+              <button data-imgfilter="vhs">VHS<em>錄影帶 · 雜訊條</em></button>
+              <button data-imgfilter="crt">CRT<em>映像管 · RGB 像素</em></button>
+              <button data-imgfilter="xray">X-Ray<em>X 光 · 負片青調</em></button>
+              <button data-imgfilter="duotone">Duotone<em>雙色映射 · 紫黃</em></button>
+              <button data-imgfilter="emboss">Emboss<em>浮雕 · 3D 凹凸</em></button>
+              <button data-imgfilter="bloom">Bloom<em>過曝 · 夢幻光暈</em></button>
+              <button data-imgfilter="frost">Frost<em>霜玻璃 · 模糊冷調</em></button>
             </div>
           </div>
           <div class="ctrl" style="margin-top:4px"><span class="label">Filter intensity 濾鏡強度</span><span class="val" id="imgFilterAmtVal">1.0×</span>
@@ -1018,6 +1030,18 @@
                 <button data-filter="scanlines">Scanlines<em>CRT 掃描線</em></button>
                 <button data-filter="halftone">Halftone<em>網點半色調 · 較重</em></button>
                 <button data-filter="sketch">Sketch<em>素描線稿</em></button>
+                <button data-filter="noir">Noir<em>黑白電影 · 重對比</em></button>
+                <button data-filter="cyberpunk">Cyberpunk<em>賽博龐克 · 霓虹</em></button>
+                <button data-filter="nightvision">Night vision<em>夜視鏡 · 軍綠</em></button>
+                <button data-filter="thermal">Thermal<em>熱影像 · 紅藍漸層</em></button>
+                <button data-filter="gameboy">Game Boy<em>4 色綠 · 像素</em></button>
+                <button data-filter="vhs">VHS<em>錄影帶 · 雜訊條</em></button>
+                <button data-filter="crt">CRT<em>映像管 · RGB 像素</em></button>
+                <button data-filter="xray">X-Ray<em>X 光 · 負片青調</em></button>
+                <button data-filter="duotone">Duotone<em>雙色映射 · 紫黃</em></button>
+                <button data-filter="emboss">Emboss<em>浮雕 · 3D 凹凸</em></button>
+                <button data-filter="bloom">Bloom<em>過曝 · 夢幻光暈</em></button>
+                <button data-filter="frost">Frost<em>霜玻璃 · 模糊冷調</em></button>
               </div>
             </div>
             <div class="ctrl"><span class="label">Filter intensity 濾鏡強度</span><span class="val" id="camFilterAmtVal">1.0×</span>
@@ -1371,7 +1395,7 @@ window.addEventListener('error', (e) => {
 window.addEventListener('unhandledrejection', (e) => {
   console.error('[IW] unhandled rejection:', e.reason && (e.reason.message || e.reason));
 });
-console.log('[IW] script booting · build 2026-05-22-fix3 · Face AR section hidden (3D crown/glasses/etc. did not track well enough). cam.ar locked to none in Random; Hand AR + Motion + Filter all stay.');
+console.log('[IW] script booting · build 2026-05-22-fix4 · 12 new filters: noir/cyberpunk/nightvision/thermal/gameboy/vhs/crt/xray/duotone/emboss/bloom/frost. Total 26 filters in Live + Image tabs. All in Random pool.');
 
 // Global helpers — MUST be declared at top-level (not inside any IIFE) so
 // external modules (visual-modes.js / camera-fx.js / typography.js / media-library.js
@@ -5136,7 +5160,7 @@ function randomizeAll(){
     // Background removal — 30% chance, biased off so it doesn't always run the segmenter
     cam.removeBg = Math.random() < 0.3;
     // Filter — every filter is randomizable. 'none' weighted higher so filter isn't always on.
-    const filterPool = ['none','none','none','8bit','mosaic','chroma','glitch','threshold','invert','vapor','sepia','mono','edge','scanlines','sketch','halftone'];
+    const filterPool = ['none','none','none','8bit','mosaic','chroma','glitch','threshold','invert','vapor','sepia','mono','edge','scanlines','sketch','halftone','noir','cyberpunk','nightvision','thermal','gameboy','vhs','crt','xray','duotone','emboss','bloom','frost'];
     cam.filter = filterPool[Math.floor(Math.random()*filterPool.length)];
     cam.filterIntensity = 0.6 + Math.random()*1.1;   // 0.6 .. 1.7
     // Face AR removed temporarily — keep cam.ar = 'none' so drawWebcamFX skips it.
