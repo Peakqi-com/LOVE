@@ -319,23 +319,14 @@ if(_camBgModelSeg){
 }
 
 /* —————————————————————————————————————————————————————————————————————
-   MediaPipe detection loop (decoupled from main RAF; faster)
+   MediaPipe detection loop — runs every RAF.
+   Earlier I added throttling but it broke bg removal in some configs,
+   so back to the original full-rate detection.
    ————————————————————————————————————————————————————————————————————— */
-// Throttle MediaPipe detection to 30fps (still smooth visually, halves cost).
-// When the page is showing video items + image effects too, drop further to 20fps.
-let _detectLastT = 0;
 async function detectLoop(){
   if(!cam.ready){ requestAnimationFrame(detectLoop); return; }
   const v = cam.video;
   const now = performance.now();
-  const videoItemActive = imgState && imgState.images && imgState.images.some(e => e && e.isVideo);
-  const imgFxActive = imgState && imgState.modes && Object.values(imgState.modes).filter(Boolean).length > 1;
-  const minIntervalMs = (videoItemActive || imgFxActive) ? 50 : 33; // 20fps under load, else 30fps
-  if(now - _detectLastT < minIntervalMs){
-    requestAnimationFrame(detectLoop);
-    return;
-  }
-  _detectLastT = now;
   if(v.readyState >= 2){
     try{
       if(cam.track === 'face' && cam.faceLM){
