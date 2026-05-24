@@ -3663,15 +3663,15 @@ function tickLyricsSync(){
     }
   }
 
-  // Instrumental-gap auto-switching: while in a long gap, fire randomizeAll
-  // every `instrumentalSwitchSec` seconds — but temporarily lock the type tab
-  // so the user's typography choices stay intact. Only visuals shuffle.
-  // SKIP during recording — randomizeAll is heavy (reset fields/particles +
-  // 50+ param randomizations + syncAllUI dispatch events) and causes the
-  // periodic frame hitch users notice in their recordings.
+  // Instrumental-gap auto-switching: fire randomizeAll every
+  // `instrumentalSwitchSec` seconds during long gaps. During recording, only
+  // do this if the user opted in via the confirm prompt at startRecording
+  // (state.autoRandomDuringRecord). randomizeAll is heavy enough to cause a
+  // brief frame hitch that shows up in the video.
   const _recording = typeof window._isRecording === 'function' && window._isRecording();
+  const _keepAuto = !_recording || (typeof state !== 'undefined' && state.autoRandomDuringRecord);
   const next = _lyrics.lines[_lyrics.currentIdx + 1];
-  if(next && !_recording){
+  if(next && _keepAuto){
     const gap = next.time - t;
     if(gap > _lyrics.instrumentalGapSec){
       const now = performance.now() / 1000;
@@ -7675,6 +7675,15 @@ function startRecording(){
     showRecMsg('Recording not supported in this browser.');
     return;
   }
+  // Ask whether to keep instrumental-gap auto-randomize firing during the
+  // recording. Default off because randomizeAll causes a brief frame hitch
+  // that shows up in the video. User can opt in if they want the visual
+  // variety more than they want a smooth recording.
+  state.autoRandomDuringRecord = confirm(
+    '錄影中要不要保留「樂段間自動隨機切換畫面」？\n\n' +
+    '確定 = 保留（畫面有變化但可能偶爾頓一下）\n' +
+    '取消 = 暫停（畫面穩定不換）'
+  );
   // Boost canvas resolution to the chosen quality BEFORE captureStream.
   // captureStream snapshots the canvas dimensions — change after start does nothing.
   const recCfg = applyRecordResolution();
