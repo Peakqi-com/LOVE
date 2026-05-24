@@ -323,14 +323,20 @@ if(_camBgModelSeg){
 }
 
 /* —————————————————————————————————————————————————————————————————————
-   MediaPipe detection loop — runs every RAF.
-   Earlier I added throttling but it broke bg removal in some configs,
-   so back to the original full-rate detection.
+   MediaPipe detection loop — throttled to 30fps so heavy visual stacks
+   don't get crushed. (60fps is overkill for face tracking; 30fps is
+   what most filter apps run at.)
    ————————————————————————————————————————————————————————————————————— */
+let _detectLastT = 0;
 async function detectLoop(){
   if(!cam.ready){ requestAnimationFrame(detectLoop); return; }
   const v = cam.video;
   const now = performance.now();
+  if(now - _detectLastT < 33){   // 30fps cap
+    requestAnimationFrame(detectLoop);
+    return;
+  }
+  _detectLastT = now;
   if(v.readyState >= 2){
     try{
       if(cam.track === 'face' && cam.faceLM){

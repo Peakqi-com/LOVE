@@ -358,7 +358,7 @@
       <button class="lock-chip" data-lock="style"    title="鎖定視覺模式 · 保持目前勾選的 Modes"><span class="ico">🔓</span>Modes 模式</button>
       <button class="lock-chip" data-lock="audio"    title="鎖定音頻反應靈敏度 · gain + 頻段強度"><span class="ico">🔓</span>Audio 聲音</button>
       <span class="lock-chip-wrap"><button class="lock-chip" data-lock="image" title="鎖定圖片排版 + 風格效果"><span class="ico">🔓</span>Image 素材</button><button class="lock-sub-caret" data-sub="image" title="細部鎖定 fine-grained">▾</button></span>
-      <span class="lock-chip-wrap" style="display:none"><button class="lock-chip" data-lock="type" title="鎖定文字動畫 + 顏色 + 字重"><span class="ico">🔓</span>Type 文字</button><button class="lock-sub-caret" data-sub="type" title="細部鎖定 fine-grained">▾</button></span>
+      <span class="lock-chip-wrap"><button class="lock-chip" data-lock="type" title="鎖定文字動畫 + 顏色 + 字重"><span class="ico">🔓</span>Type 文字</button><button class="lock-sub-caret" data-sub="type" title="細部鎖定 fine-grained">▾</button></span>
       <span class="lock-chip-wrap"><button class="lock-chip" data-lock="live" title="鎖定攝影機效果 + 去背"><span class="ico">🔓</span>Live 攝影</button><button class="lock-sub-caret" data-sub="live" title="細部鎖定 fine-grained">▾</button></span>
     </div>
 
@@ -369,7 +369,7 @@
       <button data-tab="image" title="素材庫">Image 素材</button>
       <button data-tab="audio" title="聲音">Audio 聲音</button>
       <button data-tab="live" title="攝影機">Live 攝影</button>
-      <button data-tab="type" title="文字" style="display:none">Type 文字</button>
+      <button data-tab="type" title="文字">Type 文字</button>
       <button data-tab="compose" title="儲存">Compose 儲存</button>
       <button data-tab="setlist" title="演出歌單">Show 演出</button>
     </nav>
@@ -593,7 +593,7 @@
             <!-- SOURCES — external inputs (Live + Type tabs feed into these) -->
             <div style="grid-column:1/-1;font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);margin:8px 0 2px 0">Sources <em style="font-family:var(--serif);font-style:italic;text-transform:none;letter-spacing:0;color:var(--ink-faint);font-size:11.5px;margin-left:4px">外部輸入</em></div>
             <label class="mode-chip"><input type="checkbox" data-mode="webcamFX" /><span><strong>Webcam FX</strong><em>face / hand-driven · uses Live tab</em></span></label>
-            <label class="mode-chip" style="display:none"><input type="checkbox" data-mode="typography" /><span><strong>Typography</strong><em>字 · text as VJ visual</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="typography" /><span><strong>Typography</strong><em>字 · text as VJ visual</em></span></label>
           </div>
           <div class="ctrl" style="margin-top:6px">
             <label class="mode-chip" style="grid-column:1/-1;margin-bottom:0">
