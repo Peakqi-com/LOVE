@@ -2491,22 +2491,42 @@ document.querySelectorAll('#overlayFxModes input[type="checkbox"]').forEach(cb =
 });
 
 // Overlay FX keyboard shortcuts: Space = blackout toggle; Z/X/C = key flash
+// Overlay-FX keyboard. Capture phase so we beat the setlist handler.
+// Each shortcut ONLY captures the key when its overlay toggle is on — so when
+// you turn the toggle off, the key is free for setlist binding / typing / etc.
 window.addEventListener('keydown', (e) => {
-  // Don't fire when typing in inputs
+  if(!state.fx) return;
   const t = e.target;
   if(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-  if(e.code === 'Space'){
-    state.fx.blackout = !state.fx.blackout;
-    const cb = document.getElementById('fxBlackout');
-    if(cb) cb.checked = state.fx.blackout;
-    e.preventDefault();
+  if(e.metaKey || e.ctrlKey || e.altKey) return;
+  // Space — blackout (only when toggle is on)
+  if(e.code === 'Space' && state.fx.blackout !== undefined){
+    if(state.fx.blackout || _fxSpaceArmed()){
+      state.fx.blackout = !state.fx.blackout;
+      const cb = document.getElementById('fxBlackout');
+      if(cb) cb.checked = state.fx.blackout;
+      e.preventDefault(); e.stopPropagation();
+    }
     return;
   }
-  if(e.key === 'z' || e.key === 'Z' || e.key === 'x' || e.key === 'X' || e.key === 'c' || e.key === 'C'){
-    state._keyFlashLevel = 0.85;
-    e.preventDefault();
+  // Z / X / C — key flash (only when toggle is on)
+  if(state.fx.keyFlash){
+    const k = e.key.toLowerCase();
+    if(k === 'z' || k === 'x' || k === 'c'){
+      state._keyFlashLevel = 0.85;
+      e.preventDefault();
+      e.stopPropagation();   // beat the setlist hotkey handler so X doesn't load a slot
+    }
   }
 }, true);
+// Space stays "armed" as long as the blackout toggle was ever enabled —
+// otherwise pressing Space in a fresh session with toggle off would do
+// nothing AND not pass through. This function lets unchecked Space pass
+// to whoever wants it (e.g. setlist binding).
+function _fxSpaceArmed(){
+  const cb = document.getElementById('fxBlackout');
+  return cb && cb.checked;
+}
 
 // Burn © Allen Hong watermark onto the canvas during recording.
 function drawRecordingWatermark(g){
