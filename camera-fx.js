@@ -246,7 +246,11 @@ $$('#camArGrid button').forEach(b => b.addEventListener('click', () => {
     }
   }
 }));
-wireCamSlider('camArAmt','camArAmtFill','camArAmtThumb','camArAmtVal','arIntensity', v => (v/100).toFixed(1)+'×', v => v/100);
+// camArAmt slider was wired here. Removed when Face AR UI was hidden — the
+// element no longer exists in HTML and wireCamSlider was throwing on
+// null.addEventListener, which stopped the rest of camera-fx.js from
+// executing (detectLoop never started, bg removal toggle never wired,
+// motion controls never wired, etc.). Single-line removal restores everything.
 
 // Hand AR — independent of Face AR (uses hand track)
 $$('#camHandArGrid button').forEach(b => b.addEventListener('click', () => {
