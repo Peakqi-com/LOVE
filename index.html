@@ -5108,9 +5108,10 @@ function randomizeAll(){
     typo.life = 0.8 + Math.random()*6.5;            // 0.8 .. 7.3 seconds
     typo.density = Math.random();                   // 0..1
     typo.sizeScale = 0.4 + Math.random()*2.4;       // 0.4 .. 2.8×
-    // typo.kaleido — independent per-layer; mostly 0, sometimes 4/6/8/12
-    const tkRoll = Math.random();
-    typo.kaleido = tkRoll < 0.65 ? 0 : ([4,6,8,12][Math.floor(Math.random()*4)]);
+    // typo.kaleido — ALWAYS 0 in Random. Kaleidoscoped text is unreadable
+    // (esp. for lyrics), so Random never mirrors it. User can still set
+    // typo.kaleido > 0 manually via the Visual → Kaleidoscopes → Text segment.
+    typo.kaleido = 0;
     const layoutPool = ['center','left','right','scatter'];
     typo.layout = layoutPool[Math.floor(Math.random()*layoutPool.length)];
     const sizePool = ['big','small','mixed','huge'];
