@@ -520,6 +520,21 @@
           </div>
         </div>
         <div class="section">
+          <h3 class="section-title">Overlays 覆蓋效果 <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">疊在最上層 · 便宜 · VJ 用</em></h3>
+          <div class="modes" id="overlayFxModes">
+            <label class="mode-chip"><input type="checkbox" data-fx="confetti" /><span><strong>Confetti burst 彩屑爆炸</strong><em>節拍 bass 來時從中心噴彩色方塊</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-fx="blackout" id="fxBlackout" /><span><strong>Blackout 黑屏</strong><em>按空白鍵 Space 一鍵切換</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-fx="keyFlash" /><span><strong>Key flash 任意鍵閃光</strong><em>按 Z / X / C 畫面瞬白一下</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-fx="vignettePulse" /><span><strong>Vignette pulse 暗角脈動</strong><em>暗角隨低音縮放</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-fx="letterbox" /><span><strong>Letterbox 電影黑邊</strong><em>21:9 寬螢幕黑帶</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-fx="timestamp" /><span><strong>Timestamp ●REC 角標</strong><em>復古 DV 時間戳</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-fx="starfield" /><span><strong>Star field 星空</strong><em>緩慢視差星點</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-fx="hueCycle" /><span><strong>Hue cycle 色相循環</strong><em>全螢幕慢慢變色</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-fx="snapZoom" /><span><strong>Snap kick 重音閃光</strong><em>重低音來時中心瞬閃</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-fx="filmGrain" /><span><strong>Film grain 強顆粒</strong><em>強化版底片顆粒</em></span></label>
+          </div>
+        </div>
+        <div class="section">
           <h3 class="section-title">Visual modes 視覺模式 <em style="font-size:11px;color:var(--ink-faint);font-style:normal;letter-spacing:.12em;text-transform:uppercase;margin-left:6px">可疊加 · Effect / Filter / Motion</em></h3>
           <div class="modes" id="modes">
             <!-- EFFECT — generative content (the things that actually draw on the canvas) -->
@@ -1521,6 +1536,26 @@ const state = {
   musicOn: false,
   beatFlash: 0,
   beatCount: 0,
+  // Overlay FX — light effects that compose on top of everything (visual modes + image + watermark)
+  fx: {
+    confetti: false,    // particle burst on beat
+    blackout: false,    // press Space to toggle full-black overlay
+    keyFlash: false,    // Z/X/C press = white flash
+    vignettePulse: false,  // bass modulates vignette
+    letterbox: false,   // cinematic 21:9 black bars
+    timestamp: false,   // ●REC + HH:MM:SS corner
+    starfield: false,   // slow scrolling stars
+    hueCycle: false,    // global rotating hue
+    snapZoom: false,    // bass kick → momentary zoom
+    filmGrain: false,   // extra strong grain overlay
+  },
+  // Internal overlay-FX state (particles, key-flash level, etc.)
+  _confetti: [],
+  _stars: null,
+  _keyFlashLevel: 0,
+  _blackoutLevel: 0,
+  _snapZoom: 0,
+  _hueCycleOffset: 0,
   // new field params
   density: 1.0,
   motionSpeed: 1.0,
@@ -2255,6 +2290,9 @@ function frame(now){
   // uploaded image draws on main canvas, on top of everything (own effects only)
   if(window._drawImageTop) window._drawImageTop(ctx, dt);
 
+  // Overlay FX — composite on top of everything (visual modes + image + camera + text)
+  drawOverlayFX(ctx, dt, now);
+
   // Watermark — only burned into the canvas while recording (so it appears in the video).
   // Skipped for licensed users (whitelisted via /api/license-check).
   if(window._isRecording && window._isRecording() && !state.noWatermark){
@@ -2263,6 +2301,212 @@ function frame(now){
 
   requestAnimationFrame(frame);
 }
+
+// ====================================================================
+// Overlay FX — light effects that render on top of everything
+// (Confetti burst, blackout, keyflash, vignette pulse, letterbox,
+//  timestamp, starfield, hue cycle, snap zoom, film grain)
+// ====================================================================
+function drawOverlayFX(g, dt, now){
+  const fx = state.fx; if(!fx) return;
+  const dpr = state.pixelRatio || 1;
+  g.save();
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  // 1. Hue cycle — accumulate a global rotation. Affects everything via hueShift.
+  if(fx.hueCycle){
+    state._hueCycleOffset = (state._hueCycleOffset + dt * 0.02) % 360;
+    // Apply as a CSS filter on a copy of the canvas? Too expensive.
+    // Instead, just overlay a hue-shifted color wash.
+    g.globalCompositeOperation = 'hue';
+    g.fillStyle = `hsl(${state._hueCycleOffset}, 100%, 50%)`;
+    g.fillRect(0, 0, W, H);
+    g.globalCompositeOperation = 'source-over';
+  }
+
+  // 2. Vignette pulse — extra vignette modulated by bass
+  if(fx.vignettePulse){
+    const bass = (typeof reactor !== 'undefined' ? reactor.bass : 0) || 0;
+    const r = Math.max(W, H) * 0.5;
+    const grad = g.createRadialGradient(W/2, H/2, r*0.35, W/2, H/2, r);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, `rgba(0,0,0,${0.25 + bass * 0.45})`);
+    g.fillStyle = grad;
+    g.fillRect(0, 0, W, H);
+  }
+
+  // 3. Snap zoom — bass kick = scale up briefly. We don't actually re-transform
+  // the whole frame (too expensive); instead simulate with a scale on a copy.
+  // Skipped for perf — only apply a faint radial vibe.
+  if(fx.snapZoom){
+    const bass = (typeof reactor !== 'undefined' ? reactor.bass : 0) || 0;
+    if(bass > 0.6) state._snapZoom = Math.min(1, state._snapZoom + 0.4);
+    state._snapZoom *= 0.85;
+    if(state._snapZoom > 0.02){
+      const a = state._snapZoom * 0.35;
+      const grd = g.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W,H)*0.7);
+      grd.addColorStop(0, `rgba(255,255,255,${a})`);
+      grd.addColorStop(0.5, `rgba(255,255,255,${a*0.2})`);
+      grd.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = grd;
+      g.fillRect(0, 0, W, H);
+    }
+  }
+
+  // 4. Star field — slow parallax scroll, lazy-init once
+  if(fx.starfield){
+    if(!state._stars){
+      state._stars = [];
+      for(let i=0;i<200;i++){
+        state._stars.push({
+          x: Math.random()*W, y: Math.random()*H,
+          z: 0.3 + Math.random()*0.7,  // depth → speed + size
+          r: Math.random()*1.6 + 0.4,
+        });
+      }
+    }
+    const stars = state._stars;
+    g.fillStyle = 'rgba(255,255,255,0.85)';
+    for(let i=0;i<stars.length;i++){
+      const s = stars[i];
+      s.x -= s.z * 0.15 * (dt * 0.06);   // slow drift left
+      if(s.x < -2) s.x = W + 2;
+      g.globalAlpha = s.z * 0.7;
+      g.beginPath(); g.arc(s.x, s.y, s.r * s.z, 0, Math.PI*2); g.fill();
+    }
+    g.globalAlpha = 1;
+  }
+
+  // 5. Confetti burst on beat — spawn on bass beat, update + draw
+  if(fx.confetti){
+    const bass = (typeof reactor !== 'undefined' ? reactor.bass : 0) || 0;
+    // Spawn condition: beatFlash spiked this frame
+    if(state.beatFlash > 0.5 && (state._lastConfettiBeat || 0) < state.beatCount){
+      state._lastConfettiBeat = state.beatCount || (state._lastConfettiBeat||0)+1;
+      const hue0 = (state.hueShift || 0) + Math.random()*60;
+      for(let i=0;i<30;i++){
+        const a = Math.random()*Math.PI*2;
+        const sp = 4 + Math.random()*7;
+        state._confetti.push({
+          x: W/2, y: H/2,
+          vx: Math.cos(a)*sp, vy: Math.sin(a)*sp,
+          rot: Math.random()*Math.PI*2,
+          vRot: (Math.random()-0.5)*0.3,
+          size: 6 + Math.random()*6,
+          hue: (hue0 + i*12) % 360,
+          life: 1,
+        });
+      }
+    }
+    // Update + draw + reap
+    const list = state._confetti;
+    for(let i=list.length-1;i>=0;i--){
+      const p = list[i];
+      p.x += p.vx; p.y += p.vy;
+      p.vy += 0.18;       // gravity
+      p.vx *= 0.985; p.vy *= 0.985;
+      p.rot += p.vRot;
+      p.life -= 0.012;
+      if(p.life <= 0 || p.y > H + 30){ list.splice(i, 1); continue; }
+      g.save();
+      g.translate(p.x, p.y);
+      g.rotate(p.rot);
+      g.fillStyle = `hsla(${p.hue}, 90%, 60%, ${Math.min(1, p.life)})`;
+      g.fillRect(-p.size/2, -p.size/3, p.size, p.size*0.66);
+      g.restore();
+    }
+    if(list.length > 600) list.splice(0, list.length - 600);
+  }
+
+  // 6. Film grain heavy — random noise dots
+  if(fx.filmGrain){
+    g.globalAlpha = 0.12;
+    const step = 4;
+    for(let y=0;y<H;y+=step){
+      for(let x=0;x<W;x+=step){
+        if(Math.random() < 0.25){
+          const v = 140 + Math.random()*115;
+          g.fillStyle = `rgb(${v|0},${v|0},${v|0})`;
+          g.fillRect(x, y, step-1, step-1);
+        }
+      }
+    }
+    g.globalAlpha = 1;
+  }
+
+  // 7. Letterbox — 21:9 cinematic bars
+  if(fx.letterbox){
+    const targetAR = 21/9;
+    const innerH = W / targetAR;
+    if(innerH < H){
+      const barH = (H - innerH) / 2;
+      g.fillStyle = '#000';
+      g.fillRect(0, 0, W, barH);
+      g.fillRect(0, H - barH, W, barH);
+    }
+  }
+
+  // 8. Timestamp + REC corner
+  if(fx.timestamp){
+    const d = new Date();
+    const pad = n => String(n).padStart(2,'0');
+    const ts = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    g.font = '14px ui-monospace, monospace';
+    g.textBaseline = 'bottom';
+    // ●REC pulse
+    const pulse = (Math.sin(now*0.005) + 1) * 0.5;
+    g.fillStyle = `rgba(255, 40, 60, ${0.55 + pulse*0.45})`;
+    g.beginPath(); g.arc(20, H - 22, 6, 0, Math.PI*2); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.95)';
+    g.textAlign = 'left';
+    g.fillText('REC', 32, H - 16);
+    g.textAlign = 'right';
+    g.fillText(ts, W - 18, H - 16);
+  }
+
+  // 9. Key flash — fades out
+  if(state._keyFlashLevel > 0.01){
+    g.fillStyle = `rgba(255,255,255,${state._keyFlashLevel * 0.7})`;
+    g.fillRect(0, 0, W, H);
+    state._keyFlashLevel *= 0.78;
+  }
+
+  // 10. Blackout — smoothly fade in/out
+  const targetBlack = fx.blackout ? 1 : 0;
+  state._blackoutLevel += (targetBlack - state._blackoutLevel) * 0.18;
+  if(state._blackoutLevel > 0.01){
+    g.fillStyle = `rgba(0,0,0,${Math.min(1, state._blackoutLevel)})`;
+    g.fillRect(0, 0, W, H);
+  }
+
+  g.restore();
+}
+
+// Wire the Overlays UI checkboxes
+document.querySelectorAll('#overlayFxModes input[type="checkbox"]').forEach(cb => {
+  cb.addEventListener('change', () => {
+    const k = cb.dataset.fx;
+    if(k && state.fx) state.fx[k] = cb.checked;
+  });
+});
+
+// Overlay FX keyboard shortcuts: Space = blackout toggle; Z/X/C = key flash
+window.addEventListener('keydown', (e) => {
+  // Don't fire when typing in inputs
+  const t = e.target;
+  if(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  if(e.code === 'Space'){
+    state.fx.blackout = !state.fx.blackout;
+    const cb = document.getElementById('fxBlackout');
+    if(cb) cb.checked = state.fx.blackout;
+    e.preventDefault();
+    return;
+  }
+  if(e.key === 'z' || e.key === 'Z' || e.key === 'x' || e.key === 'X' || e.key === 'c' || e.key === 'C'){
+    state._keyFlashLevel = 0.85;
+    e.preventDefault();
+  }
+}, true);
 
 // Burn © Allen Hong watermark onto the canvas during recording.
 function drawRecordingWatermark(g){
