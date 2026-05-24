@@ -2119,11 +2119,26 @@ function compositeToMain(){
 // ---- main loop ----
 const fields = EMOTIONS.map(e=>new Field(e));
 let last = performance.now();
+let _frameSkipPhase = 0;
 function frame(now){
   const dt = Math.min(60, now-last); last = now;
   state.t = now;
   updatePerf(now - perf._lastNow || 16);
   perf._lastNow = now;
+  // Emergency frame-skip: when avgFps falls below 20, alternate frames between
+  // "do the full draw" and "do nothing, just re-display previous canvas".
+  // Halves total per-frame cost across EVERY system (visual modes, image
+  // pipeline, audio, lyrics tick) without any of them having to know about it.
+  // Below 12 fps the skip ratio gets even more aggressive (1 of 3 frames).
+  _frameSkipPhase++;
+  const fps = perf.avgFps || 60;
+  if(fps < 12 && (_frameSkipPhase % 3) !== 0){
+    requestAnimationFrame(frame);
+    return;
+  } else if(fps < 20 && (_frameSkipPhase & 1)){
+    requestAnimationFrame(frame);
+    return;
+  }
   state.beatFlash *= 0.90;
   reactor.update();
   if(typeof tickLyricsSync === 'function'){
