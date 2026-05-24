@@ -5780,7 +5780,16 @@ if(_imgStretchEl){
 // Returns a canvas (imgPipe) ready to be composited
 // ============================================================
 
+// Image pipeline runs at most 30fps even when main canvas is 60.
+// Reuses last imgPipe canvas on skipped frames — visual modes still render at 60.
+let _imgPipeLastT = 0;
+const _imgPipeMinIntervalMs = 33;
 function fitImageToCanvas(img){
+  const _now = performance.now();
+  if(_now - _imgPipeLastT < _imgPipeMinIntervalMs && imgPipe.width === cv.width && imgPipe.height === cv.height){
+    return imgPipe;
+  }
+  _imgPipeLastT = _now;
   imgPipe.width = cv.width;
   imgPipe.height = cv.height;
   const g = imgPipeCtx;
