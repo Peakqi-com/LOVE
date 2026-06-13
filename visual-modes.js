@@ -2701,34 +2701,60 @@ const SUMI_ABSORPTION = [
   [0.86, 0.71, 0.80],   // 松葉緑 pine
 ];
 
+// Paper variants — VJ context so the backdrop randomises across runs. Each
+// variant is [HSL hue 0-360, lightness 0-100, sat 0-100]. Texture overlays
+// always derive their tone from the base so the look stays cohesive.
+const _SUMI_PAPER_VARIANTS = [
+  [38, 76, 38],   // warm cream washi (default)
+  [22, 70, 32],   // ochre kraft
+  [200, 72, 22],  // cold linen blue-grey
+  [340, 78, 25],  // pale rose paper
+  [120, 70, 25],  // dusty sage
+  [50, 82, 25],   // pale gold leaf
+  [10, 28, 25],   // deep ink-stained paper (dark!)
+  [260, 30, 22],  // bruised indigo paper
+  [0, 4, 16],     // near-black charcoal (high contrast VJ)
+  [180, 25, 20],  // slate teal
+];
+let _sumiPaperVariantIdx = 0;
+function _sumiPickNewPaperVariant(){
+  _sumiPaperVariantIdx = (_sumiPaperVariantIdx + 1 + Math.floor(Math.random()*3)) % _SUMI_PAPER_VARIANTS.length;
+  _sumiPaperCv = null;     // force rebuild on next draw
+}
+// Expose for Random / Reset hooks
+if(typeof window !== 'undefined') window._sumiPickNewPaperVariant = _sumiPickNewPaperVariant;
+
 // One-time paper texture: cream wash + sparse fibre lines + grain + edge
 // vignette. Baked into a cached canvas so each frame is a single drawImage.
 function _buildSumiPaper(){
   const c = document.createElement('canvas');
   c.width = W; c.height = H;
   const g = c.getContext('2d');
-  // ── Base cream wash with subtle horizontal banding (uneven dye) ──
+  const [h, l, s] = _SUMI_PAPER_VARIANTS[_sumiPaperVariantIdx];
+  // ── Base wash with subtle vertical banding ──
   const base = g.createLinearGradient(0, 0, 0, H);
-  base.addColorStop(0,    '#f2e9d4');
-  base.addColorStop(0.55, '#ede2c6');
-  base.addColorStop(1,    '#e8dcbb');
+  base.addColorStop(0,    `hsl(${h}, ${s}%, ${Math.min(95, l+4)}%)`);
+  base.addColorStop(0.55, `hsl(${h}, ${s}%, ${l}%)`);
+  base.addColorStop(1,    `hsl(${h}, ${s}%, ${Math.max(5, l-4)}%)`);
   g.fillStyle = base;
   g.fillRect(0, 0, W, H);
-  // ── Horizontal fibre wash (very faint warm streaks) ──
+  // ── Horizontal fibre wash — derive tones from base lightness ──
+  const darker  = `hsl(${h}, ${s}%, ${Math.max(5, l-22)}%)`;
+  const darker2 = `hsl(${h}, ${s}%, ${Math.max(5, l-12)}%)`;
   g.globalAlpha = 0.05;
   for(let y = 0; y < H; y += 2){
     const v = (Math.sin(y * 0.011) + Math.cos(y * 0.037) + Math.sin(y * 0.09)) / 3;
-    g.fillStyle = v > 0 ? '#c8b78b' : '#b3a072';
+    g.fillStyle = v > 0 ? darker2 : darker;
     g.fillRect(0, y, W, 0.7);
   }
-  // ── Vertical paper fibres (sparse, irregular) ──
+  // ── Vertical paper fibres ──
   g.globalAlpha = 0.06;
   const fibreCount = Math.round(W * 0.08);
   for(let i = 0; i < fibreCount; i++){
     const x = Math.random() * W;
     const yStart = Math.random() * H;
     const len = 20 + Math.random() * 140;
-    g.fillStyle = Math.random() < 0.5 ? '#9c8957' : '#7a6841';
+    g.fillStyle = Math.random() < 0.5 ? darker : darker2;
     g.fillRect(x, yStart, 0.5, len);
   }
   // ── Fine grain (random speckle) ──
@@ -3002,9 +3028,10 @@ function _sumiBlit(F, target){
 }
 
 // Splat both velocity (driving force) and dye (ink absorption color).
-function _sumiSplat(F, x01, y01, vx, vy, colorIdx, strength){
+// `radius` defaults bigger so drops actually read on screen.
+function _sumiSplat(F, x01, y01, vx, vy, colorIdx, strength, radiusOverride){
   const gl = F.gl;
-  const radius = 0.0035;
+  const radius = radiusOverride != null ? radiusOverride : 0.014;
 
   // ── velocity splat ──
   _sumiBindQuad(F, F.progSplat);
@@ -3044,7 +3071,7 @@ function _sumiStep(F, dt){
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, F.velocity.read.tex);
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, F.curl.tex);
   gl.uniform2f(gl.getUniformLocation(F.progVort, 'uTexel'), F.texel[0], F.texel[1]);
-  gl.uniform1f(gl.getUniformLocation(F.progVort, 'uCurlAmount'), 28);
+  gl.uniform1f(gl.getUniformLocation(F.progVort, 'uCurlAmount'), 38);
   gl.uniform1f(gl.getUniformLocation(F.progVort, 'uDt'), dt);
   _sumiBlit(F, F.velocity.write); F.velocity.swap();
 
@@ -3084,13 +3111,13 @@ function _sumiStep(F, dt){
   gl.uniform1i(gl.getUniformLocation(F.progAdvect, 'uSource'), 1);
   gl.uniform2f(gl.getUniformLocation(F.progAdvect, 'uTexel'), F.texel[0], F.texel[1]);
   gl.uniform1f(gl.getUniformLocation(F.progAdvect, 'uDt'), dt);
-  gl.uniform1f(gl.getUniformLocation(F.progAdvect, 'uDissipation'), 0.992);
+  gl.uniform1f(gl.getUniformLocation(F.progAdvect, 'uDissipation'), 0.995);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, F.velocity.read.tex);
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, F.velocity.read.tex);
   _sumiBlit(F, F.velocity.write); F.velocity.swap();
 
-  // 7. Advect dye by velocity
-  gl.uniform1f(gl.getUniformLocation(F.progAdvect, 'uDissipation'), 0.997);
+  // 7. Advect dye by velocity — high retention so ink stays long enough to read
+  gl.uniform1f(gl.getUniformLocation(F.progAdvect, 'uDissipation'), 0.9988);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, F.velocity.read.tex);
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, F.dye.read.tex);
   _sumiBlit(F, F.dye.write); F.dye.swap();
@@ -3138,37 +3165,40 @@ function drawSuminagashi(g, dt, T){
   const mScale = (window._songMood && window._songMood.intensityScale) || 1;
 
   // ── Auto splat: idle baseline + audio scaling ──
+  // Higher baseline rate + stronger splats so the canvas actually has ink to flow.
   _sumiSpawnT += dts;
-  const rate = (0.45 + vol*1.0 + state.motionSpeed*0.3) * mScale;
-  let safety = 4;
-  while(_sumiSpawnT > 1 / Math.max(0.15, rate) && safety-- > 0){
-    _sumiSpawnT -= 1 / Math.max(0.15, rate);
-    // Random position + random splash velocity (sim takes over from here)
-    const x01 = 0.12 + Math.random() * 0.76;
-    const y01 = 0.12 + Math.random() * 0.76;
+  const rate = (1.6 + vol*2.4 + state.motionSpeed*0.8) * mScale;
+  let safety = 8;
+  while(_sumiSpawnT > 1 / Math.max(0.4, rate) && safety-- > 0){
+    _sumiSpawnT -= 1 / Math.max(0.4, rate);
+    const x01 = 0.10 + Math.random() * 0.80;
+    const y01 = 0.10 + Math.random() * 0.80;
     const a   = Math.random() * TAU;
-    const sp  = 90 + Math.random() * 140;
-    _sumiColorIdx = (_sumiColorIdx + 1 + (Math.random() < 0.3 ? 1 : 0)) % SUMI_ABSORPTION.length;
-    _sumiSplat(F, x01, y01, Math.cos(a) * sp, Math.sin(a) * sp, _sumiColorIdx, 0.50);
+    const sp  = 220 + Math.random() * 320;       // px/s — push the ink hard
+    _sumiColorIdx = (_sumiColorIdx + 1 + (Math.random() < 0.35 ? 1 : 0)) % SUMI_ABSORPTION.length;
+    const strength = 1.1 + Math.random() * 0.6;
+    const radius = 0.010 + Math.random() * 0.012;
+    _sumiSplat(F, x01, y01, Math.cos(a)*sp, Math.sin(a)*sp, _sumiColorIdx, strength, radius);
   }
 
-  // ── Bass beat: cluster splat near centre with contrasting colors ──
-  if(bass > 0.55 && state.beatFlash > 0.5){
+  // ── Bass beat: dramatic cluster splat ──
+  if(bass > 0.50 && state.beatFlash > 0.45){
     if(F.lastBeat !== (state.beatCount || 0)){
       F.lastBeat = state.beatCount || (F.lastBeat + 1);
       const baseColor = Math.floor(Math.random() * SUMI_ABSORPTION.length);
-      const cx = 0.35 + Math.random() * 0.30;
-      const cy = 0.35 + Math.random() * 0.30;
-      for(let k = 0; k < 3; k++){
+      const cx = 0.30 + Math.random() * 0.40;
+      const cy = 0.30 + Math.random() * 0.40;
+      for(let k = 0; k < 5; k++){
         const a = Math.random() * TAU;
-        const sp = 220 + Math.random() * 120;
+        const sp = 380 + Math.random() * 280;
         _sumiSplat(F,
-          cx + Math.cos(a) * 0.06,
-          cy + Math.sin(a) * 0.06,
-          Math.cos(a) * sp,
-          Math.sin(a) * sp,
+          cx + Math.cos(a)*0.07,
+          cy + Math.sin(a)*0.07,
+          Math.cos(a)*sp,
+          Math.sin(a)*sp,
           (baseColor + k) % SUMI_ABSORPTION.length,
-          0.75);
+          2.0 + Math.random()*0.7,
+          0.018 + Math.random()*0.010);
       }
     }
   }
@@ -4167,17 +4197,38 @@ function _paintOilInitial(cg){
   for(let i = 0; i < 240; i++) _spawnOilStroke(cg, 'fore');
 }
 
+// VJ-mode canvas grounds — when re-init the canvas, pick from a varied palette
+// instead of always cream. Allows Random to roll a new ground each time.
+const _OIL_GROUNDS = [
+  '#e8dcc2',   // warm ivory (default)
+  '#1a1a22',   // near-black charcoal
+  '#2a2438',   // deep indigo night
+  '#3a2418',   // burnt umber
+  '#c8b890',   // raw linen
+  '#a89070',   // dusty kraft
+  '#1a3a3a',   // deep teal
+  '#682838',   // dried blood maroon
+  '#d8d0c0',   // pale stone
+  '#0a1a30',   // midnight blue
+];
+let _oilGroundIdx = 0;
+function _oilPickNewGround(){
+  _oilGroundIdx = (_oilGroundIdx + 1 + Math.floor(Math.random()*3)) % _OIL_GROUNDS.length;
+  _oilCanvasKey = '';   // force rebuild on next draw
+}
+if(typeof window !== 'undefined') window._oilPickNewGround = _oilPickNewGround;
+
 function drawImpressionist(g, dt, T){
   // ── Init persistent canvas + initial composition ──
-  const key = cv.width + 'x' + cv.height;
+  const key = cv.width + 'x' + cv.height + '|' + _oilGroundIdx;
+  const ground = _OIL_GROUNDS[_oilGroundIdx];
   if(!_oilCanvasCv || _oilCanvasKey !== key){
     _oilCanvasCv = document.createElement('canvas');
     _oilCanvasCv.width = cv.width;
     _oilCanvasCv.height = cv.height;
     const cg0 = _oilCanvasCv.getContext('2d');
     cg0.setTransform(state.pixelRatio, 0, 0, state.pixelRatio, 0, 0);
-    // Warm ivory ground
-    cg0.fillStyle = '#e8dcc2';
+    cg0.fillStyle = ground;
     cg0.fillRect(0, 0, W, H);
     _paintOilInitial(cg0);
     _oilCanvasKey = key;
@@ -4185,12 +4236,10 @@ function drawImpressionist(g, dt, T){
   const cg = _oilCanvasCv.getContext('2d');
   cg.setTransform(state.pixelRatio, 0, 0, state.pixelRatio, 0, 0);
 
-  // ── Breathing: slow ivory wash gradually fades older strokes ──
-  // 0.005 alpha = ~200 frames (~3.3s) for full obscuration → painting
-  // continuously evolves without ever fully erasing.
+  // ── Breathing wash — uses the current ground colour so dark grounds stay dark ──
   cg.globalCompositeOperation = 'source-over';
   cg.globalAlpha = 0.005;
-  cg.fillStyle = '#e8dcc2';
+  cg.fillStyle = ground;
   cg.fillRect(0, 0, W, H);
   cg.globalAlpha = 1;
 

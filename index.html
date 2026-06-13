@@ -5127,6 +5127,11 @@ window._perf = perf;
 
 // Top Random button — randomize ALL params except audio source; bias by audio intensity
 function randomizeAll(){
+  // Roll fresh backdrop variants for the texture-based modes (paper, canvas
+  // ground). Each Random click → new ground colour for Suminagashi + Impressionist.
+  if(typeof window._sumiPickNewPaperVariant === 'function') window._sumiPickNewPaperVariant();
+  if(typeof window._oilPickNewGround === 'function') window._oilPickNewGround();
+
   // 1. Detect audio intensity (0..1) — higher = more chaotic/intense visuals
   let intensity = 0.5;
   if(reactor.mode !== 'off'){
