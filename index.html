@@ -352,14 +352,15 @@
     <!-- Lock chips — one per tab. Locked groups are preserved across RANDOM. -->
     <div class="lockbar">
       <span class="lockbar-lbl">Lock</span>
-      <button class="lock-chip" data-lock="feelings" title="鎖定情緒 + 溫度 · Feelings tab"><span class="ico">🔓</span>Feelings 情緒</button>
+      <!-- Lock chips — ORDER + LABELS match the tab nav below 1-to-1. -->
+      <button class="lock-chip" data-lock="feelings" title="鎖定情緒 + 溫度"><span class="ico">🔓</span>Feelings 情緒</button>
       <button class="lock-chip" data-lock="field"    title="鎖定場域 · density / motion / turbulence / glow"><span class="ico">🔓</span>Field 場域</button>
-      <span class="lock-chip-wrap"><button class="lock-chip" data-lock="visual" title="鎖定色彩 / 氛圍 / 鏡像 / 萬花筒 / 反相"><span class="ico">🔓</span>Color/FX 色彩</button><button class="lock-sub-caret" data-sub="visual" title="細部鎖定 fine-grained">▾</button></span>
-      <button class="lock-chip" data-lock="style"    title="鎖定視覺模式 · 保持目前勾選的 Modes"><span class="ico">🔓</span>Modes 模式</button>
-      <button class="lock-chip" data-lock="audio"    title="鎖定音頻反應靈敏度 · gain + 頻段強度"><span class="ico">🔓</span>Audio 聲音</button>
+      <span class="lock-chip-wrap"><button class="lock-chip" data-lock="visual-all" title="鎖定整個 Visual tab · 色彩 / 氛圍 / 模式 / 覆蓋效果"><span class="ico">🔓</span>Visual 視覺</button><button class="lock-sub-caret" data-sub="visual" title="細部鎖定 fine-grained">▾</button></span>
       <span class="lock-chip-wrap"><button class="lock-chip" data-lock="image" title="鎖定圖片排版 + 風格效果"><span class="ico">🔓</span>Image 素材</button><button class="lock-sub-caret" data-sub="image" title="細部鎖定 fine-grained">▾</button></span>
+      <button class="lock-chip" data-lock="audio"    title="鎖定音頻反應靈敏度 · gain + 頻段強度"><span class="ico">🔓</span>Audio 聲音</button>
+      <span class="lock-chip-wrap"><button class="lock-chip" data-lock="live" title="鎖定攝影機效果 + filter + AR + motion"><span class="ico">🔓</span>Live 攝影</button><button class="lock-sub-caret" data-sub="live" title="細部鎖定 fine-grained">▾</button></span>
       <span class="lock-chip-wrap"><button class="lock-chip" data-lock="type" title="鎖定文字動畫 + 顏色 + 字重"><span class="ico">🔓</span>Type 文字</button><button class="lock-sub-caret" data-sub="type" title="細部鎖定 fine-grained">▾</button></span>
-      <span class="lock-chip-wrap"><button class="lock-chip" data-lock="live" title="鎖定攝影機效果 + 去背"><span class="ico">🔓</span>Live 攝影</button><button class="lock-sub-caret" data-sub="live" title="細部鎖定 fine-grained">▾</button></span>
+      <!-- Compose / Show tabs are storage UI — they're not affected by Random so they don't get a lock chip. -->
     </div>
 
     <nav class="tabs" id="tabs">
@@ -581,6 +582,7 @@
             <label class="mode-chip"><input type="checkbox" data-mode="petals" /><span><strong>Petals</strong><em>drifting floral debris</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="aurora" /><span><strong>Aurora</strong><em>vertical light curtains</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="inkWash" /><span><strong>Ink wash</strong><em>水墨 · brush &amp; bleed</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="suminagashi" /><span><strong>Suminagashi</strong><em>墨流し · 漂浮墨水漩渦</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="polygon" /><span><strong>Polygon</strong><em>多邊 · wireframe mesh</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="matrix" /><span><strong>Matrix rain</strong><em>數位雨 · 緑の文字</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="eva" /><span><strong>EVA HUD</strong><em>新世紀 · AT-field &amp; warnings</em></span></label>
@@ -1622,6 +1624,7 @@ const state = {
     petals:       false,   // floating rose-petal forms
     aurora:       false,   // shimmering vertical curtains
     inkWash:      false,   // 水墨 brush strokes & bleeding ink
+    suminagashi:  false,   // 墨流し floating ink drops on paper, swirl + diffuse
     pixel8:       false,   // 8-bit pixelated post-effect with palette quantization
     popArt:       false,   // 普普藝術 ben-day dots, comic panels, primary slabs
     glitch:       false,   // databend channel split, scan lines, beat-triggered shifts
@@ -1636,19 +1639,19 @@ const state = {
   locks: {
     feelings: false,  // Feelings tab — emotions + temp
     field:    false,  // Field tab — density, motion, turbulence, glow
-    visual:   false,  // Visual tab — vibrance, hue, bgDark, bloom, trails, grain, vignette, mirror, kaleido, lightMode
-    style:    false,  // Modes — state.modes selection (Pop Art / Matrix / etc.)
+    visual:   false,  // sub-lock: Color/atmosphere/geometry inside Visual tab
+    style:    false,  // sub-lock: Visual modes (Pop Art / Matrix / etc.) inside Visual tab
+    overlays: false,  // sub-lock: Overlay FX inside Visual tab
     audio:    false,  // Audio tab — gain + impacts
     image:    false,  // Image tab — arrangement + aesthetics
     type:     false,  // Type tab — typography animation, color, weight
     live:     false,  // Live tab — camera fx, background removal
     // Granular sub-locks — fine-grained Random exclusions within a tab.
-    // When a tab's main lock is OFF, individual sub-locks here still preserve that sub-group.
     sub: {
       type:   { font:false, anim:false, style:false, color:false, behavior:false },
       image:  { arrangement:false, effect:false, filter:false, motion:false, controls:false },
       live:   { effect:false, filter:false, ar:false, motion:false, camera:false },
-      visual: { color:false, atmosphere:false, geometry:false },
+      visual: { color:false, atmosphere:false, geometry:false, modes:false, overlays:false },
     },
   },
   // inverse palette — white canvas, dark content. CSS filter (invert + hue-rotate) preserves hue.
@@ -2154,26 +2157,16 @@ function compositeToMain(){
 // ---- main loop ----
 const fields = EMOTIONS.map(e=>new Field(e));
 let last = performance.now();
-let _frameSkipPhase = 0;
 function frame(now){
   const dt = Math.min(60, now-last); last = now;
   state.t = now;
   updatePerf(now - perf._lastNow || 16);
   perf._lastNow = now;
-  // Emergency frame-skip: when avgFps falls below 20, alternate frames between
-  // "do the full draw" and "do nothing, just re-display previous canvas".
-  // Halves total per-frame cost across EVERY system (visual modes, image
-  // pipeline, audio, lyrics tick) without any of them having to know about it.
-  // Below 12 fps the skip ratio gets even more aggressive (1 of 3 frames).
-  _frameSkipPhase++;
-  const fps = perf.avgFps || 60;
-  if(fps < 12 && (_frameSkipPhase % 3) !== 0){
-    requestAnimationFrame(frame);
-    return;
-  } else if(fps < 20 && (_frameSkipPhase & 1)){
-    requestAnimationFrame(frame);
-    return;
-  }
+  // No global frame-skip — it ruined recordings (MediaRecorder captured the
+  // un-redrawn canvas and produced flat-grey blocks) and never actually pushed
+  // the framerate above the underlying work rate anyway. Performance is
+  // managed per-subsystem instead (image pipeline 30fps cap reuses last canvas,
+  // MediaPipe detect-loop throttle, filter caching).
   state.beatFlash *= 0.90;
   reactor.update();
   if(typeof tickLyricsSync === 'function'){
@@ -2418,18 +2411,34 @@ function drawOverlayFX(g, dt, now){
     if(list.length > 600) list.splice(0, list.length - 600);
   }
 
-  // 6. Film grain heavy — random noise dots
+  // 6. Film grain — tiled noise pattern. Build 8 small noise tiles once, then
+  // each frame we just drawImage one of them across the canvas with an offset.
+  // Old per-pixel fillRect loop was ~130k rects on 1080p and tanked recording.
   if(fx.filmGrain){
-    g.globalAlpha = 0.12;
-    const step = 4;
-    for(let y=0;y<H;y+=step){
-      for(let x=0;x<W;x+=step){
-        if(Math.random() < 0.25){
-          const v = 140 + Math.random()*115;
-          g.fillStyle = `rgb(${v|0},${v|0},${v|0})`;
-          g.fillRect(x, y, step-1, step-1);
+    if(!state._grainTiles){
+      state._grainTiles = [];
+      const TS = 128;
+      for(let i=0;i<8;i++){
+        const c = document.createElement('canvas');
+        c.width = TS; c.height = TS;
+        const cg = c.getContext('2d');
+        const id = cg.createImageData(TS, TS);
+        const d = id.data;
+        for(let p=0;p<d.length;p+=4){
+          const v = 140 + ((Math.random()*115)|0);
+          d[p] = v; d[p+1] = v; d[p+2] = v;
+          d[p+3] = Math.random() < 0.25 ? 200 : 0;
         }
+        cg.putImageData(id, 0, 0);
+        state._grainTiles.push(c);
       }
+    }
+    const tile = state._grainTiles[((now * 0.06) | 0) % state._grainTiles.length];
+    g.globalAlpha = 0.18;
+    const pat = g.createPattern(tile, 'repeat');
+    if(pat){
+      g.fillStyle = pat;
+      g.fillRect(0, 0, W, H);
     }
     g.globalAlpha = 1;
   }
@@ -2509,13 +2518,14 @@ window.addEventListener('keydown', (e) => {
     }
     return;
   }
-  // Z / X / C — key flash (only when toggle is on)
+  // Z — key flash (only when toggle is on). Just one key now; X/C had conflicts
+  // with the main keyboard handler (X = Reset) and the setlist hotkeys.
   if(state.fx.keyFlash){
     const k = e.key.toLowerCase();
-    if(k === 'z' || k === 'x' || k === 'c'){
+    if(k === 'z'){
       state._keyFlashLevel = 0.85;
       e.preventDefault();
-      e.stopPropagation();   // beat the setlist hotkey handler so X doesn't load a slot
+      e.stopPropagation();
     }
   }
 }, true);
@@ -4260,7 +4270,7 @@ document.querySelectorAll('[data-preset]').forEach(b=>{
 // ============================================================
 // Auto-cycle: detect music sections and rotate enabled modes
 // ============================================================
-const CYCLE_MODES = ['lineTrace','flowField','curlNoise','attractor','substrate','reaction','sumie','opart','lissajous','voronoi','boids','chladni','dla','spectro','meta','synth','life','lsys','harmono','truchet','nbody','spiro','marbling','hilbert','lenia','pendulum','galaxy','penrose','pwave','mandel','wireworld','mandalaRings','waveform','constellation','spiral','ripples','crystals','ribbons','tunnel','halftone','petals','aurora','inkWash','popArt','polygon','matrix','glitch','eva'];
+const CYCLE_MODES = ['lineTrace','flowField','curlNoise','attractor','substrate','reaction','sumie','opart','lissajous','voronoi','boids','chladni','dla','spectro','meta','synth','life','lsys','harmono','truchet','nbody','spiro','marbling','hilbert','lenia','pendulum','galaxy','penrose','pwave','mandel','wireworld','mandalaRings','waveform','constellation','spiral','ripples','crystals','ribbons','tunnel','halftone','petals','aurora','inkWash','suminagashi','popArt','polygon','matrix','glitch','eva'];
 let _cycleIdx = 0;
 function maybeAutoCycle(now){
   if(!state.autoCycle) return;
@@ -4338,6 +4348,7 @@ window._drawModes = function(g, dt, T){
   if(state.modes.petals)        drawPetals(g, dt, T);
   if(state.modes.aurora)        drawAurora(g, dt, T);
   if(state.modes.inkWash)       drawInkWash(g, dt, T);
+  if(state.modes.suminagashi)   drawSuminagashi(g, dt, T);
   if(state.modes.popArt)        drawPopArt(g, dt, T);
   if(state.modes.polygon)       drawPolygon(g, dt, T);
   if(state.modes.matrix)        drawMatrix(g, dt, T);
@@ -4484,6 +4495,24 @@ function applySnapshot(snap, opts){
     document.querySelectorAll('#imgFilterGrid button').forEach(b => b.classList.toggle('on', b.dataset.imgfilter === imgState.filter));
     const ifInt = document.getElementById('imgFilterAmt');
     if(ifInt){ ifInt.value = Math.round((imgState.filterIntensity||1)*100); ifInt.dispatchEvent(new Event('input')); }
+  }
+  // overlay FX — reset all flags to default first so old slots don't leak current state
+  if(state.fx){
+    const fxDefaults = {
+      confetti:false, blackout:false, keyFlash:false, vignettePulse:false, letterbox:false,
+      timestamp:false, starfield:false, hueCycle:false, snapZoom:false, filmGrain:false,
+    };
+    for(const k in fxDefaults){
+      state.fx[k] = (snap.fx && snap.fx[k] !== undefined) ? !!snap.fx[k] : fxDefaults[k];
+    }
+    document.querySelectorAll('#overlayFxModes input[type="checkbox"]').forEach(cb => {
+      const k = cb.dataset.fx;
+      if(k && k in state.fx) cb.checked = !!state.fx[k];
+    });
+    state._keyFlashLevel = 0;
+    state._blackoutLevel = state.fx.blackout ? 1 : 0;
+    state._snapZoom = 0;
+    state._confetti = [];
   }
   // cam — apply settings + start/stop the stream so setlist slots can mean "camera on/off"
   if(snap.cam){
@@ -5119,6 +5148,8 @@ function randomizeAll(){
       rate: typo.rate, life: typo.life, density: typo.density, loop: typo.loop,
       kaleido: typo.kaleido,
     } : null,
+    // Overlay FX (Confetti / Blackout / KeyFlash / etc.)
+    fx: state.fx ? { ...state.fx } : null,
     // Live (camera) — full snapshot incl. filter / AR / motion / hand AR
     cam: (typeof cam !== 'undefined') ? {
       track: cam.track, fx: cam.fx, faceFx: cam.faceFx, handFx: cam.handFx,
@@ -5254,7 +5285,7 @@ function randomizeAll(){
     life:3, lsys:2, harmono:2, truchet:2, nbody:3, spiro:2, marbling:2, hilbert:2, lenia:4,
     pendulum:2, galaxy:2, penrose:3, pwave:1, mandel:4, wireworld:2,
     mandalaRings:1, waveform:1, constellation:1, spiral:2, ripples:1, crystals:2,
-    ribbons:2, tunnel:2, petals:1, aurora:2, inkWash:3, polygon:2, matrix:3, eva:3,
+    ribbons:2, tunnel:2, petals:1, aurora:2, inkWash:3, suminagashi:3, polygon:2, matrix:3, eva:3,
     // Filters (post-process style overlays)
     opart:2, halftone:2, pixel8:5, popArt:4, glitch:4,
     // Motion (rhythm modifiers)
@@ -5475,6 +5506,34 @@ function randomizeAll(){
     if(typeof setKaleidoUI === 'function'){ try { setKaleidoUI('cam', cam.kaleido); } catch(_){} }
   }
 
+  // 11b. Overlay FX — light/cinematic toggles. Pick ~1-2 subtle ones, never the disruptive ones (blackout / snapZoom — those stay user-only)
+  if(state.fx){
+    // Reset everything first
+    const fxKeys = Object.keys(state.fx);
+    for(const k of fxKeys) state.fx[k] = false;
+    // Safe pool — only cheap overlays. Excluded:
+    //   blackout / snapZoom — surprise the performer
+    //   filmGrain — heaviest CPU even after pattern optimization
+    //   hueCycle  — globalCompositeOperation='hue' over the whole canvas is GPU-expensive
+    const fxPool = ['vignettePulse','letterbox','timestamp','starfield','keyFlash','confetti'];
+    // 60% chance of one overlay, 25% chance of two, 15% none
+    const pick = Math.random();
+    const pickN = pick < 0.15 ? 0 : (pick < 0.85 ? 1 : 2);
+    for(let i=0;i<pickN;i++){
+      const k = fxPool[Math.floor(Math.random()*fxPool.length)];
+      state.fx[k] = true;
+    }
+    // Reset transient
+    state._keyFlashLevel = 0;
+    state._blackoutLevel = 0;
+    state._snapZoom = 0;
+    state._confetti = [];
+    document.querySelectorAll('#overlayFxModes input[type="checkbox"]').forEach(cb => {
+      const k = cb.dataset.fx;
+      if(k && k in state.fx) cb.checked = !!state.fx[k];
+    });
+  }
+
   // 12. Honor locks — restore snapshotted groups. Each lock = one tab.
   if(L.feelings){
     for(const e of EMOTIONS) state.values[e.id] = snap.values[e.id] || 0;
@@ -5491,6 +5550,13 @@ function randomizeAll(){
   }
   if(L.style){
     state.modes = { ...snap.modes };
+  }
+  if(L.overlays && snap.fx && state.fx){
+    for(const k in snap.fx) state.fx[k] = !!snap.fx[k];
+    document.querySelectorAll('#overlayFxModes input[type="checkbox"]').forEach(cb => {
+      const k = cb.dataset.fx;
+      if(k && k in state.fx) cb.checked = !!state.fx[k];
+    });
   }
   if(L.audio){
     state.audioGain = snap.audioGain; state.bassImpact = snap.bassImpact;
@@ -5603,6 +5669,18 @@ function randomizeAll(){
     }
     if(VI.geometry){
       state.kaleido = snap.kaleido; state.mirror = snap.mirror;
+    }
+    // Modes sub-lock — overlap with main L.style chip, but honored only if Style chip is OFF
+    if(VI.modes && !L.style){
+      state.modes = { ...snap.modes };
+    }
+    // Overlays sub-lock — overlap with main L.overlays chip, but honored only if Overlays chip is OFF
+    if(VI.overlays && !L.overlays && snap.fx && state.fx){
+      for(const k in snap.fx) state.fx[k] = !!snap.fx[k];
+      document.querySelectorAll('#overlayFxModes input[type="checkbox"]').forEach(cb => {
+        const k = cb.dataset.fx;
+        if(k && k in state.fx) cb.checked = !!state.fx[k];
+      });
     }
   }
 
@@ -6050,16 +6128,13 @@ if(_imgStretchEl){
 // Returns a canvas (imgPipe) ready to be composited
 // ============================================================
 
-// Image pipeline runs at most 30fps even when main canvas is 60.
-// Reuses last imgPipe canvas on skipped frames — visual modes still render at 60.
-let _imgPipeLastT = 0;
-const _imgPipeMinIntervalMs = 33;
+// NOTE: no global frame-rate cache here. fitImageToCanvas is called ONCE PER
+// SOURCE PER FRAME (multi-select / tile / useAllImages draw several images in a
+// single frame). A shared time-based cache made every source after the first
+// reuse the first source's imgPipe — so multi-image layouts all showed the same
+// picture and videos appeared frozen. Heavy-filter cost is bounded instead by
+// the 480p downscale below + per-entry filtered-canvas caching for statics.
 function fitImageToCanvas(img){
-  const _now = performance.now();
-  if(_now - _imgPipeLastT < _imgPipeMinIntervalMs && imgPipe.width === cv.width && imgPipe.height === cv.height){
-    return imgPipe;
-  }
-  _imgPipeLastT = _now;
   imgPipe.width = cv.width;
   imgPipe.height = cv.height;
   const g = imgPipeCtx;
@@ -6896,12 +6971,37 @@ $('qaSaveTop').addEventListener('click', () => $('save') && $('save').click());
 $('qaGenerateTop').addEventListener('click', () => $('generate') && $('generate').click());
 
 // Lock chips — toggle preservation of attribute groups across RANDOM
+// Special chip data-lock="visual-all" is a meta lock: toggles visual + style + overlays together
+const VISUAL_META_KEYS = ['visual', 'style', 'overlays'];
+function _syncVisualMetaChip(){
+  const meta = document.querySelector('.lock-chip[data-lock="visual-all"]');
+  if(!meta) return;
+  const allLocked = VISUAL_META_KEYS.every(k => state.locks[k]);
+  meta.classList.toggle('locked', allLocked);
+  const ic = meta.querySelector('.ico'); if(ic) ic.textContent = allLocked ? '🔒' : '🔓';
+}
 document.querySelectorAll('.lock-chip').forEach(chip => {
   chip.addEventListener('click', () => {
     const k = chip.dataset.lock;
+    if(k === 'visual-all'){
+      const allLocked = VISUAL_META_KEYS.every(x => state.locks[x]);
+      const next = !allLocked;
+      VISUAL_META_KEYS.forEach(x => { state.locks[x] = next; });
+      // sync the individual chips if any are present
+      VISUAL_META_KEYS.forEach(x => {
+        const sub = document.querySelector(`.lock-chip[data-lock="${x}"]`);
+        if(sub){
+          sub.classList.toggle('locked', next);
+          const i = sub.querySelector('.ico'); if(i) i.textContent = next ? '🔒' : '🔓';
+        }
+      });
+      _syncVisualMetaChip();
+      return;
+    }
     state.locks[k] = !state.locks[k];
     chip.classList.toggle('locked', state.locks[k]);
     chip.querySelector('.ico').textContent = state.locks[k] ? '🔒' : '🔓';
+    if(VISUAL_META_KEYS.includes(k)) _syncVisualMetaChip();
   });
 });
 
@@ -6929,9 +7029,11 @@ const SUBLOCK_GROUPS = {
     { key:'camera', label:'Camera 相機', desc:'kaleido / mirror / bg removal' },
   ],
   visual: [
-    { key:'color',      label:'Color 顏色',    desc:'vibrance / hue / bg / light mode' },
+    { key:'color',      label:'Color 顏色',     desc:'vibrance / hue / bg / light mode' },
     { key:'atmosphere', label:'Atmosphere 氛圍', desc:'bloom / trails / grain / vignette' },
-    { key:'geometry',   label:'Geometry 幾何', desc:'kaleido / mirror' },
+    { key:'geometry',   label:'Geometry 幾何',   desc:'kaleido / mirror' },
+    { key:'modes',      label:'Modes 模式',      desc:'particles / waves / polygons / mandalas / etc' },
+    { key:'overlays',   label:'Overlays 疊加',   desc:'confetti / blackout / vignette pulse / film grain / etc' },
   ],
 };
 let _activeSubPopover = null;
@@ -8288,6 +8390,8 @@ function captureSnapshot(){
       filter: imgState.filter, filterIntensity: imgState.filterIntensity,
       modes: imgState.modes ? { ...imgState.modes } : null,
     } : null,
+    // overlay FX (Confetti / Blackout / KeyFlash / VignettePulse / Letterbox / Timestamp / Starfield / HueCycle / SnapZoom / FilmGrain)
+    fx: state.fx ? { ...state.fx } : null,
     // light mode + sketch (line-art glyph)
     lightMode: !!state.lightMode,
     sketch: state.sketch ? {
@@ -8415,6 +8519,25 @@ function applyFullSnapshot(snap){
     if(T.loop !== undefined){ $('typeLoop').checked = !!T.loop; }
     if(T.weight !== undefined) setSlider('typeWeight', T.weight);
     if(T.outlineWidth !== undefined) setSlider('typeOutline', T.outlineWidth*100);
+  }
+  // overlay FX — reset all known flags to default first so old presets don't leak current state
+  if(state.fx){
+    const fxDefaults = {
+      confetti:false, blackout:false, keyFlash:false, vignettePulse:false, letterbox:false,
+      timestamp:false, starfield:false, hueCycle:false, snapZoom:false, filmGrain:false,
+    };
+    for(const k in fxDefaults){
+      state.fx[k] = (snap.fx && snap.fx[k] !== undefined) ? !!snap.fx[k] : fxDefaults[k];
+    }
+    document.querySelectorAll('#overlayFxModes input[type="checkbox"]').forEach(cb => {
+      const k = cb.dataset.fx;
+      if(k && k in state.fx) cb.checked = !!state.fx[k];
+    });
+    // reset transient fx state so a freshly-loaded preset doesn't inherit prior visuals
+    state._keyFlashLevel = 0;
+    state._blackoutLevel = snap.fx && snap.fx.blackout ? 1 : 0;
+    state._snapZoom = 0;
+    state._confetti = [];
   }
   // light mode
   if(snap.lightMode !== undefined){
@@ -9919,10 +10042,6 @@ setTimeout(() => { const h = document.getElementById('h'); if(h) h.classList.add
       case 'r':
         if(typeof randomizeAll === 'function') randomizeAll();
         break;
-      case 'x': {
-        const r = document.getElementById('reset'); if(r) r.click();
-        break;
-      }
       case 't':
         tapTempo();
         break;

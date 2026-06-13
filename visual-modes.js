@@ -2671,6 +2671,164 @@ function drawInkWash(g, dt, T){
 }
 
 // ============================================================
+// SUMINAGASHI 墨流し — floating ink drops on water that swirl + mix
+// Each drop = a closed polygon of N vertices around a center. Vertex radius
+// grows over time (drop spreading) and each vertex is advected by a curl-noise
+// flow field — that's the marbling/swirl. Multiple drops layer with multiply
+// blend so colors mix like real Suminagashi ink on water.
+// ============================================================
+const SUMI_COLORS = [
+  '20,15,12',    // 墨   sumi — warm black
+  '20,40,90',    // 深藍 kon — deep indigo
+  '170,40,30',   // 朱紅 shu — vermillion
+  '35,75,50',    // 松葉緑 matsu — pine green
+];
+let _sumiDrops = [];
+let _sumiSpawnT = 0;
+let _sumiFlowT  = 0;
+let _sumiColorIdx = 0;
+
+function _seedSumiDrop(forceColor){
+  const N = 56;
+  const cx = (0.15 + Math.random()*0.7) * W;
+  const cy = (0.15 + Math.random()*0.7) * H;
+  const r0 = (10 + Math.random()*22) * SCALE;
+  // Cycle through the 4 traditional colors so consecutive drops contrast
+  let color;
+  if(forceColor != null) color = SUMI_COLORS[forceColor % SUMI_COLORS.length];
+  else {
+    _sumiColorIdx = (_sumiColorIdx + 1 + (Math.random()<0.3 ? 1 : 0)) % SUMI_COLORS.length;
+    color = SUMI_COLORS[_sumiColorIdx];
+  }
+  const verts = [];
+  for(let i=0;i<N;i++){
+    const a = (i/N) * TAU;
+    verts.push({
+      a,
+      // baseline radius pre-distortion
+      r0,
+      // accumulated displacement from curl flow
+      dx: 0, dy: 0,
+      // small per-vertex jitter so the initial circle isn't perfectly round
+      rj: 1 + (Math.random()-0.5) * 0.06,
+    });
+  }
+  return {
+    cx, cy, color,
+    verts,
+    life: 0,
+    // spread rate — how fast the drop expands radially
+    spread: 12 + Math.random()*16,            // px/s
+    // age at which we start fading out
+    fadeStart: 9 + Math.random()*6,           // sec
+    fadeDuration: 8 + Math.random()*6,        // sec
+    flowScale: 0.0018 + Math.random()*0.0012, // curl noise spatial freq
+    flowStrength: 18 + Math.random()*22,      // px/s peak velocity
+    flowSeed: Math.random() * 1000,
+  };
+}
+
+// Curl of pseudo-noise field — divergence-free velocity, gives swirl/marbling
+function _sumiCurl(x, y, k, t){
+  const e = 30;   // sampling stencil (paper units)
+  const n1 = noise2((x      )*k, (y - e)*k + t);
+  const n2 = noise2((x      )*k, (y + e)*k + t);
+  const n3 = noise2((x - e  )*k, (y    )*k + t);
+  const n4 = noise2((x + e  )*k, (y    )*k + t);
+  return {
+    vx: (n2 - n1),
+    vy: -(n4 - n3),
+  };
+}
+
+function drawSuminagashi(g, dt, T){
+  const dts = dt / 1000;
+  _sumiFlowT += dts * 0.18;   // slow flow drift
+
+  // Spawn rate — gentle baseline + bass pushes more drops
+  const bass = (reactor.bass || 0);
+  const vol  = (reactor.vol  || 0);
+  const mid  = (reactor.mid  || 0);
+  const mScale = (window._songMood && window._songMood.intensityScale) || 1;
+  const rate = (0.55 + vol*1.4 + state.motionSpeed*0.4) * mScale;
+  _sumiSpawnT += dts;
+  let safety = 4;
+  while(_sumiSpawnT > 1/Math.max(0.2, rate) && safety-- > 0){
+    _sumiSpawnT -= 1/Math.max(0.2, rate);
+    _sumiDrops.push(_seedSumiDrop());
+  }
+  // Bass hit = splash of 2-3 contrasting drops near center
+  if(bass > 0.55 && state.beatFlash > 0.5){
+    if(!_sumiDrops._lastBeat || (state.beatCount || 0) > _sumiDrops._lastBeat){
+      _sumiDrops._lastBeat = state.beatCount || ((_sumiDrops._lastBeat||0)+1);
+      const baseColor = Math.floor(Math.random()*SUMI_COLORS.length);
+      for(let k=0;k<3;k++){
+        const d = _seedSumiDrop((baseColor + k) % SUMI_COLORS.length);
+        // bias near center for bass impact
+        d.cx = CX + (Math.random()-0.5)*W*0.35;
+        d.cy = CY + (Math.random()-0.5)*H*0.35;
+        d.r0 *= 0.7;
+        _sumiDrops.push(d);
+      }
+    }
+  }
+
+  if(_sumiDrops.length > 18) _sumiDrops.splice(0, _sumiDrops.length - 18);
+
+  g.save();
+  // Multiply gives the "ink soaking into paper" mixing on light backgrounds;
+  // 'lighter' for dark backgrounds so the drops show up.
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+
+  // Mid-range adds extra swirl perturbation — wash 流動 with the music
+  const swirlBoost = 1 + mid*1.6 + bass*0.8;
+
+  for(let di = _sumiDrops.length-1; di >= 0; di--){
+    const d = _sumiDrops[di];
+    d.life += dts;
+    const totalLife = d.fadeStart + d.fadeDuration;
+    if(d.life > totalLife){ _sumiDrops.splice(di, 1); continue; }
+
+    const fade = d.life < d.fadeStart
+      ? (d.life < 0.35 ? d.life/0.35 : 1)
+      : 1 - (d.life - d.fadeStart) / d.fadeDuration;
+    if(fade <= 0) continue;
+
+    // Grow base radius as the drop spreads on water
+    const baseR = d.verts[0].r0 + d.life * d.spread;
+    // Advect each vertex by curl flow — gives the marbling distortion
+    for(const v of d.verts){
+      const px = d.cx + v.dx + Math.cos(v.a) * baseR * v.rj;
+      const py = d.cy + v.dy + Math.sin(v.a) * baseR * v.rj;
+      const f = _sumiCurl(px, py, d.flowScale, _sumiFlowT + d.flowSeed);
+      v.dx += f.vx * d.flowStrength * dts * swirlBoost;
+      v.dy += f.vy * d.flowStrength * dts * swirlBoost;
+    }
+
+    // Render polygon — outer ring (light) + inner ring (dense core)
+    const inkAlpha = state.lightMode ? 0.32 : 0.55;
+    g.fillStyle = `rgba(${d.color}, ${inkAlpha * fade})`;
+    g.beginPath();
+    for(let i=0;i<d.verts.length;i++){
+      const v = d.verts[i];
+      const x = d.cx + v.dx + Math.cos(v.a) * baseR * v.rj;
+      const y = d.cy + v.dy + Math.sin(v.a) * baseR * v.rj;
+      if(i === 0) g.moveTo(x, y);
+      else g.lineTo(x, y);
+    }
+    g.closePath();
+    g.fill();
+
+    // Hairline edge — gives the drops a defined silhouette like real Suminagashi
+    g.strokeStyle = `rgba(${d.color}, ${0.7 * fade})`;
+    g.lineWidth = 0.8 * SCALE;
+    g.stroke();
+  }
+
+  g.restore();
+}
+
+// ============================================================
 // 8-Bit · pixelation post-effect with palette quantization
 // Throttled — the GPU→CPU readback (getImageData) is the most expensive
 // Canvas op there is. Recompute every ~3 frames (or more under perf pressure),
