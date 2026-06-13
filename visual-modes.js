@@ -2683,12 +2683,23 @@ const SUMI_COLORS = [
   '170,40,30',   // 朱紅 shu — vermillion
   '35,75,50',    // 松葉緑 matsu — pine green
 ];
-let _sumiDrops = [];
 let _sumiSpawnT = 0;
-let _sumiFlowT  = 0;
 let _sumiColorIdx = 0;
 let _sumiPaperCv = null;
 let _sumiPaperKey = '';
+let _sumiFluid = null;        // WebGL fluid sim state — lazy init
+let _sumiFluidFailed = false; // if init fails, fall back gracefully
+
+// ─── Absorption colours for the 4 traditional inks ───
+// dye field stores ACCUMULATED ABSORPTION; on display we output
+// (1 - dye) as the multiply factor over cream paper:
+//   paper × (1 - dye) = paper minus the absorbed bands = ink-tinted paper.
+const SUMI_ABSORPTION = [
+  [0.92, 0.94, 0.95],   // 墨 warm black (absorbs ~everything)
+  [0.92, 0.84, 0.65],   // 深藍 indigo
+  [0.33, 0.82, 0.85],   // 朱紅 vermillion
+  [0.86, 0.71, 0.80],   // 松葉緑 pine
+];
 
 // One-time paper texture: cream wash + sparse fibre lines + grain + edge
 // vignette. Baked into a cached canvas so each frame is a single drawImage.
@@ -2740,61 +2751,365 @@ function _buildSumiPaper(){
   return c;
 }
 
-// Persistent offscreen ink canvas — all particle dots draw onto this, NEVER
-// cleared. Each frame a very low-alpha paper-cream fill slowly dims old marks
-// so the canvas keeps "breathing" instead of saturating. This is what gives
-// real flow trails + stain accumulation for free.
-let _sumiInkCv = null;
-let _sumiInkKey = '';
+// ============================================================
+// WEBGL FLUID SIM for Suminagashi
+// Minimal 2D Navier-Stokes — semi-Lagrangian advection, pressure solve via
+// Jacobi, vorticity confinement for visible swirls. Dye transported by the
+// velocity field; output composited via multiply onto cream paper.
+// ============================================================
 
-// "Particle splash" = each drop = ~150 tiny ink particles emitted in a cluster.
-// Each particle follows the global curl-noise flow field independently, leaving
-// its own trail of dots onto _sumiInkCv. That's where the real motion comes
-// from — not from a polygon morphing in place.
-function _seedSumiDrop(forceColor){
-  const cx = (0.10 + Math.random()*0.80) * W;
-  const cy = (0.10 + Math.random()*0.80) * H;
-  let color;
-  if(forceColor != null) color = SUMI_COLORS[forceColor % SUMI_COLORS.length];
-  else {
-    _sumiColorIdx = (_sumiColorIdx + 1 + (Math.random()<0.3 ? 1 : 0)) % SUMI_COLORS.length;
-    color = SUMI_COLORS[_sumiColorIdx];
+const _SUMI_VERT_SRC = `
+  attribute vec2 aPos;
+  varying vec2 vUV;
+  void main(){
+    vUV = aPos * 0.5 + 0.5;
+    gl_Position = vec4(aPos, 0.0, 1.0);
+  }`;
+
+const _SUMI_SPLAT_SRC = `
+  precision highp float;
+  varying vec2 vUV;
+  uniform sampler2D uSource;
+  uniform vec2  uPoint;
+  uniform vec3  uColor;
+  uniform float uRadius;
+  uniform float uAspect;
+  void main(){
+    vec2 p = vUV - uPoint;
+    p.x *= uAspect;
+    float falloff = exp(-dot(p,p) / uRadius);
+    vec3 base = texture2D(uSource, vUV).rgb;
+    gl_FragColor = vec4(base + uColor * falloff, 1.0);
+  }`;
+
+const _SUMI_ADVECT_SRC = `
+  precision highp float;
+  varying vec2 vUV;
+  uniform sampler2D uVelocity;
+  uniform sampler2D uSource;
+  uniform vec2  uTexel;
+  uniform float uDt;
+  uniform float uDissipation;
+  void main(){
+    vec2 vel = texture2D(uVelocity, vUV).xy;
+    vec2 prev = vUV - vel * uDt * uTexel;
+    vec4 s = texture2D(uSource, prev);
+    gl_FragColor = s * uDissipation;
+  }`;
+
+const _SUMI_DIV_SRC = `
+  precision highp float;
+  varying vec2 vUV;
+  uniform sampler2D uVelocity;
+  uniform vec2 uTexel;
+  void main(){
+    float L = texture2D(uVelocity, vUV - vec2(uTexel.x, 0.)).x;
+    float R = texture2D(uVelocity, vUV + vec2(uTexel.x, 0.)).x;
+    float B = texture2D(uVelocity, vUV - vec2(0., uTexel.y)).y;
+    float T = texture2D(uVelocity, vUV + vec2(0., uTexel.y)).y;
+    gl_FragColor = vec4(0.5 * (R - L + T - B), 0., 0., 1.);
+  }`;
+
+const _SUMI_PRESSURE_SRC = `
+  precision highp float;
+  varying vec2 vUV;
+  uniform sampler2D uPressure;
+  uniform sampler2D uDivergence;
+  uniform vec2 uTexel;
+  void main(){
+    float L = texture2D(uPressure, vUV - vec2(uTexel.x, 0.)).x;
+    float R = texture2D(uPressure, vUV + vec2(uTexel.x, 0.)).x;
+    float B = texture2D(uPressure, vUV - vec2(0., uTexel.y)).x;
+    float T = texture2D(uPressure, vUV + vec2(0., uTexel.y)).x;
+    float d = texture2D(uDivergence, vUV).x;
+    gl_FragColor = vec4((L + R + B + T - d) * 0.25, 0., 0., 1.);
+  }`;
+
+const _SUMI_GRAD_SRC = `
+  precision highp float;
+  varying vec2 vUV;
+  uniform sampler2D uPressure;
+  uniform sampler2D uVelocity;
+  uniform vec2 uTexel;
+  void main(){
+    float L = texture2D(uPressure, vUV - vec2(uTexel.x, 0.)).x;
+    float R = texture2D(uPressure, vUV + vec2(uTexel.x, 0.)).x;
+    float B = texture2D(uPressure, vUV - vec2(0., uTexel.y)).x;
+    float T = texture2D(uPressure, vUV + vec2(0., uTexel.y)).x;
+    vec2 v = texture2D(uVelocity, vUV).xy;
+    v -= 0.5 * vec2(R - L, T - B);
+    gl_FragColor = vec4(v, 0., 1.);
+  }`;
+
+const _SUMI_CURL_SRC = `
+  precision highp float;
+  varying vec2 vUV;
+  uniform sampler2D uVelocity;
+  uniform vec2 uTexel;
+  void main(){
+    float L = texture2D(uVelocity, vUV - vec2(uTexel.x, 0.)).y;
+    float R = texture2D(uVelocity, vUV + vec2(uTexel.x, 0.)).y;
+    float B = texture2D(uVelocity, vUV - vec2(0., uTexel.y)).x;
+    float T = texture2D(uVelocity, vUV + vec2(0., uTexel.y)).x;
+    gl_FragColor = vec4(0.5 * (R - L - T + B), 0., 0., 1.);
+  }`;
+
+const _SUMI_VORT_SRC = `
+  precision highp float;
+  varying vec2 vUV;
+  uniform sampler2D uVelocity;
+  uniform sampler2D uCurl;
+  uniform vec2 uTexel;
+  uniform float uCurlAmount;
+  uniform float uDt;
+  void main(){
+    float L = texture2D(uCurl, vUV - vec2(uTexel.x, 0.)).x;
+    float R = texture2D(uCurl, vUV + vec2(uTexel.x, 0.)).x;
+    float B = texture2D(uCurl, vUV - vec2(0., uTexel.y)).x;
+    float T = texture2D(uCurl, vUV + vec2(0., uTexel.y)).x;
+    float C = texture2D(uCurl, vUV).x;
+    vec2 force = 0.5 * vec2(abs(T) - abs(B), abs(R) - abs(L));
+    force /= max(1e-4, length(force));
+    force *= uCurlAmount * C;
+    vec2 v = texture2D(uVelocity, vUV).xy;
+    v += force * uDt;
+    gl_FragColor = vec4(v, 0., 1.);
+  }`;
+
+const _SUMI_DISPLAY_SRC = `
+  precision highp float;
+  varying vec2 vUV;
+  uniform sampler2D uDye;
+  void main(){
+    vec3 dye = texture2D(uDye, vUV).rgb;
+    vec3 mul = clamp(1.0 - dye, 0.0, 1.0);
+    gl_FragColor = vec4(mul, 1.0);
+  }`;
+
+function _initSumiFluid(){
+  const SIM_W = 384, SIM_H = 216;   // sim resolution (16:9, low-ish for perf)
+  const c = document.createElement('canvas');
+  c.width = SIM_W; c.height = SIM_H;
+  const gl = c.getContext('webgl', { alpha: true, premultipliedAlpha: false, depth: false, stencil: false })
+          || c.getContext('experimental-webgl');
+  if(!gl) return null;
+
+  const hf  = gl.getExtension('OES_texture_half_float');
+  const hfL = gl.getExtension('OES_texture_half_float_linear');
+  const dataType = hf ? hf.HALF_FLOAT_OES : gl.UNSIGNED_BYTE;
+  const linear   = hfL ? gl.LINEAR : gl.NEAREST;
+
+  function compile(vsSrc, fsSrc){
+    const vs = gl.createShader(gl.VERTEX_SHADER);
+    gl.shaderSource(vs, vsSrc); gl.compileShader(vs);
+    if(!gl.getShaderParameter(vs, gl.COMPILE_STATUS)){
+      console.error('[sumi-fluid] vs:', gl.getShaderInfoLog(vs)); return null;
+    }
+    const fs = gl.createShader(gl.FRAGMENT_SHADER);
+    gl.shaderSource(fs, fsSrc); gl.compileShader(fs);
+    if(!gl.getShaderParameter(fs, gl.COMPILE_STATUS)){
+      console.error('[sumi-fluid] fs:', gl.getShaderInfoLog(fs)); return null;
+    }
+    const p = gl.createProgram();
+    gl.attachShader(p, vs); gl.attachShader(p, fs);
+    gl.linkProgram(p);
+    if(!gl.getProgramParameter(p, gl.LINK_STATUS)){
+      console.error('[sumi-fluid] link:', gl.getProgramInfoLog(p)); return null;
+    }
+    return p;
   }
-  const N = 150;
-  const particles = new Array(N);
-  for(let i = 0; i < N; i++){
-    // Compact cluster: gaussian-ish distribution near (cx,cy)
-    const rEmit = Math.pow(Math.random(), 0.6) * 14 * SCALE;
-    const aEmit = Math.random() * TAU;
-    // Tiny outward velocity bias for the initial splash
-    const vMag = (Math.random()*0.5) * 8;
-    particles[i] = {
-      x:  cx + Math.cos(aEmit) * rEmit,
-      y:  cy + Math.sin(aEmit) * rEmit,
-      vx: Math.cos(aEmit) * vMag,
-      vy: Math.sin(aEmit) * vMag,
-      life: 0,
-      maxLife: 4 + Math.random() * 5,        // sec
-      r: 0.9 + Math.random() * 1.4,           // dot radius in css px
+
+  const progSplat = compile(_SUMI_VERT_SRC, _SUMI_SPLAT_SRC);
+  const progAdvect = compile(_SUMI_VERT_SRC, _SUMI_ADVECT_SRC);
+  const progDiv = compile(_SUMI_VERT_SRC, _SUMI_DIV_SRC);
+  const progPress = compile(_SUMI_VERT_SRC, _SUMI_PRESSURE_SRC);
+  const progGrad = compile(_SUMI_VERT_SRC, _SUMI_GRAD_SRC);
+  const progCurl = compile(_SUMI_VERT_SRC, _SUMI_CURL_SRC);
+  const progVort = compile(_SUMI_VERT_SRC, _SUMI_VORT_SRC);
+  const progDisp = compile(_SUMI_VERT_SRC, _SUMI_DISPLAY_SRC);
+  if(!progSplat || !progAdvect || !progDiv || !progPress || !progGrad || !progCurl || !progVort || !progDisp){
+    return null;
+  }
+
+  // Full-screen quad
+  const quad = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+    -1,-1, 1,-1, -1,1,  -1,1, 1,-1, 1,1
+  ]), gl.STATIC_DRAW);
+
+  function makeFBO(w, h){
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, linear);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, linear);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, dataType, null);
+    const fbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    if(gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE){
+      return null;
+    }
+    gl.viewport(0, 0, w, h);
+    gl.clearColor(0,0,0,1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    return { tex, fbo, w, h };
+  }
+  function makeDouble(w, h){
+    const r = makeFBO(w, h), wr = makeFBO(w, h);
+    if(!r || !wr) return null;
+    return {
+      read: r, write: wr,
+      swap(){ const t = this.read; this.read = this.write; this.write = t; },
     };
   }
+
+  const velocity = makeDouble(SIM_W, SIM_H);
+  const dye = makeDouble(SIM_W, SIM_H);
+  const pressure = makeDouble(SIM_W, SIM_H);
+  const divergence = makeFBO(SIM_W, SIM_H);
+  const curl = makeFBO(SIM_W, SIM_H);
+  if(!velocity || !dye || !pressure || !divergence || !curl){
+    console.warn('[sumi-fluid] FBO creation failed (likely half-float not renderable). Suminagashi falls back.');
+    return null;
+  }
+
   return {
-    cx, cy, color, particles,
-    age: 0,
-    flowSeed: Math.random()*1000,
-    flowScale: 0.0021 + Math.random()*0.0014,
-    flowStrength: 60 + Math.random()*40,     // px/s peak — driving the motion
+    gl, canvas: c, SIM_W, SIM_H, quad,
+    progSplat, progAdvect, progDiv, progPress, progGrad, progCurl, progVort, progDisp,
+    velocity, dye, pressure, divergence, curl,
+    texel: [1 / SIM_W, 1 / SIM_H],
+    aspect: SIM_W / SIM_H,
+    lastBeat: 0,
   };
 }
 
-function drawSuminagashi(g, dt, T){
-  const dts = dt / 1000;
-  _sumiFlowT += dts * 0.18;   // slow flow drift
+function _sumiBindQuad(F, prog){
+  const gl = F.gl;
+  gl.useProgram(prog);
+  const loc = gl.getAttribLocation(prog, 'aPos');
+  gl.bindBuffer(gl.ARRAY_BUFFER, F.quad);
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+}
+function _sumiBlit(F, target){
+  const gl = F.gl;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
+  gl.viewport(0, 0, target.w, target.h);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+}
 
-  // ─── Paper backdrop ───
-  // Suminagashi is a "takeover" mode — when enabled it covers the whole canvas
-  // with cream washi paper so the ink reads correctly. Texture is built once
-  // and reused; rebuild only on canvas size change.
+// Splat both velocity (driving force) and dye (ink absorption color).
+function _sumiSplat(F, x01, y01, vx, vy, colorIdx, strength){
+  const gl = F.gl;
+  const radius = 0.0035;
+
+  // ── velocity splat ──
+  _sumiBindQuad(F, F.progSplat);
+  gl.uniform1i(gl.getUniformLocation(F.progSplat, 'uSource'), 0);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, F.velocity.read.tex);
+  gl.uniform2f(gl.getUniformLocation(F.progSplat, 'uPoint'), x01, 1 - y01);
+  gl.uniform3f(gl.getUniformLocation(F.progSplat, 'uColor'), vx * strength, -vy * strength, 0);
+  gl.uniform1f(gl.getUniformLocation(F.progSplat, 'uRadius'), radius);
+  gl.uniform1f(gl.getUniformLocation(F.progSplat, 'uAspect'), F.aspect);
+  _sumiBlit(F, F.velocity.write);
+  F.velocity.swap();
+
+  // ── dye splat ──
+  const c = SUMI_ABSORPTION[colorIdx];
+  gl.bindTexture(gl.TEXTURE_2D, F.dye.read.tex);
+  gl.uniform3f(gl.getUniformLocation(F.progSplat, 'uColor'), c[0] * strength, c[1] * strength, c[2] * strength);
+  _sumiBlit(F, F.dye.write);
+  F.dye.swap();
+}
+
+function _sumiStep(F, dt){
+  const gl = F.gl;
+
+  // 1. Curl
+  _sumiBindQuad(F, F.progCurl);
+  gl.uniform1i(gl.getUniformLocation(F.progCurl, 'uVelocity'), 0);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, F.velocity.read.tex);
+  gl.uniform2f(gl.getUniformLocation(F.progCurl, 'uTexel'), F.texel[0], F.texel[1]);
+  _sumiBlit(F, F.curl);
+
+  // 2. Vorticity confinement → visible swirls
+  _sumiBindQuad(F, F.progVort);
+  gl.uniform1i(gl.getUniformLocation(F.progVort, 'uVelocity'), 0);
+  gl.uniform1i(gl.getUniformLocation(F.progVort, 'uCurl'), 1);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, F.velocity.read.tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, F.curl.tex);
+  gl.uniform2f(gl.getUniformLocation(F.progVort, 'uTexel'), F.texel[0], F.texel[1]);
+  gl.uniform1f(gl.getUniformLocation(F.progVort, 'uCurlAmount'), 28);
+  gl.uniform1f(gl.getUniformLocation(F.progVort, 'uDt'), dt);
+  _sumiBlit(F, F.velocity.write); F.velocity.swap();
+
+  // 3. Divergence
+  _sumiBindQuad(F, F.progDiv);
+  gl.uniform1i(gl.getUniformLocation(F.progDiv, 'uVelocity'), 0);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, F.velocity.read.tex);
+  gl.uniform2f(gl.getUniformLocation(F.progDiv, 'uTexel'), F.texel[0], F.texel[1]);
+  _sumiBlit(F, F.divergence);
+
+  // 4. Clear pressure, solve via Jacobi
+  gl.bindFramebuffer(gl.FRAMEBUFFER, F.pressure.read.fbo);
+  gl.viewport(0, 0, F.pressure.read.w, F.pressure.read.h);
+  gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+  _sumiBindQuad(F, F.progPress);
+  gl.uniform1i(gl.getUniformLocation(F.progPress, 'uPressure'), 0);
+  gl.uniform1i(gl.getUniformLocation(F.progPress, 'uDivergence'), 1);
+  gl.uniform2f(gl.getUniformLocation(F.progPress, 'uTexel'), F.texel[0], F.texel[1]);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, F.divergence.tex);
+  for(let i = 0; i < 18; i++){
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, F.pressure.read.tex);
+    _sumiBlit(F, F.pressure.write); F.pressure.swap();
+  }
+
+  // 5. Gradient subtract → divergence-free velocity
+  _sumiBindQuad(F, F.progGrad);
+  gl.uniform1i(gl.getUniformLocation(F.progGrad, 'uPressure'), 0);
+  gl.uniform1i(gl.getUniformLocation(F.progGrad, 'uVelocity'), 1);
+  gl.uniform2f(gl.getUniformLocation(F.progGrad, 'uTexel'), F.texel[0], F.texel[1]);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, F.pressure.read.tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, F.velocity.read.tex);
+  _sumiBlit(F, F.velocity.write); F.velocity.swap();
+
+  // 6. Advect velocity (semi-Lagrangian on itself)
+  _sumiBindQuad(F, F.progAdvect);
+  gl.uniform1i(gl.getUniformLocation(F.progAdvect, 'uVelocity'), 0);
+  gl.uniform1i(gl.getUniformLocation(F.progAdvect, 'uSource'), 1);
+  gl.uniform2f(gl.getUniformLocation(F.progAdvect, 'uTexel'), F.texel[0], F.texel[1]);
+  gl.uniform1f(gl.getUniformLocation(F.progAdvect, 'uDt'), dt);
+  gl.uniform1f(gl.getUniformLocation(F.progAdvect, 'uDissipation'), 0.992);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, F.velocity.read.tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, F.velocity.read.tex);
+  _sumiBlit(F, F.velocity.write); F.velocity.swap();
+
+  // 7. Advect dye by velocity
+  gl.uniform1f(gl.getUniformLocation(F.progAdvect, 'uDissipation'), 0.997);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, F.velocity.read.tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, F.dye.read.tex);
+  _sumiBlit(F, F.dye.write); F.dye.swap();
+}
+
+function _sumiRenderToCanvas(F){
+  const gl = F.gl;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, F.canvas.width, F.canvas.height);
+  _sumiBindQuad(F, F.progDisp);
+  gl.uniform1i(gl.getUniformLocation(F.progDisp, 'uDye'), 0);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, F.dye.read.tex);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+}
+
+function drawSuminagashi(g, dt, T){
+  const dts = Math.min(0.033, dt / 1000);
+
+  // ── Paper backdrop ──
   const paperKey = W + 'x' + H;
   if(!_sumiPaperCv || _sumiPaperKey !== paperKey){
     _sumiPaperCv = _buildSumiPaper();
@@ -2806,119 +3121,90 @@ function drawSuminagashi(g, dt, T){
   g.drawImage(_sumiPaperCv, 0, 0, W, H);
   g.restore();
 
-  // Spawn rate — gentle baseline + bass pushes more drops
-  const bass = (reactor.bass || 0);
-  const vol  = (reactor.vol  || 0);
-  const mid  = (reactor.mid  || 0);
-  const mScale = (window._songMood && window._songMood.intensityScale) || 1;
-  const rate = (0.55 + vol*1.4 + state.motionSpeed*0.4) * mScale;
-  _sumiSpawnT += dts;
-  let safety = 4;
-  while(_sumiSpawnT > 1/Math.max(0.2, rate) && safety-- > 0){
-    _sumiSpawnT -= 1/Math.max(0.2, rate);
-    _sumiDrops.push(_seedSumiDrop());
+  // ── Lazy-init WebGL fluid sim (or fall back silently) ──
+  if(!_sumiFluid && !_sumiFluidFailed){
+    _sumiFluid = _initSumiFluid();
+    if(!_sumiFluid){
+      _sumiFluidFailed = true;
+      console.warn('[suminagashi] WebGL fluid sim unavailable; mode will show only paper backdrop');
+    }
   }
-  // Bass hit = splash of 2-3 contrasting drops near center
+  if(_sumiFluidFailed) return;
+  const F = _sumiFluid;
+
+  const bass = reactor.bass || 0;
+  const vol  = reactor.vol  || 0;
+  const mid  = reactor.mid  || 0;
+  const mScale = (window._songMood && window._songMood.intensityScale) || 1;
+
+  // ── Auto splat: idle baseline + audio scaling ──
+  _sumiSpawnT += dts;
+  const rate = (0.45 + vol*1.0 + state.motionSpeed*0.3) * mScale;
+  let safety = 4;
+  while(_sumiSpawnT > 1 / Math.max(0.15, rate) && safety-- > 0){
+    _sumiSpawnT -= 1 / Math.max(0.15, rate);
+    // Random position + random splash velocity (sim takes over from here)
+    const x01 = 0.12 + Math.random() * 0.76;
+    const y01 = 0.12 + Math.random() * 0.76;
+    const a   = Math.random() * TAU;
+    const sp  = 90 + Math.random() * 140;
+    _sumiColorIdx = (_sumiColorIdx + 1 + (Math.random() < 0.3 ? 1 : 0)) % SUMI_ABSORPTION.length;
+    _sumiSplat(F, x01, y01, Math.cos(a) * sp, Math.sin(a) * sp, _sumiColorIdx, 0.50);
+  }
+
+  // ── Bass beat: cluster splat near centre with contrasting colors ──
   if(bass > 0.55 && state.beatFlash > 0.5){
-    if(!_sumiDrops._lastBeat || (state.beatCount || 0) > _sumiDrops._lastBeat){
-      _sumiDrops._lastBeat = state.beatCount || ((_sumiDrops._lastBeat||0)+1);
-      const baseColor = Math.floor(Math.random()*SUMI_COLORS.length);
-      for(let k=0;k<3;k++){
-        const d = _seedSumiDrop((baseColor + k) % SUMI_COLORS.length);
-        // bias near center for bass impact
-        d.cx = CX + (Math.random()-0.5)*W*0.35;
-        d.cy = CY + (Math.random()-0.5)*H*0.35;
-        d.rTarget *= 0.7;     // smaller burst drops on bass beat
-        _sumiDrops.push(d);
+    if(F.lastBeat !== (state.beatCount || 0)){
+      F.lastBeat = state.beatCount || (F.lastBeat + 1);
+      const baseColor = Math.floor(Math.random() * SUMI_ABSORPTION.length);
+      const cx = 0.35 + Math.random() * 0.30;
+      const cy = 0.35 + Math.random() * 0.30;
+      for(let k = 0; k < 3; k++){
+        const a = Math.random() * TAU;
+        const sp = 220 + Math.random() * 120;
+        _sumiSplat(F,
+          cx + Math.cos(a) * 0.06,
+          cy + Math.sin(a) * 0.06,
+          Math.cos(a) * sp,
+          Math.sin(a) * sp,
+          (baseColor + k) % SUMI_ABSORPTION.length,
+          0.75);
       }
     }
   }
 
-  if(_sumiDrops.length > 18) _sumiDrops.splice(0, _sumiDrops.length - 18);
-
-  // ── Persistent ink canvas — particles accumulate trails on this. NO shadowBlur
-  //    anywhere (that was the perf killer). Real flow comes from advecting many
-  //    independent particles through curl noise + leaving dots that pile up.
-  const inkKey = cv.width + 'x' + cv.height;
-  if(!_sumiInkCv || _sumiInkKey !== inkKey){
-    _sumiInkCv = document.createElement('canvas');
-    _sumiInkCv.width = cv.width;
-    _sumiInkCv.height = cv.height;
-    // Initial fill = paper-cream so multiply over main paper is a no-op until
-    // particles arrive. Without this, an empty canvas (rgba 0,0,0,0) would
-    // multiply to black everywhere.
-    const initG = _sumiInkCv.getContext('2d');
-    initG.fillStyle = '#f0e6d1';
-    initG.fillRect(0, 0, _sumiInkCv.width, _sumiInkCv.height);
-    _sumiInkKey = inkKey;
-  }
-  const ig = _sumiInkCv.getContext('2d');
-  ig.setTransform(state.pixelRatio, 0, 0, state.pixelRatio, 0, 0);
-
-  // Slow ivory wash: ~3-4 sec for full fade. Old marks linger as染痕.
-  ig.globalCompositeOperation = 'source-over';
-  ig.globalAlpha = 0.008;
-  ig.fillStyle = '#f0e6d1';
-  ig.fillRect(0, 0, W, H);
-  ig.globalAlpha = 1;
-
-  // Mid + bass amplify particle motion through the flow field
-  const flowBoost = 1 + mid*1.6 + bass*0.7;
-
-  for(let di = _sumiDrops.length-1; di >= 0; di--){
-    const d = _sumiDrops[di];
-    d.age += dts;
-
-    // Advect + render each particle. Particles that die get nulled out;
-    // when ALL particles dead, the drop is removed.
-    let aliveCount = 0;
-    const ps = d.particles;
-    for(let pi = 0; pi < ps.length; pi++){
-      const p = ps[pi];
-      if(!p) continue;
-      p.life += dts;
-      if(p.life > p.maxLife){ ps[pi] = null; continue; }
-      aliveCount++;
-
-      // Curl flow field — divergence-free → real swirls instead of expanding circle
-      const f = _sumiCurl(p.x, p.y, d.flowScale, _sumiFlowT + d.flowSeed);
-      p.vx += f.vx * d.flowStrength * dts * flowBoost;
-      p.vy += f.vy * d.flowStrength * dts * flowBoost;
-      // Water damping (so it doesn't fly away)
-      p.vx *= 0.96;
-      p.vy *= 0.96;
-      p.x  += p.vx * dts;
-      p.y  += p.vy * dts;
-
-      // Fade in fast, fade out slow → particle sits in canvas for a while
-      const t01 = p.life / p.maxLife;
-      const a = (t01 < 0.1 ? t01/0.1 : 1 - t01) * 0.32;
-      if(a <= 0) continue;
-
-      ig.fillStyle = `rgba(${d.color}, ${a})`;
-      ig.beginPath();
-      ig.arc(p.x, p.y, p.r * SCALE, 0, TAU);
-      ig.fill();
-    }
-    if(aliveCount === 0){ _sumiDrops.splice(di, 1); continue; }
+  // ── Mid: occasional swirl injection (perturb without adding dye) ──
+  if(mid > 0.55 && Math.random() < 0.04){
+    const x01 = Math.random();
+    const y01 = Math.random();
+    const a   = Math.random() * TAU;
+    const sp  = 120 + Math.random() * 80;
+    // Inject velocity by splatting with dye strength 0 (just impulse)
+    const F2 = F.gl;
+    _sumiBindQuad(F, F.progSplat);
+    F2.uniform1i(F2.getUniformLocation(F.progSplat, 'uSource'), 0);
+    F2.activeTexture(F2.TEXTURE0);
+    F2.bindTexture(F2.TEXTURE_2D, F.velocity.read.tex);
+    F2.uniform2f(F2.getUniformLocation(F.progSplat, 'uPoint'), x01, 1 - y01);
+    F2.uniform3f(F2.getUniformLocation(F.progSplat, 'uColor'), Math.cos(a) * sp, -Math.sin(a) * sp, 0);
+    F2.uniform1f(F2.getUniformLocation(F.progSplat, 'uRadius'), 0.005);
+    F2.uniform1f(F2.getUniformLocation(F.progSplat, 'uAspect'), F.aspect);
+    _sumiBlit(F, F.velocity.write); F.velocity.swap();
   }
 
-  // ── Composite ink canvas onto main with multiply: paper × ink = dyed paper ──
+  // ── Step the sim ──
+  const simDt = Math.min(0.018, dts) * (1 + mid * 0.4 + bass * 0.25);
+  _sumiStep(F, simDt);
+
+  // ── Render fluid to its WebGL canvas ──
+  _sumiRenderToCanvas(F);
+
+  // ── Composite fluid onto paper with multiply ──
+  // Display shader output = (1 - dye_absorption). Multiply over paper:
+  //   paper × (1 - absorption) = paper minus absorbed bands = ink-tinted paper.
   g.save();
   g.globalCompositeOperation = 'multiply';
-  // Convert "ink density" (additive on white) to "paper multiplier" via the
-  // existing rgba dots — already in the right form since they're dark colors
-  // painted onto the (initially white) ink canvas, and multiply leaves the rest
-  // of the paper untouched where ink alpha is low.
-  g.drawImage(_sumiInkCv, 0, 0, W, H);
-  g.restore();
-
-  // Re-render any extra subtle paper grain on top so heavily-dyed areas still
-  // show paper texture (subtle — keeps wash from looking like flat color).
-  g.save();
-  g.globalCompositeOperation = 'overlay';
-  g.globalAlpha = 0.18;
-  g.drawImage(_sumiPaperCv, 0, 0, W, H);
+  g.drawImage(F.canvas, 0, 0, W, H);
   g.restore();
 }
 
