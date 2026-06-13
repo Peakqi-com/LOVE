@@ -583,6 +583,14 @@
             <label class="mode-chip"><input type="checkbox" data-mode="aurora" /><span><strong>Aurora</strong><em>vertical light curtains</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="inkWash" /><span><strong>Ink wash</strong><em>水墨 · brush &amp; bleed</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="suminagashi" /><span><strong>Suminagashi</strong><em>墨流し · 漂浮墨水漩渦</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="smokeFlow" /><span><strong>Smoke flow</strong><em>煙流 · 上升輕煙</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="vortexPool" /><span><strong>Vortex pool</strong><em>漩渦池 · 中央旋入</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="windRiver" /><span><strong>Wind river</strong><em>風河 · 橫向流層</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="solarFlare" /><span><strong>Solar flare</strong><em>日焰 · 邊緣弧光</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="streamlines" /><span><strong>Streamlines</strong><em>流線 · 長曲流跡</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="stardust" /><span><strong>Stardust</strong><em>星塵 · 飄移微塵</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="cometSwoop" /><span><strong>Comet swoop</strong><em>彗星 · 拖尾劃過</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="mistVeil" /><span><strong>Mist veil</strong><em>霧紗 · 柔軟雲霧</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="polygon" /><span><strong>Polygon</strong><em>多邊 · wireframe mesh</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="matrix" /><span><strong>Matrix rain</strong><em>數位雨 · 緑の文字</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="eva" /><span><strong>EVA HUD</strong><em>新世紀 · AT-field &amp; warnings</em></span></label>
@@ -1625,6 +1633,14 @@ const state = {
     aurora:       false,   // shimmering vertical curtains
     inkWash:      false,   // 水墨 brush strokes & bleeding ink
     suminagashi:  false,   // 墨流し floating ink drops on paper, swirl + diffuse
+    smokeFlow:    false,   // 煙流 rising whispy smoke columns via curl noise
+    vortexPool:   false,   // 漩渦池 central whirlpool, particles spiral inward
+    windRiver:    false,   // 風河 horizontal flowing layers of colored dots
+    solarFlare:   false,   // 日焰 arcing plasma filaments emerging from edges
+    streamlines:  false,   // 流線 long curving fluid-flow trails
+    stardust:     false,   // 星塵 tiny drifting dust everywhere
+    cometSwoop:   false,   // 彗星 large arcing motion-blur trails
+    mistVeil:     false,   // 霧紗 soft drifting fog patches
     pixel8:       false,   // 8-bit pixelated post-effect with palette quantization
     popArt:       false,   // 普普藝術 ben-day dots, comic panels, primary slabs
     glitch:       false,   // databend channel split, scan lines, beat-triggered shifts
@@ -4270,7 +4286,7 @@ document.querySelectorAll('[data-preset]').forEach(b=>{
 // ============================================================
 // Auto-cycle: detect music sections and rotate enabled modes
 // ============================================================
-const CYCLE_MODES = ['lineTrace','flowField','curlNoise','attractor','substrate','reaction','sumie','opart','lissajous','voronoi','boids','chladni','dla','spectro','meta','synth','life','lsys','harmono','truchet','nbody','spiro','marbling','hilbert','lenia','pendulum','galaxy','penrose','pwave','mandel','wireworld','mandalaRings','waveform','constellation','spiral','ripples','crystals','ribbons','tunnel','halftone','petals','aurora','inkWash','suminagashi','popArt','polygon','matrix','glitch','eva'];
+const CYCLE_MODES = ['lineTrace','flowField','curlNoise','attractor','substrate','reaction','sumie','opart','lissajous','voronoi','boids','chladni','dla','spectro','meta','synth','life','lsys','harmono','truchet','nbody','spiro','marbling','hilbert','lenia','pendulum','galaxy','penrose','pwave','mandel','wireworld','mandalaRings','waveform','constellation','spiral','ripples','crystals','ribbons','tunnel','halftone','petals','aurora','inkWash','suminagashi','smokeFlow','vortexPool','windRiver','solarFlare','streamlines','stardust','cometSwoop','mistVeil','popArt','polygon','matrix','glitch','eva'];
 let _cycleIdx = 0;
 function maybeAutoCycle(now){
   if(!state.autoCycle) return;
@@ -4349,6 +4365,14 @@ window._drawModes = function(g, dt, T){
   if(state.modes.aurora)        drawAurora(g, dt, T);
   if(state.modes.inkWash)       drawInkWash(g, dt, T);
   if(state.modes.suminagashi)   drawSuminagashi(g, dt, T);
+  if(state.modes.smokeFlow)     drawSmokeFlow(g, dt, T);
+  if(state.modes.vortexPool)    drawVortexPool(g, dt, T);
+  if(state.modes.windRiver)     drawWindRiver(g, dt, T);
+  if(state.modes.solarFlare)    drawSolarFlare(g, dt, T);
+  if(state.modes.streamlines)   drawStreamlines(g, dt, T);
+  if(state.modes.stardust)      drawStardust(g, dt, T);
+  if(state.modes.cometSwoop)    drawCometSwoop(g, dt, T);
+  if(state.modes.mistVeil)      drawMistVeil(g, dt, T);
   if(state.modes.popArt)        drawPopArt(g, dt, T);
   if(state.modes.polygon)       drawPolygon(g, dt, T);
   if(state.modes.matrix)        drawMatrix(g, dt, T);
@@ -5285,7 +5309,10 @@ function randomizeAll(){
     life:3, lsys:2, harmono:2, truchet:2, nbody:3, spiro:2, marbling:2, hilbert:2, lenia:4,
     pendulum:2, galaxy:2, penrose:3, pwave:1, mandel:4, wireworld:2,
     mandalaRings:1, waveform:1, constellation:1, spiral:2, ripples:1, crystals:2,
-    ribbons:2, tunnel:2, petals:1, aurora:2, inkWash:3, suminagashi:3, polygon:2, matrix:3, eva:3,
+    ribbons:2, tunnel:2, petals:1, aurora:2, inkWash:3, suminagashi:3,
+    smokeFlow:2, vortexPool:2, windRiver:2, solarFlare:2, streamlines:2,
+    stardust:1, cometSwoop:1, mistVeil:1,
+    polygon:2, matrix:3, eva:3,
     // Filters (post-process style overlays)
     opart:2, halftone:2, pixel8:5, popArt:4, glitch:4,
     // Motion (rhythm modifiers)

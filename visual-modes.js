@@ -2741,58 +2741,58 @@ function _buildSumiPaper(){
 }
 
 function _seedSumiDrop(forceColor){
-  // Each drop = concentric thin rings (NOT a filled blob) — that's the wood-
-  // grain look of real Suminagashi. Vertices per ring are advected by curl
-  // noise so the rings ripple and weave into each other.
-  const N = 72;                              // verts per ring (smooth curves)
-  const RINGS = 7;                           // concentric rings per drop
-  const ringStep = (5 + Math.random()*3) * SCALE;  // radial gap between rings
-  const cx = (0.15 + Math.random()*0.7) * W;
-  const cy = (0.15 + Math.random()*0.7) * H;
-  // Cycle through the 4 traditional colors so consecutive drops contrast
+  // Each drop = a cauliflower-edged ink cloud. Rendered as 3 nested filled
+  // polygons (outer halo / mid wash / dense core), each with its own multi-
+  // octave noise distortion of the radial boundary. The layered multiply on
+  // cream paper gives the proper "有深有淺" tonal depth visible in real ink-wash.
+  const cx = (0.10 + Math.random()*0.80) * W;
+  const cy = (0.10 + Math.random()*0.80) * H;
   let color;
   if(forceColor != null) color = SUMI_COLORS[forceColor % SUMI_COLORS.length];
   else {
     _sumiColorIdx = (_sumiColorIdx + 1 + (Math.random()<0.3 ? 1 : 0)) % SUMI_COLORS.length;
     color = SUMI_COLORS[_sumiColorIdx];
   }
-  // Each ring has its own vertex array (shared angles, different base radii)
-  const rings = [];
-  for(let r=0; r<RINGS; r++){
-    const baseR = (3 + r*ringStep) * (1 + Math.random()*0.05);
-    const verts = [];
-    for(let i=0;i<N;i++){
-      verts.push({
-        a: (i/N) * TAU,
-        dx: 0, dy: 0,
-        rj: 1 + (Math.random()-0.5) * 0.04,
-      });
-    }
-    rings.push({ baseR, verts });
-  }
+  // rTarget = final cloud radius after diffusion; growSpeed = how fast it gets there
   return {
-    cx, cy, color, rings,
+    cx, cy, color,
+    vx: (Math.random()-0.5) * 5,             // very gentle drift on water
+    vy: (Math.random()-0.5) * 5,
     life: 0,
-    spread: 9 + Math.random()*10,             // px/s — slower because rings already extend outward
-    fadeStart: 11 + Math.random()*7,
-    fadeDuration: 9 + Math.random()*7,
-    flowScale: 0.0020 + Math.random()*0.0014,
-    flowStrength: 28 + Math.random()*22,      // stronger flow → more dramatic swirl
-    flowSeed: Math.random() * 1000,
+    rTarget:    (70 + Math.random()*180) * SCALE,
+    growSpeed:  0.35 + Math.random()*0.4,    // how aggressively it expands
+    fadeStart:  10 + Math.random()*8,
+    fadeDuration: 12 + Math.random()*9,
+    // 3 independent noise seeds for the 3 layers — they DON'T overlap perfectly,
+    // which is what gives the inner tone variation (some patches darker, some lighter).
+    s1: Math.random()*1000,
+    s2: Math.random()*1000,
+    s3: Math.random()*1000,
+    // Each cloud has its own morph timer so they don't pulse in sync
+    tOffset: Math.random()*100,
   };
 }
 
-// Curl of pseudo-noise field — divergence-free velocity, gives swirl/marbling
-function _sumiCurl(x, y, k, t){
-  const e = 30;   // sampling stencil (paper units)
-  const n1 = noise2((x      )*k, (y - e)*k + t);
-  const n2 = noise2((x      )*k, (y + e)*k + t);
-  const n3 = noise2((x - e  )*k, (y    )*k + t);
-  const n4 = noise2((x + e  )*k, (y    )*k + t);
-  return {
-    vx: (n2 - n1),
-    vy: -(n4 - n3),
-  };
+// Draw one polygon layer with cauliflower edges. baseR = target radius;
+// alpha = fill alpha; seed = noise offset; tMorph = slow time evolution.
+function _drawSumiCloudLayer(g, cx, cy, baseR, alpha, color, seed, tMorph){
+  const N = 110;            // many verts so cauliflower edges are smooth
+  g.fillStyle = `rgba(${color}, ${alpha})`;
+  g.beginPath();
+  for(let i = 0; i <= N; i++){
+    const a = (i / N) * TAU;
+    const ca = Math.cos(a), sa = Math.sin(a);
+    // Multi-octave noise — low freq lobes + mid bumps + high freq cauliflower fingers
+    const n1 = noise2(ca*1.6 + seed,    sa*1.6 + tMorph);          // smooth lobes
+    const n2 = noise2(ca*5.3 + seed*0.7, sa*5.3 + tMorph*1.4);      // mid bumps
+    const n3 = noise2(ca*14  + seed*1.3, sa*14  + tMorph*1.9);      // fine fingers
+    const dist = baseR * (1 + n1*0.34 + n2*0.20 + n3*0.11);
+    const x = cx + ca * dist;
+    const y = cy + sa * dist;
+    if(i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+  }
+  g.closePath();
+  g.fill();
 }
 
 function drawSuminagashi(g, dt, T){
@@ -2836,7 +2836,7 @@ function drawSuminagashi(g, dt, T){
         // bias near center for bass impact
         d.cx = CX + (Math.random()-0.5)*W*0.35;
         d.cy = CY + (Math.random()-0.5)*H*0.35;
-        d.r0 *= 0.7;
+        d.rTarget *= 0.7;     // smaller burst drops on bass beat
         _sumiDrops.push(d);
       }
     }
@@ -2845,14 +2845,12 @@ function drawSuminagashi(g, dt, T){
   if(_sumiDrops.length > 18) _sumiDrops.splice(0, _sumiDrops.length - 18);
 
   g.save();
-  // Always multiply — paper is cream, ink colors are dark, multiply gives the
-  // "ink dyed into paper" look that matches the reference exactly.
+  // Multiply on cream paper = ink soaks into paper, dark stays dark, colors
+  // overlap into darker washes — exactly the "有深有淺" tonal depth.
   g.globalCompositeOperation = 'multiply';
-  g.lineJoin = 'round';
-  g.lineCap = 'round';
 
-  // Mid-range adds extra swirl perturbation — wash 流動 with the music
-  const swirlBoost = 1 + mid*1.6 + bass*0.8;
+  // mid + bass perturb the morph time → "flowing" feel synced to music
+  const morphRate = 1 + mid*1.4 + bass*0.6;
 
   for(let di = _sumiDrops.length-1; di >= 0; di--){
     const d = _sumiDrops[di];
@@ -2860,45 +2858,28 @@ function drawSuminagashi(g, dt, T){
     const totalLife = d.fadeStart + d.fadeDuration;
     if(d.life > totalLife){ _sumiDrops.splice(di, 1); continue; }
 
+    // Gentle drift on water surface
+    d.cx += d.vx * dts;
+    d.cy += d.vy * dts;
+
     const fade = d.life < d.fadeStart
-      ? (d.life < 0.35 ? d.life/0.35 : 1)
+      ? Math.min(1, d.life / 0.6)
       : 1 - (d.life - d.fadeStart) / d.fadeDuration;
     if(fade <= 0) continue;
 
-    // How much extra radius the drop has spread on the water since spawn
-    const growth = d.life * d.spread;
+    // Cloud grows asymptotically toward rTarget (fast at first, then slows)
+    const grow = 1 - Math.exp(-d.life * d.growSpeed);
+    const r = d.rTarget * grow;
 
-    // ─── For each concentric ring: advect verts by curl, stroke as polyline ───
-    for(let ri = 0; ri < d.rings.length; ri++){
-      const ring = d.rings[ri];
-      const r = ring.baseR + growth;
+    // Morph time — slow base + music-reactive
+    const tMorph = _sumiFlowT * morphRate + d.tOffset;
 
-      // Advect every vert by the local curl-noise velocity
-      for(const v of ring.verts){
-        const px = d.cx + v.dx + Math.cos(v.a) * r * v.rj;
-        const py = d.cy + v.dy + Math.sin(v.a) * r * v.rj;
-        const f = _sumiCurl(px, py, d.flowScale, _sumiFlowT + d.flowSeed);
-        v.dx += f.vx * d.flowStrength * dts * swirlBoost;
-        v.dy += f.vy * d.flowStrength * dts * swirlBoost;
-      }
-
-      // Slightly fade outer rings (older edge of the drop) so the core reads cleaner
-      const ringFade = 1 - (ri / (d.rings.length * 1.4));
-      const lineAlpha = 0.78 * fade * ringFade;
-      g.strokeStyle = `rgba(${d.color}, ${lineAlpha})`;
-      g.lineWidth = (0.7 + (ri === 0 ? 0.4 : 0)) * SCALE;
-
-      g.beginPath();
-      for(let i=0;i<ring.verts.length;i++){
-        const v = ring.verts[i];
-        const x = d.cx + v.dx + Math.cos(v.a) * r * v.rj;
-        const y = d.cy + v.dy + Math.sin(v.a) * r * v.rj;
-        if(i === 0) g.moveTo(x, y);
-        else g.lineTo(x, y);
-      }
-      g.closePath();
-      g.stroke();
-    }
+    // ─── 3 nested layers: outer halo / mid wash / dense core ───
+    // Each at its own noise seed so they don't perfectly overlap → patches of
+    // darker / lighter ink inside the cloud (the "有深有淺" effect).
+    _drawSumiCloudLayer(g, d.cx, d.cy, r * 1.35, 0.10 * fade, d.color, d.s1, tMorph);
+    _drawSumiCloudLayer(g, d.cx, d.cy, r * 1.00, 0.18 * fade, d.color, d.s2, tMorph * 1.15);
+    _drawSumiCloudLayer(g, d.cx, d.cy, r * 0.62, 0.32 * fade, d.color, d.s3, tMorph * 1.3);
   }
 
   g.restore();
@@ -3276,5 +3257,461 @@ function drawEva(g, dt, T){
   g.moveTo(cx, cy+ret*0.4); g.lineTo(cx, cy+ret*1.8);
   g.stroke();
   g.beginPath(); g.arc(cx, cy, ret*0.7, 0, TAU); g.stroke();
+  g.restore();
+}
+
+// ============================================================
+// SHARED CURL-NOISE HELPER for all fluid-flow modes below.
+// Divergence-free velocity field → particles trace organic swirls instead of
+// circles or grids. Same trick used inside Suminagashi above.
+// ============================================================
+function _curlVel(x, y, k, t){
+  const e = 28;
+  const n1 = noise2(x*k,      (y - e)*k + t);
+  const n2 = noise2(x*k,      (y + e)*k + t);
+  const n3 = noise2((x - e)*k, y*k + t);
+  const n4 = noise2((x + e)*k, y*k + t);
+  return { vx: (n2 - n1), vy: -(n4 - n3) };
+}
+
+// ============================================================
+// 1. SMOKE FLOW 煙流  — rising whispy smoke columns advected by curl
+// ============================================================
+let _smokeParts = [];
+let _smokeFlowT = 0;
+function drawSmokeFlow(g, dt, T){
+  const dts = dt / 1000;
+  _smokeFlowT += dts * 0.22;
+  const vol  = reactor.vol  || 0;
+  const bass = reactor.bass || 0;
+  // Spawn from bottom — population scales with vol
+  const targetN = 90 + Math.floor(vol * 220);
+  while(_smokeParts.length < targetN){
+    _smokeParts.push({
+      x: Math.random() * W,
+      y: H + 10 + Math.random() * 30,
+      r: (16 + Math.random() * 28) * SCALE,
+      vy: -(18 + Math.random() * 14),
+      life: 0,
+      maxLife: 4 + Math.random() * 3.5,
+      flowSeed: Math.random() * 1000,
+      gray: 200 + Math.floor(Math.random() * 50),
+    });
+  }
+  // Bass burst — extra dense whisps near center
+  if(bass > 0.55 && state.beatFlash > 0.5){
+    for(let i = 0; i < 10; i++){
+      _smokeParts.push({
+        x: CX + (Math.random() - 0.5) * W * 0.5,
+        y: H + 20,
+        r: (28 + Math.random() * 30) * SCALE,
+        vy: -(34 + Math.random() * 20),
+        life: 0,
+        maxLife: 3.5 + Math.random() * 2,
+        flowSeed: Math.random() * 1000,
+        gray: 230,
+      });
+    }
+  }
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  for(let i = _smokeParts.length - 1; i >= 0; i--){
+    const p = _smokeParts[i];
+    p.life += dts;
+    if(p.life > p.maxLife || p.y < -p.r){ _smokeParts.splice(i, 1); continue; }
+    const f = _curlVel(p.x, p.y, 0.0028, _smokeFlowT + p.flowSeed);
+    p.x += f.vx * 60 * dts;
+    p.y += p.vy * dts + f.vy * 40 * dts;
+    p.r += 22 * dts;     // expand as it rises
+    const t01 = p.life / p.maxLife;
+    const a = (t01 < 0.15 ? t01 / 0.15 : 1 - t01) * 0.35;
+    const grad = g.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r);
+    grad.addColorStop(0,   `rgba(${p.gray},${p.gray},${p.gray},${a})`);
+    grad.addColorStop(0.6, `rgba(${p.gray},${p.gray},${p.gray},${a * 0.4})`);
+    grad.addColorStop(1,   `rgba(${p.gray},${p.gray},${p.gray},0)`);
+    g.fillStyle = grad;
+    g.beginPath(); g.arc(p.x, p.y, p.r, 0, TAU); g.fill();
+  }
+  g.restore();
+}
+
+// ============================================================
+// 2. VORTEX POOL 漩渦池  — central whirlpool, particles spiral inward
+// ============================================================
+let _vortexParts = [];
+let _vortexFlowT = 0;
+function drawVortexPool(g, dt, T){
+  const dts = dt / 1000;
+  _vortexFlowT += dts * 0.15;
+  const dom = dominantEmo();
+  const vol = reactor.vol || 0;
+  // Maintain population
+  const targetN = 220 + Math.floor(vol * 200);
+  while(_vortexParts.length < targetN){
+    const a = Math.random() * TAU;
+    const r = (0.45 + Math.random() * 0.55) * Math.min(W, H) * 0.6;
+    _vortexParts.push({
+      a, r,
+      x: CX + Math.cos(a) * r,
+      y: CY + Math.sin(a) * r,
+      life: Math.random() * 6,
+      hue: lerp(dom.hue[0], dom.hue[1], Math.random()),
+      flowSeed: Math.random() * 1000,
+    });
+  }
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  const swirl = 1 + (reactor.mid || 0) * 1.4;
+  for(let i = _vortexParts.length - 1; i >= 0; i--){
+    const p = _vortexParts[i];
+    p.life += dts;
+    // Angular velocity grows as particle approaches center (1/r law, capped)
+    const rNow = Math.hypot(p.x - CX, p.y - CY);
+    if(rNow < 6 || p.life > 9){ _vortexParts.splice(i, 1); continue; }
+    const angV = 0.6 * swirl * (1 + 80 / Math.max(40, rNow));
+    p.a = Math.atan2(p.y - CY, p.x - CX) + angV * dts;
+    const radIn = 26 * dts * (1 + (reactor.bass || 0) * 1.2);
+    const newR = rNow - radIn;
+    // Add curl perturbation so streaks aren't perfect spirals
+    const f = _curlVel(p.x, p.y, 0.0022, _vortexFlowT + p.flowSeed);
+    const px = CX + Math.cos(p.a) * newR + f.vx * 18;
+    const py = CY + Math.sin(p.a) * newR + f.vy * 18;
+    const alpha = Math.min(0.65, 0.4 + (1 - rNow / (Math.min(W, H) * 0.6)) * 0.4);
+    g.strokeStyle = `hsla(${p.hue}, ${dom.sat}%, ${state.lightMode ? 35 : 65}%, ${alpha})`;
+    g.lineWidth = 1.1 * SCALE;
+    g.beginPath();
+    g.moveTo(p.x, p.y);
+    g.lineTo(px, py);
+    g.stroke();
+    p.x = px; p.y = py;
+  }
+  g.restore();
+}
+
+// ============================================================
+// 3. WIND RIVER 風河  — horizontal flowing layers of colored dots, curl-bent
+// ============================================================
+let _windParts = [];
+let _windFlowT = 0;
+function drawWindRiver(g, dt, T){
+  const dts = dt / 1000;
+  _windFlowT += dts * 0.2;
+  const dom = dominantEmo();
+  const vol = reactor.vol || 0;
+  // Spawn from left edge in horizontal layers
+  const LAYERS = 7;
+  const targetN = 280 + Math.floor(vol * 200);
+  while(_windParts.length < targetN){
+    const layer = Math.floor(Math.random() * LAYERS);
+    const y0 = (layer + 0.5) / LAYERS * H;
+    _windParts.push({
+      x: -10,
+      y: y0 + (Math.random() - 0.5) * (H / LAYERS) * 0.6,
+      vx: 70 + Math.random() * 90,
+      hue: lerp(dom.hue[0], dom.hue[1], layer / LAYERS),
+      r: (1 + Math.random() * 1.4) * SCALE,
+      flowSeed: Math.random() * 1000,
+    });
+  }
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  const flowMul = 1 + (reactor.mid || 0) * 1.2;
+  for(let i = _windParts.length - 1; i >= 0; i--){
+    const p = _windParts[i];
+    p.x += p.vx * dts;
+    const f = _curlVel(p.x, p.y, 0.0024, _windFlowT + p.flowSeed);
+    p.y += f.vy * 65 * dts * flowMul;
+    p.x += f.vx * 22 * dts;
+    if(p.x > W + 20 || p.y < -10 || p.y > H + 10){ _windParts.splice(i, 1); continue; }
+    g.fillStyle = `hsla(${p.hue}, ${dom.sat + 10}%, ${state.lightMode ? 35 : 65}%, 0.7)`;
+    g.beginPath(); g.arc(p.x, p.y, p.r, 0, TAU); g.fill();
+  }
+  g.restore();
+}
+
+// ============================================================
+// 4. SOLAR FLARE 日焰  — arcing plasma filaments emerging from edges
+// ============================================================
+let _solarArcs = [];
+let _solarSpawnT = 0;
+function drawSolarFlare(g, dt, T){
+  const dts = dt / 1000;
+  _solarSpawnT += dts;
+  const bass = reactor.bass || 0;
+  const treble = reactor.treble || 0;
+  const spawnInterval = Math.max(0.6, 2.0 - bass * 1.2 - state.motionSpeed * 0.4);
+  if(_solarSpawnT > spawnInterval){
+    _solarSpawnT = 0;
+    // Filament path: start from random edge, arc inward, end at another edge
+    const edge0 = Math.floor(Math.random() * 4);
+    const edge1 = (edge0 + 2 + Math.floor(Math.random() * 2)) % 4;
+    const pickEdge = (e) => {
+      const t = Math.random();
+      if(e === 0) return { x: t * W, y: 0 };
+      if(e === 1) return { x: W, y: t * H };
+      if(e === 2) return { x: t * W, y: H };
+      return { x: 0, y: t * H };
+    };
+    const p0 = pickEdge(edge0);
+    const p1 = pickEdge(edge1);
+    const mx = (p0.x + p1.x) / 2 + (Math.random() - 0.5) * W * 0.6;
+    const my = (p0.y + p1.y) / 2 + (Math.random() - 0.5) * H * 0.6;
+    const pts = [];
+    const N = 50;
+    for(let i = 0; i <= N; i++){
+      const u = i / N;
+      const px = (1 - u) * (1 - u) * p0.x + 2 * (1 - u) * u * mx + u * u * p1.x;
+      const py = (1 - u) * (1 - u) * p0.y + 2 * (1 - u) * u * my + u * u * p1.y;
+      pts.push({ x: px, y: py, dx: 0, dy: 0 });
+    }
+    _solarArcs.push({
+      pts,
+      life: 0,
+      maxLife: 4 + Math.random() * 3,
+      hue: 18 + Math.random() * 40,          // orange→yellow range
+      flowSeed: Math.random() * 1000,
+      width: (2 + Math.random() * 3) * SCALE,
+    });
+  }
+  if(_solarArcs.length > 14) _solarArcs.splice(0, _solarArcs.length - 14);
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  for(let i = _solarArcs.length - 1; i >= 0; i--){
+    const arc = _solarArcs[i];
+    arc.life += dts;
+    if(arc.life > arc.maxLife){ _solarArcs.splice(i, 1); continue; }
+    const t01 = arc.life / arc.maxLife;
+    const fade = t01 < 0.15 ? t01 / 0.15 : (1 - t01) * 1.1;
+    if(fade <= 0) continue;
+    // Advect each pt by curl
+    for(const p of arc.pts){
+      const f = _curlVel(p.x + p.dx, p.y + p.dy, 0.0025, T * 0.00012 + arc.flowSeed);
+      p.dx += f.vx * 22 * dts;
+      p.dy += f.vy * 22 * dts;
+    }
+    // Glow underlayer
+    g.strokeStyle = `hsla(${arc.hue}, 95%, 60%, ${0.25 * fade})`;
+    g.lineWidth = arc.width * 2.4;
+    g.beginPath();
+    for(let k = 0; k < arc.pts.length; k++){
+      const p = arc.pts[k];
+      const x = p.x + p.dx, y = p.y + p.dy;
+      if(k === 0) g.moveTo(x, y); else g.lineTo(x, y);
+    }
+    g.stroke();
+    // Hot core
+    g.strokeStyle = `hsla(${arc.hue + 10}, 100%, 85%, ${0.85 * fade})`;
+    g.lineWidth = arc.width;
+    g.stroke();
+  }
+  g.restore();
+}
+
+// ============================================================
+// 5. STREAMLINES 流線  — long curving trails. Each stream remembers history,
+// drawn as a tapered ribbon. Many streams = woven flowing tapestry.
+// ============================================================
+let _streamLines = [];
+let _streamFlowT = 0;
+function drawStreamlines(g, dt, T){
+  const dts = dt / 1000;
+  _streamFlowT += dts * 0.16;
+  const dom = dominantEmo();
+  const targetN = 18 + Math.floor(state.motionSpeed * 8);
+  while(_streamLines.length < targetN){
+    const x = Math.random() * W;
+    const y = Math.random() * H;
+    _streamLines.push({
+      x, y,
+      trail: [{ x, y }],
+      hue: lerp(dom.hue[0], dom.hue[1], Math.random()),
+      flowSeed: Math.random() * 1000,
+      life: 0,
+      maxLife: 6 + Math.random() * 4,
+      width: (1.2 + Math.random() * 1.6) * SCALE,
+    });
+  }
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  const flowMul = 1 + (reactor.mid || 0) * 1.4 + (reactor.bass || 0) * 0.5;
+  for(let i = _streamLines.length - 1; i >= 0; i--){
+    const s = _streamLines[i];
+    s.life += dts;
+    if(s.life > s.maxLife){ _streamLines.splice(i, 1); continue; }
+    const f = _curlVel(s.x, s.y, 0.0021, _streamFlowT + s.flowSeed);
+    s.x += f.vx * 110 * dts * flowMul;
+    s.y += f.vy * 110 * dts * flowMul;
+    s.trail.push({ x: s.x, y: s.y });
+    if(s.trail.length > 60) s.trail.shift();
+    const t01 = s.life / s.maxLife;
+    const fade = t01 < 0.1 ? t01 / 0.1 : 1 - t01;
+    g.strokeStyle = `hsla(${s.hue}, ${dom.sat + 10}%, ${state.lightMode ? 38 : 62}%, ${0.6 * fade})`;
+    g.lineWidth = s.width;
+    g.beginPath();
+    for(let k = 0; k < s.trail.length; k++){
+      const p = s.trail[k];
+      if(k === 0) g.moveTo(p.x, p.y); else g.lineTo(p.x, p.y);
+    }
+    g.stroke();
+  }
+  g.restore();
+}
+
+// ============================================================
+// 6. STARDUST 星塵  — tiny drifting dust everywhere, twinkles, wraps screen
+// ============================================================
+let _stardustParts = null;
+let _stardustFlowT = 0;
+function drawStardust(g, dt, T){
+  const dts = dt / 1000;
+  _stardustFlowT += dts * 0.08;
+  const dom = dominantEmo();
+  // Fixed population, lazy init / size match
+  const target = 360;
+  if(!_stardustParts){
+    _stardustParts = [];
+    for(let i = 0; i < target; i++){
+      _stardustParts.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        r: (0.6 + Math.random() * 1.4) * SCALE,
+        twinklePh: Math.random() * TAU,
+        twinkleSpd: 1 + Math.random() * 2,
+        hue: lerp(dom.hue[0], dom.hue[1], Math.random()),
+        flowSeed: Math.random() * 1000,
+      });
+    }
+  }
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  const tT = T * 0.001;
+  const flowMul = 1 + (reactor.vol || 0) * 0.8;
+  for(let i = 0; i < _stardustParts.length; i++){
+    const p = _stardustParts[i];
+    const f = _curlVel(p.x, p.y, 0.0019, _stardustFlowT + p.flowSeed);
+    p.x += f.vx * 30 * dts * flowMul;
+    p.y += f.vy * 30 * dts * flowMul;
+    // wrap
+    if(p.x < -5) p.x = W + 5;
+    if(p.x > W + 5) p.x = -5;
+    if(p.y < -5) p.y = H + 5;
+    if(p.y > H + 5) p.y = -5;
+    const twinkle = 0.45 + 0.55 * Math.abs(Math.sin(tT * p.twinkleSpd + p.twinklePh));
+    g.fillStyle = `hsla(${p.hue}, ${dom.sat - 10}%, ${state.lightMode ? 35 : 80}%, ${twinkle * 0.7})`;
+    g.beginPath(); g.arc(p.x, p.y, p.r, 0, TAU); g.fill();
+  }
+  g.restore();
+}
+
+// ============================================================
+// 7. COMET SWOOP 彗星  — long arcing motion-blur trails sweeping across canvas
+// ============================================================
+let _cometParts = [];
+let _cometSpawnT = 0;
+function drawCometSwoop(g, dt, T){
+  const dts = dt / 1000;
+  _cometSpawnT += dts;
+  const bass = reactor.bass || 0;
+  const dom = dominantEmo();
+  // Spawn on beat or on a timer fallback
+  const beatNow = state.beatFlash > 0.55 && (_cometParts._lastBeat || 0) < (state.beatCount || 0);
+  const timerNow = _cometSpawnT > 1.4 - state.motionSpeed * 0.4;
+  if(beatNow || timerNow){
+    if(beatNow) _cometParts._lastBeat = state.beatCount || ((_cometParts._lastBeat || 0) + 1);
+    _cometSpawnT = 0;
+    const edge = Math.floor(Math.random() * 4);
+    let x0, y0, vx, vy;
+    const sp = 380 + Math.random() * 220;
+    if(edge === 0){      x0 = Math.random() * W; y0 = -10;     vx = (Math.random() - 0.5) * sp * 0.6; vy =  sp; }
+    else if(edge === 1){ x0 = W + 10;            y0 = Math.random() * H; vx = -sp;                  vy = (Math.random() - 0.5) * sp * 0.6; }
+    else if(edge === 2){ x0 = Math.random() * W; y0 = H + 10;  vx = (Math.random() - 0.5) * sp * 0.6; vy = -sp; }
+    else {               x0 = -10;               y0 = Math.random() * H; vx =  sp;                  vy = (Math.random() - 0.5) * sp * 0.6; }
+    _cometParts.push({
+      x: x0, y: y0, vx, vy,
+      trail: [{ x: x0, y: y0 }],
+      hue: lerp(dom.hue[0], dom.hue[1], Math.random()),
+      life: 0, maxLife: 2.4 + Math.random() * 0.8,
+      width: (3 + Math.random() * 2.5) * SCALE,
+    });
+  }
+  if(_cometParts.length > 10) _cometParts.splice(0, _cometParts.length - 10);
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  g.lineCap = 'round';
+  for(let i = _cometParts.length - 1; i >= 0; i--){
+    const c = _cometParts[i];
+    c.life += dts;
+    // Mild gravity-like curve so paths arc
+    c.vy += 60 * dts;
+    c.x += c.vx * dts; c.y += c.vy * dts;
+    c.trail.push({ x: c.x, y: c.y });
+    if(c.trail.length > 28) c.trail.shift();
+    const fullyOff = c.x < -50 || c.x > W + 50 || c.y > H + 80;
+    if(c.life > c.maxLife || (fullyOff && c.trail.length < 4)){ _cometParts.splice(i, 1); continue; }
+    const t01 = c.life / c.maxLife;
+    const fade = 1 - t01;
+    // Trail (tapered, fading toward old end)
+    for(let k = 1; k < c.trail.length; k++){
+      const u = k / c.trail.length;
+      const p0 = c.trail[k - 1], p1 = c.trail[k];
+      g.strokeStyle = `hsla(${c.hue}, 80%, ${state.lightMode ? 30 : 75}%, ${u * 0.85 * fade})`;
+      g.lineWidth = c.width * (0.2 + u * 0.8);
+      g.beginPath(); g.moveTo(p0.x, p0.y); g.lineTo(p1.x, p1.y); g.stroke();
+    }
+    // Bright head
+    const head = c.trail[c.trail.length - 1];
+    const grad = g.createRadialGradient(head.x, head.y, 0, head.x, head.y, c.width * 6);
+    grad.addColorStop(0,   `hsla(${c.hue}, 95%, 85%, ${0.9 * fade})`);
+    grad.addColorStop(0.4, `hsla(${c.hue}, 90%, 70%, ${0.45 * fade})`);
+    grad.addColorStop(1,   `hsla(${c.hue}, 90%, 70%, 0)`);
+    g.fillStyle = grad;
+    g.beginPath(); g.arc(head.x, head.y, c.width * 6, 0, TAU); g.fill();
+  }
+  g.restore();
+}
+
+// ============================================================
+// 8. MIST VEIL 霧紗  — soft drifting fog patches with low-freq curl
+// ============================================================
+let _mistBlobs = [];
+let _mistFlowT = 0;
+function drawMistVeil(g, dt, T){
+  const dts = dt / 1000;
+  _mistFlowT += dts * 0.06;     // very slow drift
+  // Maintain ~6-10 large soft blobs
+  const targetN = 8 + Math.floor(state.motionSpeed * 4);
+  while(_mistBlobs.length < targetN){
+    _mistBlobs.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      r: (90 + Math.random() * 220) * SCALE,
+      hueShift: Math.random() * 60 - 30,
+      flowSeed: Math.random() * 1000,
+      life: 0,
+      maxLife: 12 + Math.random() * 10,
+      brightness: 180 + Math.floor(Math.random() * 60),
+    });
+  }
+  g.save();
+  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'lighter';
+  for(let i = _mistBlobs.length - 1; i >= 0; i--){
+    const b = _mistBlobs[i];
+    b.life += dts;
+    if(b.life > b.maxLife){ _mistBlobs.splice(i, 1); continue; }
+    const f = _curlVel(b.x, b.y, 0.0012, _mistFlowT + b.flowSeed);
+    b.x += f.vx * 70 * dts;
+    b.y += f.vy * 70 * dts;
+    const t01 = b.life / b.maxLife;
+    const a = (t01 < 0.2 ? t01 / 0.2 : 1 - t01) * 0.30;
+    const v = b.brightness;
+    const grad = g.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r);
+    grad.addColorStop(0,   `rgba(${v},${v},${v},${a})`);
+    grad.addColorStop(0.5, `rgba(${v - 10},${v - 5},${v},${a * 0.45})`);
+    grad.addColorStop(1,   `rgba(${v},${v},${v},0)`);
+    g.fillStyle = grad;
+    g.beginPath(); g.arc(b.x, b.y, b.r, 0, TAU); g.fill();
+  }
   g.restore();
 }
