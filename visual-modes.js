@@ -2800,12 +2800,47 @@ const _SUMI_SPLAT_SRC = `
   uniform vec3  uColor;
   uniform float uRadius;
   uniform float uAspect;
+  uniform float uSeed;     // randomises noise per splat → no two drops look the same
+
+  // Cheap pseudo-noise — value noise via bilinear-blended hashes.
+  float hash21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float vnoise(vec2 p){
+    vec2 i = floor(p), f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash21(i), hash21(i + vec2(1.0, 0.0)), u.x),
+               mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), u.x), u.y);
+  }
+
   void main(){
     vec2 p = vUV - uPoint;
     p.x *= uAspect;
-    float falloff = exp(-dot(p,p) / uRadius);
-    vec3 base = texture2D(uSource, vUV).rgb;
-    gl_FragColor = vec4(base + uColor * falloff, 1.0);
+    float r2 = dot(p, p);
+
+    // Multi-octave noise across the splat surface — this is what breaks the
+    // perfect circle into cauliflower fingers.
+    vec2 nuv = vUV * vec2(uAspect, 1.0) * 40.0 + uSeed * 11.0;
+    float n = vnoise(nuv * 1.0) * 0.50
+            + vnoise(nuv * 3.4) * 0.28
+            + vnoise(nuv * 9.7) * 0.22;
+    n = n - 0.5;     // -0.5..+0.5
+
+    // Base gaussian falloff
+    float base = exp(-r2 / uRadius);
+
+    // Modulate the *radius* by noise — high-noise regions extend the splat
+    // outward (fingers), low-noise regions pull inward (bays). This is what
+    // ink does as it gets caught by paper fibres.
+    float radial = sqrt(max(r2, 1e-6));
+    float reach = 1.0 + n * 0.85;            // 0.15..1.85
+    float modR = r2 / (uRadius * reach * reach);
+    float falloff = exp(-modR);
+
+    // Sharper rim — breakup the boundary so it isn't smooth
+    float rim = smoothstep(0.45, 1.05, sqrt(modR));
+    falloff *= 1.0 - rim * 0.55;
+
+    vec3 prev = texture2D(uSource, vUV).rgb;
+    gl_FragColor = vec4(clamp(prev + uColor * falloff, vec3(0.0), vec3(1.6)), 1.0);
   }`;
 
 const _SUMI_ADVECT_SRC = `
@@ -2908,12 +2943,15 @@ const _SUMI_DISPLAY_SRC = `
   uniform sampler2D uDye;
   void main(){
     vec3 dye = texture2D(uDye, vUV).rgb;
+    // Boost contrast — pow < 1 amplifies low-end so faint ink reads;
+    // then 1-dye gives the multiply factor over paper.
+    dye = pow(clamp(dye, 0.0, 1.5), vec3(0.72));
     vec3 mul = clamp(1.0 - dye, 0.0, 1.0);
     gl_FragColor = vec4(mul, 1.0);
   }`;
 
 function _initSumiFluid(){
-  const SIM_W = 384, SIM_H = 216;   // sim resolution (16:9, low-ish for perf)
+  const SIM_W = 640, SIM_H = 360;   // higher sim res → finer cauliflower edges + detail
   const c = document.createElement('canvas');
   c.width = SIM_W; c.height = SIM_H;
   const gl = c.getContext('webgl', { alpha: true, premultipliedAlpha: false, depth: false, stencil: false })
@@ -3032,6 +3070,7 @@ function _sumiBlit(F, target){
 function _sumiSplat(F, x01, y01, vx, vy, colorIdx, strength, radiusOverride){
   const gl = F.gl;
   const radius = radiusOverride != null ? radiusOverride : 0.014;
+  const seed = Math.random() * 100;
 
   // ── velocity splat ──
   _sumiBindQuad(F, F.progSplat);
@@ -3042,6 +3081,7 @@ function _sumiSplat(F, x01, y01, vx, vy, colorIdx, strength, radiusOverride){
   gl.uniform3f(gl.getUniformLocation(F.progSplat, 'uColor'), vx * strength, -vy * strength, 0);
   gl.uniform1f(gl.getUniformLocation(F.progSplat, 'uRadius'), radius);
   gl.uniform1f(gl.getUniformLocation(F.progSplat, 'uAspect'), F.aspect);
+  gl.uniform1f(gl.getUniformLocation(F.progSplat, 'uSeed'), seed);
   _sumiBlit(F, F.velocity.write);
   F.velocity.swap();
 
@@ -3051,6 +3091,29 @@ function _sumiSplat(F, x01, y01, vx, vy, colorIdx, strength, radiusOverride){
   gl.uniform3f(gl.getUniformLocation(F.progSplat, 'uColor'), c[0] * strength, c[1] * strength, c[2] * strength);
   _sumiBlit(F, F.dye.write);
   F.dye.swap();
+}
+
+// One "drop event" = a cluster of 6-9 micro-splats at slightly different
+// positions / radii / seeds. The noise-modulated edges of each micro-splat
+// don't line up → the union forms naturally fractal cauliflower borders, just
+// like real ink hitting paper. This is the look reference clamour wants.
+function _sumiDropCluster(F, cx01, cy01, vx, vy, colorIdx, strength, baseRadius){
+  const N = 6 + Math.floor(Math.random() * 4);   // 6..9 micro-splats
+  // A dense core splat first → guaranteed dark centre
+  _sumiSplat(F, cx01, cy01, vx, vy, colorIdx, strength * 1.4, baseRadius);
+  for(let i = 0; i < N; i++){
+    const ang = Math.random() * Math.PI * 2;
+    const off = baseRadius * (0.4 + Math.random() * 0.85);   // offset within radius range
+    const x = cx01 + Math.cos(ang) * off;
+    const y = cy01 + Math.sin(ang) * off;
+    // Smaller halo splats — different seed → different cauliflower direction
+    const r = baseRadius * (0.45 + Math.random() * 0.55);
+    const sMul = 0.55 + Math.random() * 0.50;
+    _sumiSplat(F, x, y,
+      vx * (0.5 + Math.random() * 0.4),
+      vy * (0.5 + Math.random() * 0.4),
+      colorIdx, strength * sMul, r);
+  }
 }
 
 function _sumiStep(F, dt){
@@ -3164,41 +3227,44 @@ function drawSuminagashi(g, dt, T){
   const mid  = reactor.mid  || 0;
   const mScale = (window._songMood && window._songMood.intensityScale) || 1;
 
-  // ── Auto splat: idle baseline + audio scaling ──
-  // Higher baseline rate + stronger splats so the canvas actually has ink to flow.
+  // ── Auto splat: fewer events, but each event = a cluster of 6-9 micro-splats
+  //    so the cauliflower edges grow from layered irregular drops.
   _sumiSpawnT += dts;
-  const rate = (1.6 + vol*2.4 + state.motionSpeed*0.8) * mScale;
-  let safety = 8;
-  while(_sumiSpawnT > 1 / Math.max(0.4, rate) && safety-- > 0){
-    _sumiSpawnT -= 1 / Math.max(0.4, rate);
-    const x01 = 0.10 + Math.random() * 0.80;
-    const y01 = 0.10 + Math.random() * 0.80;
+  const rate = (0.55 + vol*1.4 + state.motionSpeed*0.45) * mScale;
+  let safety = 4;
+  while(_sumiSpawnT > 1 / Math.max(0.18, rate) && safety-- > 0){
+    _sumiSpawnT -= 1 / Math.max(0.18, rate);
+    const x01 = 0.12 + Math.random() * 0.76;
+    const y01 = 0.12 + Math.random() * 0.76;
     const a   = Math.random() * TAU;
-    const sp  = 220 + Math.random() * 320;       // px/s — push the ink hard
+    const sp  = 180 + Math.random() * 220;
     _sumiColorIdx = (_sumiColorIdx + 1 + (Math.random() < 0.35 ? 1 : 0)) % SUMI_ABSORPTION.length;
-    const strength = 1.1 + Math.random() * 0.6;
-    const radius = 0.010 + Math.random() * 0.012;
-    _sumiSplat(F, x01, y01, Math.cos(a)*sp, Math.sin(a)*sp, _sumiColorIdx, strength, radius);
+    _sumiDropCluster(F, x01, y01,
+      Math.cos(a)*sp, Math.sin(a)*sp,
+      _sumiColorIdx,
+      2.5 + Math.random()*1.5,        // strength → dark, opaque ink
+      0.025 + Math.random()*0.020);   // baseline drop radius
   }
 
-  // ── Bass beat: dramatic cluster splat ──
+  // ── Bass beat: dramatic large cluster near centre with contrasting colors ──
   if(bass > 0.50 && state.beatFlash > 0.45){
     if(F.lastBeat !== (state.beatCount || 0)){
       F.lastBeat = state.beatCount || (F.lastBeat + 1);
       const baseColor = Math.floor(Math.random() * SUMI_ABSORPTION.length);
       const cx = 0.30 + Math.random() * 0.40;
       const cy = 0.30 + Math.random() * 0.40;
-      for(let k = 0; k < 5; k++){
+      for(let k = 0; k < 3; k++){
         const a = Math.random() * TAU;
-        const sp = 380 + Math.random() * 280;
-        _sumiSplat(F,
-          cx + Math.cos(a)*0.07,
-          cy + Math.sin(a)*0.07,
+        const off = 0.08;
+        const sp = 280 + Math.random() * 220;
+        _sumiDropCluster(F,
+          cx + Math.cos(a)*off,
+          cy + Math.sin(a)*off,
           Math.cos(a)*sp,
           Math.sin(a)*sp,
           (baseColor + k) % SUMI_ABSORPTION.length,
-          2.0 + Math.random()*0.7,
-          0.018 + Math.random()*0.010);
+          4.0 + Math.random()*1.5,
+          0.038 + Math.random()*0.022);
       }
     }
   }
@@ -4086,28 +4152,45 @@ let _oilLightT = 0;
 let _oilWindAngle = 0;
 let _oilWindStrength = 0;
 
+// ──────────────────────────────────────────────────────────────────────────
+// Van Gogh palette — high-contrast, saturated, with distinctive cobalt /
+// chrome-yellow / vermilion / olive relationships. Replaces the soft Monet
+// palette I had before. Per the user: "要像梵谷" not "要像 Monet".
+// ──────────────────────────────────────────────────────────────────────────
 const OIL_PALETTE = {
-  // Sky / far horizon — warm ivory, dust pink, faint blue-grey
+  // Sky / far — Starry Night cobalt + chrome yellow + warm whites
   far: [
-    [240, 228, 205], [232, 217, 198], [222, 205, 188],
-    [228, 213, 210], [218, 205, 200], [206, 194, 200],
-    [215, 215, 220], [220, 210, 198],
+    [ 28,  48, 110], [ 40,  68, 138], [ 22,  38,  88],   // deep cobalts
+    [ 60,  92, 158], [ 78, 108, 168],                    // mid cobalt
+    [240, 196,  60], [255, 215,  85], [228, 178,  48],   // chrome yellow stars
+    [248, 232, 178], [220, 200, 150],                    // warm cream
+    [195, 158,  80],                                      // olive ochre
   ],
-  // Foliage — sage / olive / pine
+  // Mid — cypress greens + wheat field tones + iris purples
   mid: [
-    [120, 140,  80], [ 95, 120,  68], [ 75, 105,  55],
-    [105, 130,  88], [130, 152,  90], [ 80, 110,  62],
-    [ 95, 115,  72], [ 60,  92,  50], [110, 135,  78],
+    [ 38,  68,  42], [ 28,  58,  38], [ 50,  78,  48],   // cypress dark
+    [ 88, 120,  62], [110, 140,  68],                    // olive
+    [180, 158,  60], [205, 175,  68], [220, 190,  80],   // wheat
+    [110,  88, 138], [ 90,  68, 118],                    // iris purple
+    [ 78,  60,  92],                                      // shadow purple
   ],
-  // Flowers + foreground accents
+  // Fore — sunflowers + bold complementary punches
   fore: [
-    [185, 145, 178], [165, 115, 152], [200, 162, 182],   // lavender/rose
-    [178,  82,  92], [158,  62,  72], [210, 110, 120],   // rose/red
-    [212, 175, 108], [228, 195, 128], [195, 158,  90],   // gold
-    [ 60,  85,  52], [ 50,  72,  45],                    // grass shadows
-    [ 80, 110,  72],                                      // mid-tone leaf
+    [248, 198,  40], [255, 215,  50], [232, 180,  35],   // sunflower yellow
+    [210, 100,  35], [185,  78,  28], [225, 130,  50],   // burnt orange
+    [180,  45,  35], [148,  32,  28], [200,  60,  40],   // vermilion red
+    [ 30,  50, 105], [ 22,  38,  82],                    // contrast cobalt
+    [ 38,  72,  38], [ 28,  58,  32],                    // dark green grass
+    [240, 220, 168],                                      // pale highlight
   ],
 };
+// Stroke flow field — every stroke's angle is biased by a slowly-drifting
+// global direction so the painting reads as a coherent swirling Van Gogh
+// composition (think Starry Night, Wheatfield with Cypresses) instead of
+// random chaos. Updated lazily; angle drifts on its own.
+let _oilFlowAngle = 0;
+let _oilFlowDriftT = 0;
+let _oilFlowSwirl  = 0;       // amount of curl in stroke direction
 
 function _pickOilColor(palette){
   const arr = OIL_PALETTE[palette];
@@ -4171,21 +4254,34 @@ function _spawnOilStroke(cg, regionOverride, forceAngle){
     // Foreground grass = mostly vertical
     length = size * (2.0 + Math.random() * 2.5);
   }
-  // Angle: foreground grass mostly vertical, mid horizontalish, far horizontal
+  // Angle — Van Gogh strokes follow a swirling flow field, not random scatter.
+  // Each region biases the global flow angle differently:
+  //   far  → sky swirl arcs (curl drives rotation around centre)
+  //   mid  → horizontal-ish with strong directional pull from flow field
+  //   fore → mostly up (grass / wheat) with flow perturbation
   let angle;
   if(forceAngle != null){
-    angle = forceAngle + (Math.random() - 0.5) * 0.45;
-  } else if(region === 'fore'){
-    angle = -Math.PI / 2 + (Math.random() - 0.5) * 0.7;  // up-ish (grass)
-  } else if(region === 'mid'){
-    angle = (Math.random() - 0.5) * 0.9;                  // mostly horizontal
+    angle = forceAngle + (Math.random() - 0.5) * 0.35;
   } else {
-    angle = (Math.random() - 0.5) * 0.4;                  // far ~horizontal
+    // Curl rotation around canvas centre — gives the Starry Night vortex feel
+    const dxF = (x - W * 0.5) / W;
+    const dyF = (y - H * 0.5) / H;
+    const swirlAng = Math.atan2(dyF, dxF) + Math.PI * 0.5;   // tangent
+    if(region === 'fore'){
+      angle = -Math.PI / 2 + Math.sin(_oilFlowAngle) * 0.6 + (Math.random() - 0.5) * 0.5;
+    } else if(region === 'mid'){
+      angle = _oilFlowAngle + (Math.random() - 0.5) * 0.7;
+    } else {
+      // Far / sky — strong swirl tangent
+      angle = swirlAng * _oilFlowSwirl + _oilFlowAngle * (1 - _oilFlowSwirl)
+            + (Math.random() - 0.5) * 0.4;
+    }
   }
   const rgb = _pickOilColor(region);
-  const alpha = (region === 'far' ? 0.35 : (region === 'mid' ? 0.55 : 0.70))
-              + Math.random() * 0.15;
-  _paintOilStroke(cg, x, y, angle, length, size, rgb, alpha);
+  // Van Gogh strokes are heavier — higher opacity, larger size on average
+  const alpha = (region === 'far' ? 0.55 : (region === 'mid' ? 0.75 : 0.88))
+              + Math.random() * 0.12;
+  _paintOilStroke(cg, x, y, angle, length * 1.25, size * 1.15, rgb, alpha);
 }
 
 // Paint the initial composition — "80% painted" at first enable.
@@ -4243,7 +4339,16 @@ function drawImpressionist(g, dt, T){
   cg.fillRect(0, 0, W, H);
   cg.globalAlpha = 1;
 
-  // ── Wind state — slowly drifts; bass = sudden gust ──
+  // ── Flow field state — Van Gogh "writing" direction drifts slowly so the
+  //    painting reads as a coherent swirling composition over time.
+  _oilFlowDriftT += dt;
+  if(_oilFlowDriftT > 8000 + Math.random()*6000){     // every 8-14s pick new bias
+    _oilFlowDriftT = 0;
+    _oilFlowAngle = Math.random() * Math.PI * 2;
+    _oilFlowSwirl = 0.3 + Math.random() * 0.6;          // some scenes more swirly
+  } else {
+    _oilFlowAngle += (Math.random() - 0.5) * 0.008;     // very gentle wandering
+  }
   _oilWindAngle += (Math.random() - 0.5) * 0.02;
   _oilWindStrength *= 0.97;
   const bass = reactor.bass || 0;
