@@ -2741,52 +2741,73 @@ function _buildSumiPaper(){
 }
 
 function _seedSumiDrop(forceColor){
-  // Each drop = a cauliflower-edged ink cloud. Rendered as 3 nested filled
-  // polygons (outer halo / mid wash / dense core), each with its own multi-
-  // octave noise distortion of the radial boundary. The layered multiply on
-  // cream paper gives the proper "有深有淺" tonal depth visible in real ink-wash.
-  const cx = (0.10 + Math.random()*0.80) * W;
-  const cy = (0.10 + Math.random()*0.80) * H;
+  // Each drop = a cluster of MANY small cauliflower sub-blobs scattered around
+  // a center. Many overlapping irregular polygons give true fractal-finger
+  // edges + uneven interior tone variation. Each sub-blob has its own seed
+  // (so it morphs differently) and its own alpha multiplier (some darker, some
+  // lighter → the "有深有淺" the user wants).
+  const cx = (0.08 + Math.random()*0.84) * W;
+  const cy = (0.08 + Math.random()*0.84) * H;
   let color;
   if(forceColor != null) color = SUMI_COLORS[forceColor % SUMI_COLORS.length];
   else {
     _sumiColorIdx = (_sumiColorIdx + 1 + (Math.random()<0.3 ? 1 : 0)) % SUMI_COLORS.length;
     color = SUMI_COLORS[_sumiColorIdx];
   }
-  // rTarget = final cloud radius after diffusion; growSpeed = how fast it gets there
+  // Build sub-blob cluster — many small blobs scattered radially
+  const SUB_N = 22;
+  const subs = [];
+  for(let i = 0; i < SUB_N; i++){
+    // Mostly near center, a few far out → natural density falloff
+    const dist01 = Math.pow(Math.random(), 0.7);   // bias toward center
+    const angle  = Math.random() * TAU;
+    subs.push({
+      angle,
+      dist01,                                       // 0..1 of target radius
+      seed: Math.random() * 1000,
+      sizeMul: 0.18 + Math.random() * 0.38,         // sub-blob size vs main
+      alphaMul: 0.55 + Math.random() * 0.95,        // interior tone variation
+      tPhase: Math.random() * 100,                  // each sub morphs at own rhythm
+    });
+  }
+  // A few "core" sub-blobs near dead center (denser ink)
+  for(let i = 0; i < 4; i++){
+    subs.push({
+      angle: Math.random() * TAU,
+      dist01: Math.random() * 0.15,                 // very close to center
+      seed: Math.random() * 1000,
+      sizeMul: 0.32 + Math.random() * 0.25,
+      alphaMul: 1.1 + Math.random() * 0.4,           // darker
+      tPhase: Math.random() * 100,
+    });
+  }
   return {
-    cx, cy, color,
-    vx: (Math.random()-0.5) * 5,             // very gentle drift on water
+    cx, cy, color, subs,
+    vx: (Math.random()-0.5) * 5,
     vy: (Math.random()-0.5) * 5,
     life: 0,
-    rTarget:    (70 + Math.random()*180) * SCALE,
-    growSpeed:  0.35 + Math.random()*0.4,    // how aggressively it expands
-    fadeStart:  10 + Math.random()*8,
-    fadeDuration: 12 + Math.random()*9,
-    // 3 independent noise seeds for the 3 layers — they DON'T overlap perfectly,
-    // which is what gives the inner tone variation (some patches darker, some lighter).
-    s1: Math.random()*1000,
-    s2: Math.random()*1000,
-    s3: Math.random()*1000,
-    // Each cloud has its own morph timer so they don't pulse in sync
-    tOffset: Math.random()*100,
+    rTarget:    (75 + Math.random()*170) * SCALE,
+    growSpeed:  0.35 + Math.random()*0.4,
+    fadeStart:  11 + Math.random()*9,
+    fadeDuration: 13 + Math.random()*10,
   };
 }
 
-// Draw one polygon layer with cauliflower edges. baseR = target radius;
-// alpha = fill alpha; seed = noise offset; tMorph = slow time evolution.
-function _drawSumiCloudLayer(g, cx, cy, baseR, alpha, color, seed, tMorph){
-  const N = 110;            // many verts so cauliflower edges are smooth
+// Draw one sub-blob with cauliflower edges. Few verts (less geometry), high-
+// freq noise, shadowBlur for the feathered "soaking into paper" feel.
+function _drawSumiSubBlob(g, cx, cy, r, alpha, color, seed, tMorph){
+  if(r < 0.5) return;
+  const N = 28;
   g.fillStyle = `rgba(${color}, ${alpha})`;
   g.beginPath();
   for(let i = 0; i <= N; i++){
     const a = (i / N) * TAU;
     const ca = Math.cos(a), sa = Math.sin(a);
-    // Multi-octave noise — low freq lobes + mid bumps + high freq cauliflower fingers
-    const n1 = noise2(ca*1.6 + seed,    sa*1.6 + tMorph);          // smooth lobes
-    const n2 = noise2(ca*5.3 + seed*0.7, sa*5.3 + tMorph*1.4);      // mid bumps
-    const n3 = noise2(ca*14  + seed*1.3, sa*14  + tMorph*1.9);      // fine fingers
-    const dist = baseR * (1 + n1*0.34 + n2*0.20 + n3*0.11);
+    // Higher-freq noise = finer cauliflower fingers
+    const n1 = noise2(ca*2.0 + seed,       sa*2.0 + tMorph);
+    const n2 = noise2(ca*6.5 + seed*0.7,   sa*6.5 + tMorph*1.4);
+    const n3 = noise2(ca*18  + seed*1.3,   sa*18  + tMorph*1.9);
+    const dist = r * (1 + n1*0.42 + n2*0.26 + n3*0.16);
     const x = cx + ca * dist;
     const y = cy + sa * dist;
     if(i === 0) g.moveTo(x, y); else g.lineTo(x, y);
@@ -2845,11 +2866,12 @@ function drawSuminagashi(g, dt, T){
   if(_sumiDrops.length > 18) _sumiDrops.splice(0, _sumiDrops.length - 18);
 
   g.save();
-  // Multiply on cream paper = ink soaks into paper, dark stays dark, colors
-  // overlap into darker washes — exactly the "有深有淺" tonal depth.
   g.globalCompositeOperation = 'multiply';
+  // Soft shadowBlur feathers the polygon edges — that's the missing
+  // "soaking into paper fibres" softness. Cheap on Canvas 2D.
+  g.shadowColor = 'rgba(40,30,20,0.35)';
+  g.shadowBlur = 6 * SCALE;
 
-  // mid + bass perturb the morph time → "flowing" feel synced to music
   const morphRate = 1 + mid*1.4 + bass*0.6;
 
   for(let di = _sumiDrops.length-1; di >= 0; di--){
@@ -2858,30 +2880,31 @@ function drawSuminagashi(g, dt, T){
     const totalLife = d.fadeStart + d.fadeDuration;
     if(d.life > totalLife){ _sumiDrops.splice(di, 1); continue; }
 
-    // Gentle drift on water surface
     d.cx += d.vx * dts;
     d.cy += d.vy * dts;
 
     const fade = d.life < d.fadeStart
-      ? Math.min(1, d.life / 0.6)
+      ? Math.min(1, d.life / 0.7)
       : 1 - (d.life - d.fadeStart) / d.fadeDuration;
     if(fade <= 0) continue;
 
-    // Cloud grows asymptotically toward rTarget (fast at first, then slows)
     const grow = 1 - Math.exp(-d.life * d.growSpeed);
-    const r = d.rTarget * grow;
+    const mainR = d.rTarget * grow;
+    const baseT = _sumiFlowT * morphRate;
 
-    // Morph time — slow base + music-reactive
-    const tMorph = _sumiFlowT * morphRate + d.tOffset;
-
-    // ─── 3 nested layers: outer halo / mid wash / dense core ───
-    // Each at its own noise seed so they don't perfectly overlap → patches of
-    // darker / lighter ink inside the cloud (the "有深有淺" effect).
-    _drawSumiCloudLayer(g, d.cx, d.cy, r * 1.35, 0.10 * fade, d.color, d.s1, tMorph);
-    _drawSumiCloudLayer(g, d.cx, d.cy, r * 1.00, 0.18 * fade, d.color, d.s2, tMorph * 1.15);
-    _drawSumiCloudLayer(g, d.cx, d.cy, r * 0.62, 0.32 * fade, d.color, d.s3, tMorph * 1.3);
+    // ── Render each sub-blob: positioned at offset + small cauliflower ──
+    for(let si = 0; si < d.subs.length; si++){
+      const s = d.subs[si];
+      const offR = s.dist01 * mainR * 0.85;
+      const sx = d.cx + Math.cos(s.angle) * offR;
+      const sy = d.cy + Math.sin(s.angle) * offR;
+      const subR = mainR * s.sizeMul;
+      const a = Math.min(0.55, 0.16 * fade * s.alphaMul);
+      _drawSumiSubBlob(g, sx, sy, subR, a, d.color, s.seed, baseT + s.tPhase);
+    }
   }
 
+  g.shadowBlur = 0;
   g.restore();
 }
 
@@ -3713,5 +3736,225 @@ function drawMistVeil(g, dt, T){
     g.fillStyle = grad;
     g.beginPath(); g.arc(b.x, b.y, b.r, 0, TAU); g.fill();
   }
+  g.restore();
+}
+
+// ============================================================
+// IMPRESSIONIST 印象 — auto-painting impressionist garden
+// Persistent offscreen canvas accumulates oil brushstrokes; very slow ivory
+// wash gradually softens older strokes so the painting "breathes" — new
+// flowers/leaves/light grow, old ones blend back. Audio-reactive:
+//   bass = wind gust (12 strokes in one direction)
+//   vol  = stroke density baseline
+//   mid  = pollen-light sparkles
+// No mouse interaction in this VJ build — auto-演出 only.
+// ============================================================
+let _oilCanvasCv = null;
+let _oilCanvasKey = '';
+let _oilSpawnT = 0;
+let _oilLightT = 0;
+let _oilWindAngle = 0;
+let _oilWindStrength = 0;
+
+const OIL_PALETTE = {
+  // Sky / far horizon — warm ivory, dust pink, faint blue-grey
+  far: [
+    [240, 228, 205], [232, 217, 198], [222, 205, 188],
+    [228, 213, 210], [218, 205, 200], [206, 194, 200],
+    [215, 215, 220], [220, 210, 198],
+  ],
+  // Foliage — sage / olive / pine
+  mid: [
+    [120, 140,  80], [ 95, 120,  68], [ 75, 105,  55],
+    [105, 130,  88], [130, 152,  90], [ 80, 110,  62],
+    [ 95, 115,  72], [ 60,  92,  50], [110, 135,  78],
+  ],
+  // Flowers + foreground accents
+  fore: [
+    [185, 145, 178], [165, 115, 152], [200, 162, 182],   // lavender/rose
+    [178,  82,  92], [158,  62,  72], [210, 110, 120],   // rose/red
+    [212, 175, 108], [228, 195, 128], [195, 158,  90],   // gold
+    [ 60,  85,  52], [ 50,  72,  45],                    // grass shadows
+    [ 80, 110,  72],                                      // mid-tone leaf
+  ],
+};
+
+function _pickOilColor(palette){
+  const arr = OIL_PALETTE[palette];
+  return arr[(Math.random() * arr.length) | 0];
+}
+
+// Paint one impressionist brushstroke onto the persistent canvas.
+// Stroke = a row of small overlapping color dabs along (angle, length), each
+// with subtle color variation → bristle/impasto feel.
+function _paintOilStroke(cg, x0, y0, angle, length, width, baseRgb, alpha){
+  const cosA = Math.cos(angle);
+  const sinA = Math.sin(angle);
+  const N = Math.max(4, Math.floor(length / 3.5));
+  cg.save();
+  cg.globalCompositeOperation = 'source-over';
+  for(let i = 0; i < N; i++){
+    const u = i / (N - 1) - 0.5;
+    const tx = x0 + cosA * u * length;
+    const ty = y0 + sinA * u * length;
+    // Bristle jitter — perpendicular displacement
+    const jit = (Math.random() - 0.5) * width * 0.7;
+    const px = tx + -sinA * jit;
+    const py = ty +  cosA * jit;
+    // Per-dab color variation → paint mixing
+    const r = Math.max(0, Math.min(255, baseRgb[0] + (Math.random() - 0.5) * 30));
+    const gg = Math.max(0, Math.min(255, baseRgb[1] + (Math.random() - 0.5) * 30));
+    const b = Math.max(0, Math.min(255, baseRgb[2] + (Math.random() - 0.5) * 30));
+    // Stroke tapers at ends (less paint at tip)
+    const taper = 1 - Math.abs(u) * 0.3;
+    const w = width * (0.55 + Math.random() * 0.35) * taper;
+    cg.fillStyle = `rgba(${r|0},${gg|0},${b|0},${alpha * (0.7 + Math.random() * 0.3)})`;
+    cg.beginPath();
+    cg.ellipse(px, py, w, w * 0.45, angle, 0, TAU);
+    cg.fill();
+  }
+  cg.restore();
+}
+
+function _spawnOilStroke(cg, regionOverride, forceAngle){
+  // Region weights: more mid foliage than far sky, fewer foreground accents
+  let region = regionOverride;
+  if(!region){
+    const r = Math.random();
+    region = r < 0.22 ? 'far' : (r < 0.72 ? 'mid' : 'fore');
+  }
+  let x, y, size, length;
+  if(region === 'far'){
+    x = Math.random() * W;
+    y = (0.05 + Math.random() * 0.40) * H;
+    size = (12 + Math.random() * 18) * SCALE;
+    length = size * (2.2 + Math.random() * 1.8);
+  } else if(region === 'mid'){
+    x = Math.random() * W;
+    y = (0.30 + Math.random() * 0.50) * H;
+    size = ( 8 + Math.random() * 14) * SCALE;
+    length = size * (1.8 + Math.random() * 1.6);
+  } else {  // foreground
+    x = Math.random() * W;
+    y = (0.55 + Math.random() * 0.45) * H;
+    size = ( 6 + Math.random() * 12) * SCALE;
+    // Foreground grass = mostly vertical
+    length = size * (2.0 + Math.random() * 2.5);
+  }
+  // Angle: foreground grass mostly vertical, mid horizontalish, far horizontal
+  let angle;
+  if(forceAngle != null){
+    angle = forceAngle + (Math.random() - 0.5) * 0.45;
+  } else if(region === 'fore'){
+    angle = -Math.PI / 2 + (Math.random() - 0.5) * 0.7;  // up-ish (grass)
+  } else if(region === 'mid'){
+    angle = (Math.random() - 0.5) * 0.9;                  // mostly horizontal
+  } else {
+    angle = (Math.random() - 0.5) * 0.4;                  // far ~horizontal
+  }
+  const rgb = _pickOilColor(region);
+  const alpha = (region === 'far' ? 0.35 : (region === 'mid' ? 0.55 : 0.70))
+              + Math.random() * 0.15;
+  _paintOilStroke(cg, x, y, angle, length, size, rgb, alpha);
+}
+
+// Paint the initial composition — "80% painted" at first enable.
+function _paintOilInitial(cg){
+  // Loose color blocks for sky/horizon, foliage, foreground — many soft strokes
+  // Distant horizon sweep
+  for(let i = 0; i < 220; i++) _spawnOilStroke(cg, 'far');
+  for(let i = 0; i < 380; i++) _spawnOilStroke(cg, 'mid');
+  for(let i = 0; i < 240; i++) _spawnOilStroke(cg, 'fore');
+}
+
+function drawImpressionist(g, dt, T){
+  // ── Init persistent canvas + initial composition ──
+  const key = cv.width + 'x' + cv.height;
+  if(!_oilCanvasCv || _oilCanvasKey !== key){
+    _oilCanvasCv = document.createElement('canvas');
+    _oilCanvasCv.width = cv.width;
+    _oilCanvasCv.height = cv.height;
+    const cg0 = _oilCanvasCv.getContext('2d');
+    cg0.setTransform(state.pixelRatio, 0, 0, state.pixelRatio, 0, 0);
+    // Warm ivory ground
+    cg0.fillStyle = '#e8dcc2';
+    cg0.fillRect(0, 0, W, H);
+    _paintOilInitial(cg0);
+    _oilCanvasKey = key;
+  }
+  const cg = _oilCanvasCv.getContext('2d');
+  cg.setTransform(state.pixelRatio, 0, 0, state.pixelRatio, 0, 0);
+
+  // ── Breathing: slow ivory wash gradually fades older strokes ──
+  // 0.005 alpha = ~200 frames (~3.3s) for full obscuration → painting
+  // continuously evolves without ever fully erasing.
+  cg.globalCompositeOperation = 'source-over';
+  cg.globalAlpha = 0.005;
+  cg.fillStyle = '#e8dcc2';
+  cg.fillRect(0, 0, W, H);
+  cg.globalAlpha = 1;
+
+  // ── Wind state — slowly drifts; bass = sudden gust ──
+  _oilWindAngle += (Math.random() - 0.5) * 0.02;
+  _oilWindStrength *= 0.97;
+  const bass = reactor.bass || 0;
+  const vol  = reactor.vol  || 0;
+  const mid  = reactor.mid  || 0;
+
+  // ── Baseline spawn — slow + audio-reactive ──
+  _oilSpawnT += dt;
+  const spawnRate = 8 + vol * 30 + state.motionSpeed * 6;   // strokes / sec
+  let safety = 60;
+  while(_oilSpawnT > 1000 / Math.max(1, spawnRate) && safety-- > 0){
+    _oilSpawnT -= 1000 / Math.max(1, spawnRate);
+    _spawnOilStroke(cg);
+  }
+
+  // ── Bass = wind gust: cluster of strokes along wind angle ──
+  if(bass > 0.55 && state.beatFlash > 0.5){
+    if(!_oilCanvasCv._lastBeat || (state.beatCount || 0) > _oilCanvasCv._lastBeat){
+      _oilCanvasCv._lastBeat = state.beatCount || ((_oilCanvasCv._lastBeat || 0) + 1);
+      _oilWindAngle = (Math.random() - 0.5) * 0.6;          // mostly horizontal gust
+      _oilWindStrength = 1;
+      for(let i = 0; i < 18; i++) _spawnOilStroke(cg, 'mid', _oilWindAngle);
+      // Also a few fresh flower accents
+      for(let i = 0; i < 5; i++) _spawnOilStroke(cg, 'fore');
+    }
+  }
+
+  // ── Mid = pollen light sparkles (small bright dabs in upper-mid region) ──
+  if(mid > 0.45){
+    for(let i = 0; i < 3; i++){
+      const x = Math.random() * W;
+      const y = (0.15 + Math.random() * 0.5) * H;
+      const rgb = [245 + (Math.random() * 10 | 0), 225 + (Math.random() * 15 | 0), 165 + (Math.random() * 20 | 0)];
+      _paintOilStroke(cg, x, y, Math.random() * TAU, 8 * SCALE, 5 * SCALE, rgb, 0.55);
+    }
+  }
+
+  // ── Composite the persistent oil canvas onto main ──
+  g.save();
+  g.globalCompositeOperation = 'source-over';
+  g.drawImage(_oilCanvasCv, 0, 0, W, H);
+
+  // ── Slow drifting warm light overlay — "sun behind clouds" ──
+  _oilLightT += dt * 0.00018;
+  const lx = (Math.sin(_oilLightT) * 0.4 + 0.5) * W;
+  const ly = (Math.cos(_oilLightT * 0.7) * 0.3 + 0.3) * H;
+  const grad = g.createRadialGradient(lx, ly, 0, lx, ly, Math.min(W, H) * 0.75);
+  grad.addColorStop(0,   'rgba(252, 230, 178, 0.08)');
+  grad.addColorStop(0.5, 'rgba(252, 230, 178, 0.04)');
+  grad.addColorStop(1,   'rgba(252, 230, 178, 0)');
+  g.globalCompositeOperation = 'lighter';
+  g.fillStyle = grad;
+  g.fillRect(0, 0, W, H);
+
+  // ── Soft edge vignette so foreground reads ──
+  const vg = g.createRadialGradient(W/2, H * 0.6, Math.min(W, H) * 0.45, W/2, H * 0.6, Math.hypot(W, H) * 0.7);
+  vg.addColorStop(0, 'rgba(40, 30, 20, 0)');
+  vg.addColorStop(1, 'rgba(40, 30, 20, 0.18)');
+  g.globalCompositeOperation = 'source-over';
+  g.fillStyle = vg;
+  g.fillRect(0, 0, W, H);
   g.restore();
 }
