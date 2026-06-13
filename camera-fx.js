@@ -1547,19 +1547,22 @@ function drawWebcamFX(g, dt, T){
           break;
         }
         case 'physiognomy': {
-          // 面相分析 — outlines all five-sense organs + 三停 dividers +
-          // central axis + key 面相 reference points (天庭/印堂/山根/準頭/人中/地閣).
-          // No fill, thin elegant strokes — reads like an anatomy illustration
-          // overlay rather than a costume.
-          const stroke    = `hsla(${baseHue}, 55%, 75%, ${0.85 * k})`;
-          const fineStr   = `hsla(${baseHue}, 45%, 65%, ${0.55 * k})`;
-          const dashStr   = `hsla(${baseHue}, 45%, 75%, ${0.45 * k})`;
-          const pointFill = `hsla(${baseHue}, 80%, 78%, ${0.95 * k})`;
-          const labelFill = `hsla(${baseHue}, 35%, 92%, ${0.95 * k})`;
-          const lineW     = Math.max(1.1, eyeDist * 0.015);
-          const fineW     = Math.max(0.7, eyeDist * 0.010);
+          // 面相分析 — full 十二宮 reading chart. Five-sense outlines (very
+          // thin guides) + central axis + 三停 dividers + all twelve palace
+          // positions (遷移/官祿/福德/兄弟/田宅/命宮/夫妻/疾厄/子女/財帛/奴僕)
+          // plus axial reference points (天庭/印堂/山根/準頭/人中/地閣).
+          const stroke    = `hsla(${baseHue}, 50%, 78%, ${0.6 * k})`;
+          const fineStr   = `hsla(${baseHue}, 40%, 65%, ${0.42 * k})`;
+          const dashStr   = `hsla(${baseHue}, 40%, 78%, ${0.35 * k})`;
+          const pointFill = `hsla(${baseHue}, 80%, 80%, ${0.9 * k})`;
+          const axisFill  = `hsla(${baseHue}, 30%, 95%, ${0.95 * k})`;     // 軸點標籤 (white-ish)
+          const palaceFill= `hsla(${baseHue}, 70%, 82%, ${0.95 * k})`;     // 宮位標籤 (cyan-ish)
+          // Very thin outline strokes so the labels read clearly
+          const outlineW  = Math.max(0.8, eyeDist * 0.009);
+          const ovalW     = Math.max(0.5, eyeDist * 0.006);
+          const labelFontSm = `${Math.max(9, eyeDist * 0.10)}px "Noto Serif TC", "Songti TC", "PMingLiU", serif`;
+          const labelFontMd = `${Math.max(10, eyeDist * 0.115)}px "Noto Serif TC", "Songti TC", "PMingLiU", serif`;
 
-          // ── Helper: stroke an open polyline through landmark indices ──
           const strokePath = (indices, closed) => {
             g.beginPath();
             for(let i = 0; i < indices.length; i++){
@@ -1572,92 +1575,117 @@ function drawWebcamFX(g, dt, T){
             g.stroke();
           };
 
-          g.lineWidth = lineW;
+          // ── 五官輪廓 (thin guide strokes) ──
+          g.lineWidth = outlineW;
           g.strokeStyle = stroke;
-
-          // ── Eyebrows ──
-          strokePath([70, 63, 105, 66, 107, 55, 65, 52, 53, 46], true);     // right
-          strokePath([300, 293, 334, 296, 336, 285, 295, 282, 283, 276], true); // left
-
-          // ── Eyes ──
+          strokePath([70, 63, 105, 66, 107, 55, 65, 52, 53, 46], true);
+          strokePath([300, 293, 334, 296, 336, 285, 295, 282, 283, 276], true);
           strokePath([33,246,161,160,159,158,157,173,133,155,154,153,145,144,163,7], true);
           strokePath([263,466,388,387,386,385,384,398,362,382,381,380,374,373,390,249], true);
-
-          // ── Nose: bridge + tip + wings as one continuous outline ──
-          // Bridge down the middle:
           strokePath([168, 6, 197, 195, 5, 4, 1], false);
-          // Right wing:
           strokePath([4, 49, 64, 98, 97, 2, 326, 327, 294, 279, 4], true);
-
-          // ── Outer lips ──
           strokePath([61,146,91,181,84,17,314,405,321,375,291,409,270,269,267,0,37,39,40,185], true);
 
-          // ── Face oval (jaw + forehead contour) — fine stroke ──
+          // ── 臉龐輪廓 (face oval) — even thinner ──
           g.strokeStyle = fineStr;
-          g.lineWidth = fineW;
+          g.lineWidth = ovalW;
           strokePath([10,338,297,332,284,251,389,356,454,323,361,288,397,365,379,378,400,377,152,148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109], true);
 
-          // ── 中軸 (central axis) from 天庭 to 地閣 ──
+          // ── 中軸 (central axis) ──
           if(lm[10] && lm[152]){
             g.strokeStyle = dashStr;
-            g.lineWidth = 1;
-            g.setLineDash([6, 4]);
+            g.lineWidth = 0.8;
+            g.setLineDash([5, 4]);
             const [tx, ty] = N2S(lm[10].x, lm[10].y);
             const [bx, by] = N2S(lm[152].x, lm[152].y);
             g.beginPath(); g.moveTo(tx, ty); g.lineTo(bx, by); g.stroke();
             g.setLineDash([]);
           }
 
-          // ── 三停 dividers — horizontal dashed lines at 印堂 & 鼻底 ──
-          const drawHLine = (lmIdx, label) => {
+          // ── Helper: marker dot + label at landmark, with offset direction ──
+          //   dirX/dirY in -1..1 — offsets the label away from the marker
+          const labelAt = (lmIdx, label, dirX, dirY, opts) => {
             const p = lm[lmIdx];
             if(!p) return;
-            const [cxLine, cyLine] = N2S(p.x, p.y);
-            const halfW = faceH * 0.40;
-            g.strokeStyle = dashStr;
-            g.lineWidth = 0.9;
-            g.setLineDash([4, 4]);
-            g.beginPath();
-            g.moveTo(cxLine - halfW, cyLine);
-            g.lineTo(cxLine + halfW, cyLine);
-            g.stroke();
-            g.setLineDash([]);
-            // Label
-            g.font = `${Math.max(10, eyeDist * 0.13)}px "Noto Serif TC", "Songti TC", serif`;
-            g.textBaseline = 'middle';
-            g.textAlign = 'left';
-            g.fillStyle = labelFill;
-            g.fillText(label, cxLine + halfW + 4, cyLine);
-          };
-          drawHLine(9,   '印堂');     // between eyebrows
-          drawHLine(2,   '鼻底');     // nose base
-
-          // ── Key 面相 reference points labelled along the axis ──
-          const keyPoints = [
-            [10,  '天庭'],   // upper forehead
-            [9,   '印堂'],   // glabella (between brows)
-            [168, '山根'],   // nose root
-            [4,   '年壽'],   // mid-bridge
-            [1,   '準頭'],   // nose tip
-            [13,  '人中'],   // philtrum (above upper lip — landmark 0 is upper lip)
-            [152, '地閣'],   // chin point
-          ];
-          g.font = `${Math.max(10, eyeDist * 0.12)}px "Noto Serif TC", "Songti TC", serif`;
-          g.textBaseline = 'middle';
-          for(const [idx, label] of keyPoints){
-            const p = lm[idx];
-            if(!p) continue;
             const [px, py] = N2S(p.x, p.y);
-            // Marker dot
+            const off = (opts && opts.off) || Math.max(8, eyeDist * 0.10);
+            const dot = (opts && opts.dot) || 2.3;
+            const fill = (opts && opts.fill) || palaceFill;
+            const font = (opts && opts.font) || labelFontSm;
             g.fillStyle = pointFill;
-            g.beginPath();
-            g.arc(px, py, 3, 0, TAU);
-            g.fill();
-            // Label to the right of the marker
-            g.textAlign = 'left';
-            g.fillStyle = labelFill;
-            g.fillText(label, px + 8, py);
-          }
+            g.beginPath(); g.arc(px, py, dot, 0, TAU); g.fill();
+            g.fillStyle = fill;
+            g.font = font;
+            g.textBaseline = 'middle';
+            g.textAlign = dirX < 0 ? 'right' : (dirX > 0 ? 'left' : 'center');
+            g.fillText(label, px + dirX * off, py + dirY * off);
+          };
+          // For positions BETWEEN two landmarks (averaged)
+          const labelMid = (lmIdxA, lmIdxB, label, dirX, dirY, opts) => {
+            const pa = lm[lmIdxA], pb = lm[lmIdxB];
+            if(!pa || !pb) return;
+            const [ax, ay] = N2S(pa.x, pa.y);
+            const [bx, by] = N2S(pb.x, pb.y);
+            const px = (ax + bx) * 0.5, py = (ay + by) * 0.5;
+            const off = (opts && opts.off) || Math.max(8, eyeDist * 0.10);
+            const dot = (opts && opts.dot) || 2.3;
+            const fill = (opts && opts.fill) || palaceFill;
+            const font = (opts && opts.font) || labelFontSm;
+            g.fillStyle = pointFill;
+            g.beginPath(); g.arc(px, py, dot, 0, TAU); g.fill();
+            g.fillStyle = fill;
+            g.font = font;
+            g.textBaseline = 'middle';
+            g.textAlign = dirX < 0 ? 'right' : (dirX > 0 ? 'left' : 'center');
+            g.fillText(label, px + dirX * off, py + dirY * off);
+          };
+
+          // ════════════════════════════════════════════════════════════
+          //  軸點 (axial reference points) — 沿中軸標示
+          // ════════════════════════════════════════════════════════════
+          labelAt(10,  '天庭', 0, -0.95, { fill: axisFill, font: labelFontMd });
+          labelAt(9,   '印堂', 1.4,  0,   { fill: axisFill });
+          labelAt(168, '山根', 1.4,  0,   { fill: axisFill });
+          labelAt(1,   '準頭', 1.4,  0,   { fill: axisFill });
+          labelAt(13,  '人中', 1.4,  0,   { fill: axisFill });
+          labelAt(152, '地閣', 0,    1.0, { fill: axisFill, font: labelFontMd });
+
+          // ════════════════════════════════════════════════════════════
+          //  十二宮 (twelve palaces) — note left/right are SUBJECT's
+          //  (viewer's right = subject's left, etc.)
+          // ════════════════════════════════════════════════════════════
+          //  ◆ 遷移宮 — outer top temples (left + right)
+          labelAt(103, '遷移', -1.4, -0.4);   // subject's right temple
+          labelAt(332, '遷移',  1.4, -0.4);   // subject's left temple
+          //  ◆ 官祿宮 — center forehead (above 命宮)
+          labelMid(10, 9, '官祿', 1.6, -0.2);
+          //  ◆ 父母宮 — left/right of upper forehead
+          labelAt(67,  '父', -1.0, -0.5);
+          labelAt(297, '母',  1.0, -0.5);
+          //  ◆ 福德宮 — eyebrow tail outer area
+          labelAt(46,  '福德', -1.2, 0);
+          labelAt(276, '福德',  1.2, 0);
+          //  ◆ 兄弟宮 — eyebrow body
+          labelAt(105, '兄弟', 0, -0.95);
+          labelAt(334, '兄弟', 0, -0.95);
+          //  ◆ 命宮 — between eyebrows (印堂上)
+          //     already covered by 印堂 axial label — skip double-up
+          //  ◆ 田宅宮 — upper eyelid mid
+          labelAt(159, '田宅', 0, -0.95);
+          labelAt(386, '田宅', 0, -0.95);
+          //  ◆ 夫妻宮 — outer eye corners (魚尾 area)
+          labelAt(33,  '夫妻', -1.2, 0);
+          labelAt(263, '夫妻',  1.2, 0);
+          //  ◆ 疾厄宮 — nose bridge between eyes (山根 below)
+          labelAt(6,   '疾厄', 1.5, 0);
+          //  ◆ 子女宮 — under-eye / tear trough
+          labelAt(145, '子女', 0, 1.0);
+          labelAt(374, '子女', 0, 1.0);
+          //  ◆ 財帛宮 — at nose tip (mostly overlaps 準頭, label below)
+          labelAt(4,   '財帛', -1.5, 0);
+          //  ◆ 奴僕宮 — lower jaw / outer chin
+          labelAt(172, '奴僕', -1.3, 0.2);   // subject right
+          labelAt(397, '奴僕',  1.3, 0.2);   // subject left
 
           break;
         }
