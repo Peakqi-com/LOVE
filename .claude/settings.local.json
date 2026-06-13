@@ -1,0 +1,53 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(awk 'NR<24 || NR>937' c:/Users/User/Documents/GitHub/LOVE2/LOVE/index.html)",
+      "Bash(awk 'NR<12782 || NR>12993' c:/Users/User/Documents/GitHub/LOVE2/LOVE/index.html)",
+      "Bash(awk 'NR<8665 || NR>9041' c:/Users/User/Documents/GitHub/LOVE2/LOVE/index.html)",
+      "Bash(node --check c:/Users/User/Documents/GitHub/LOVE2/LOVE/ar-3d.js)",
+      "Bash(node --check c:/Users/User/Documents/GitHub/LOVE2/LOVE/media-library.js)",
+      "Bash(awk '/^<script>$/,/^<\\\\/script>$/' index.html)",
+      "Bash(awk '/^<script>$/{flag=!flag; next} flag' index.html)",
+      "Bash(node --check /tmp/main-script.js)",
+      "Bash(grep -n '^<script>$\\\\|^</script>$' index.html)",
+      "Bash(cd c:/Users/User/Documents/GitHub/LOVE2/LOVE && sed -n '1379,14783p' index.html > /tmp/main-script.js && node --check /tmp/main-script.js && echo \"main script: OK\")",
+      "Bash(sed -n '14798,14796p' index.html)",
+      "Bash(sed -n '14842,15418p' index.html)",
+      "Bash(node --check /tmp/gate.js)",
+      "Bash(sed -n '10772,12437p' index.html)",
+      "Bash(node --check camera-fx.js)",
+      "Bash(awk 'NR<10772 || NR>12437' index.html)",
+      "Bash(mv index.tmp.html index.html)",
+      "Bash(sed -n '10777,11624p' index.html)",
+      "Bash(node --check typography.js)",
+      "Bash(awk 'NR<10777 || NR>11624' index.html)",
+      "Bash(sed -n '3998,7042p' index.html)",
+      "Bash(node --check visual-modes.js)",
+      "Bash(awk 'NR<3998 || NR>7042' index.html)",
+      "Bash(node --check media-library.js)",
+      "Bash(node --check ar-3d.js)",
+      "Bash(grep -n '^<script>$' index.html)",
+      "Bash(sed -n '9268,9885p' index.html)",
+      "Bash(node --check /tmp/fab.js)",
+      "Bash(node build.js --safe)",
+      "Bash(rm -rf dist)",
+      "Bash(node build.js)",
+      "Bash(grep -o 'fullscreen.\\\\{0,80\\\\}' dist/index.html)",
+      "Bash(grep -o 'createElement\\(\"[^\"]\\\\{1,20\\\\}\"' dist/index.html)",
+      "Bash(grep -oP '\"[^\"]*F toggles[^\"]*\"[^,]*,[^,]{0,80}' dist/index.html)",
+      "Bash(sed -n '1397,1402p' index.html)",
+      "Bash(sed -n '9245,9249p' index.html)",
+      "Bash(sed -n '9268,9888p' index.html)",
+      "Bash(sed -n '1389,9248p' index.html)",
+      "Bash(node --check /tmp/main.js)",
+      "Bash(awk 'NR>=1389 && NR<=9248' index.html)",
+      "Bash(grep -n '^[a-z]\\\\|^\\\\$')"
+    ],
+    "additionalDirectories": [
+      "\\tmp"
+    ]
+  }
+}
