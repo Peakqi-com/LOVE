@@ -4262,6 +4262,512 @@ let _oilFlowAngle = 0;
 let _oilFlowDriftT = 0;
 let _oilFlowSwirl  = 0;       // amount of curl in stroke direction
 
+// ════════════════════════════════════════════════════════════════════════════
+// WEBGL OIL PAINTING — Van Gogh impasto via fluid sim
+// Reuses Suminagashi's fluid sim shaders (advect / divergence / pressure /
+// gradient / curl / vorticity). Adds oil-specific shaders:
+//   - FRAG_OIL_BRUSH    directional brush splat with bristle noise
+//   - FRAG_OIL_SETTLE   integrate active dye into settled paint texture
+//   - FRAG_OIL_DISPLAY  linen canvas + multi-layer composite + impasto highlights
+// Active dye flows (very slowly — fluid is tuned for stillness, not motion).
+// Settled paint stays put and accumulates thickness. Highlights come from
+// thickness-gradient surface normals lit by a soft side light.
+// ════════════════════════════════════════════════════════════════════════════
+let _oilFluid = null;
+let _oilFluidFailed = false;
+let _oilSmallSpawnT = 0;
+let _oilLongSpawnT = 0;
+let _oilImpastoSpawnT = 0;
+let _oilPaletteShiftT = 0;
+let _oilLastBeat = 0;
+
+// Van Gogh-ish "active palette window" — at any time only ~3-4 colours are
+// in play, drawn from the larger pool, swapped every 20-45s for variation.
+let _oilActivePalette = ['mid','mid','fore','far'];
+
+const _OIL_GROUND_RGB = [
+  [0.91, 0.85, 0.70],   // warm linen ivory
+  [0.10, 0.10, 0.14],   // near-black canvas (Starry Night feel)
+  [0.16, 0.14, 0.22],   // deep indigo
+  [0.23, 0.14, 0.10],   // burnt umber primed canvas
+  [0.78, 0.72, 0.56],   // raw linen
+  [0.66, 0.56, 0.44],   // dusty kraft
+  [0.10, 0.22, 0.22],   // deep teal
+  [0.40, 0.16, 0.22],   // dried-blood maroon
+  [0.04, 0.10, 0.20],   // midnight cobalt (Starry Night ground)
+];
+
+const _OIL_VERT_SRC = `
+  attribute vec2 aPos;
+  varying vec2 vUV;
+  void main(){
+    vUV = aPos * 0.5 + 0.5;
+    gl_Position = vec4(aPos, 0.0, 1.0);
+  }`;
+
+// Directional brush splat — bristle noise on top of an elliptical footprint
+// rotated to brush direction. uColor.rgb = paint colour, uColor.a = thickness.
+const _OIL_BRUSH_SRC = `
+  precision highp float;
+  varying vec2 vUV;
+  uniform sampler2D uSource;
+  uniform vec2  uPoint;
+  uniform vec2  uDir;     // unit vector
+  uniform vec4  uColor;
+  uniform float uLength;
+  uniform float uWidth;
+  uniform float uAspect;
+  uniform float uSeed;
+
+  float hash21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float vnoise(vec2 p){
+    vec2 i = floor(p), f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash21(i), hash21(i + vec2(1.0, 0.0)), u.x),
+               mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), u.x), u.y);
+  }
+
+  void main(){
+    vec2 p = vUV - uPoint;
+    p.x *= uAspect;
+    vec2 perp = vec2(-uDir.y, uDir.x);
+    float along = dot(p, uDir);
+    float across = dot(p, perp);
+    float halfL = uLength * 0.5;
+    float halfW = uWidth  * 0.5;
+    float u = along / halfL;
+    float v = across / halfW;
+    vec4 prev = texture2D(uSource, vUV);
+    if(abs(u) > 1.0 || abs(v) > 1.0){
+      gl_FragColor = prev;
+      return;
+    }
+    // End taper (thinner at brush tips) + soft cross-section
+    float endTaper = 1.0 - u * u * 0.55;
+    float crossProf = 1.0 - v * v;
+    // Bristle noise (low + mid + high freq) — gives uneven paint along brush
+    vec2 nuv = vec2(u * 4.0, v * 9.0) + uSeed * 7.0;
+    float bristle = vnoise(nuv * 1.0) * 0.50
+                  + vnoise(nuv * 3.7) * 0.30
+                  + vnoise(nuv * 11.0) * 0.20;
+    // Rim breakup on long edges — paint catches less near brush edge
+    float rimEdge = smoothstep(0.55, 1.0, abs(v)) * vnoise(nuv * 6.0 + uSeed);
+    float strength = endTaper * crossProf * (0.50 + bristle * 0.55) * (1.0 - rimEdge * 0.55);
+    if(strength <= 0.0){ gl_FragColor = prev; return; }
+    // Blend new paint onto old — thick paint overrides, thin paint glazes
+    float coverage = clamp(strength * uColor.a, 0.0, 1.0);
+    vec3 newRGB = mix(prev.rgb, uColor.rgb, coverage);
+    float newThick = clamp(prev.a + coverage * 0.32, 0.0, 1.5);
+    gl_FragColor = vec4(newRGB, newThick);
+  }`;
+
+// Integrate active dye into settled paint texture. uRate ≈ 0.018 / step.
+const _OIL_SETTLE_SRC = `
+  precision highp float;
+  varying vec2 vUV;
+  uniform sampler2D uSettled;
+  uniform sampler2D uActive;
+  uniform float uRate;
+  uniform float uDecay;
+  void main(){
+    vec4 settled = texture2D(uSettled, vUV);
+    vec4 active  = texture2D(uActive,  vUV);
+    // Blend the active paint's colour into settled in proportion to its
+    // coverage × rate, accumulate thickness.
+    float take = active.a * uRate;
+    vec3 newRGB = mix(settled.rgb, active.rgb, take);
+    float newThick = clamp(settled.a * uDecay + take * 0.6, 0.0, 1.5);
+    gl_FragColor = vec4(newRGB, newThick);
+  }`;
+
+// Composite: linen canvas + settled paint + active paint + impasto highlights.
+const _OIL_DISPLAY_SRC = `
+  precision highp float;
+  varying vec2 vUV;
+  uniform sampler2D uActive;
+  uniform sampler2D uSettled;
+  uniform vec2  uTexel;
+  uniform float uGrain;
+  uniform float uVignette;
+  uniform float uImpasto;
+  uniform vec3  uGround;
+
+  float hash21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float vnoise(vec2 p){
+    vec2 i = floor(p), f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash21(i), hash21(i + vec2(1.0, 0.0)), u.x),
+               mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), u.x), u.y);
+  }
+
+  void main(){
+    vec4 active  = texture2D(uActive,  vUV);
+    vec4 settled = texture2D(uSettled, vUV);
+
+    // ── Linen canvas ──
+    vec3 canvas = uGround;
+    float fibH = vnoise(vec2(vUV.x * 280.0, vUV.y * 8.0));
+    float fibV = vnoise(vec2(vUV.x * 8.0,   vUV.y * 280.0));
+    canvas += vec3((fibH - 0.5) * 0.040 + (fibV - 0.5) * 0.038);
+    // Fine grain
+    float grain = hash21(floor(vUV * 1400.0)) - 0.5;
+    canvas += vec3(grain * uGrain * 0.07);
+    // Subtle large-scale colour variation in the canvas itself
+    float wash = vnoise(vUV * 4.2);
+    canvas *= 0.95 + wash * 0.10;
+
+    // ── Multi-layer composite ──
+    vec3 paint = mix(settled.rgb, active.rgb, smoothstep(0.0, 0.4, active.a));
+    float totalCov = clamp(settled.a + active.a, 0.0, 1.0);
+    vec3 result = mix(canvas, paint, totalCov);
+
+    // ── Impasto highlight from thickness gradient ──
+    float tL = texture2D(uActive, vUV - vec2(uTexel.x, 0.0)).a + texture2D(uSettled, vUV - vec2(uTexel.x, 0.0)).a;
+    float tR = texture2D(uActive, vUV + vec2(uTexel.x, 0.0)).a + texture2D(uSettled, vUV + vec2(uTexel.x, 0.0)).a;
+    float tB = texture2D(uActive, vUV - vec2(0.0, uTexel.y)).a + texture2D(uSettled, vUV - vec2(0.0, uTexel.y)).a;
+    float tT = texture2D(uActive, vUV + vec2(0.0, uTexel.y)).a + texture2D(uSettled, vUV + vec2(0.0, uTexel.y)).a;
+    vec2 grad = vec2(tR - tL, tT - tB);
+    vec3 n = normalize(vec3(grad * 4.0, 1.0));
+    vec3 ld = normalize(vec3(-0.55, 0.70, 0.80));
+    float lambert = clamp(dot(n, ld), 0.0, 1.0);
+    float thickness = settled.a + active.a;
+    float highlight = pow(lambert, 5.0) * uImpasto * smoothstep(0.10, 0.70, thickness);
+    result += vec3(highlight * 0.20);
+
+    // ── Vignette ──
+    vec2 vc = vUV - 0.5;
+    float vig = 1.0 - smoothstep(0.42, 0.88, length(vc) * 1.28);
+    result *= mix(1.0 - uVignette * 0.22, 1.0, vig);
+
+    gl_FragColor = vec4(result, 1.0);
+  }`;
+
+function _initOilFluid(){
+  const SIM_W = 256, SIM_H = 144;     // sim res — paint barely moves so low is fine
+  const DYE_W = 1024, DYE_H = 576;    // dye res — paint detail visible at this res
+  const c = document.createElement('canvas');
+  c.width = DYE_W; c.height = DYE_H;
+  const gl = c.getContext('webgl', { alpha: false, premultipliedAlpha: false, depth: false, stencil: false })
+          || c.getContext('experimental-webgl');
+  if(!gl) return null;
+
+  const hf  = gl.getExtension('OES_texture_half_float');
+  const hfL = gl.getExtension('OES_texture_half_float_linear');
+  const dataType = hf ? hf.HALF_FLOAT_OES : gl.UNSIGNED_BYTE;
+  const linear   = hfL ? gl.LINEAR : gl.NEAREST;
+
+  function compile(vsSrc, fsSrc){
+    const vs = gl.createShader(gl.VERTEX_SHADER);
+    gl.shaderSource(vs, vsSrc); gl.compileShader(vs);
+    if(!gl.getShaderParameter(vs, gl.COMPILE_STATUS)){
+      console.error('[oil-fluid] vs:', gl.getShaderInfoLog(vs)); return null;
+    }
+    const fs = gl.createShader(gl.FRAGMENT_SHADER);
+    gl.shaderSource(fs, fsSrc); gl.compileShader(fs);
+    if(!gl.getShaderParameter(fs, gl.COMPILE_STATUS)){
+      console.error('[oil-fluid] fs:', gl.getShaderInfoLog(fs)); return null;
+    }
+    const p = gl.createProgram();
+    gl.attachShader(p, vs); gl.attachShader(p, fs);
+    gl.linkProgram(p);
+    if(!gl.getProgramParameter(p, gl.LINK_STATUS)){
+      console.error('[oil-fluid] link:', gl.getProgramInfoLog(p)); return null;
+    }
+    return p;
+  }
+
+  // Reuse Suminagashi's basic shaders — same fluid sim shape works fine here
+  const progAdvect = compile(_OIL_VERT_SRC, _SUMI_ADVECT_SRC);
+  const progDiv    = compile(_OIL_VERT_SRC, _SUMI_DIV_SRC);
+  const progPress  = compile(_OIL_VERT_SRC, _SUMI_PRESSURE_SRC);
+  const progGrad   = compile(_OIL_VERT_SRC, _SUMI_GRAD_SRC);
+  const progCurl   = compile(_OIL_VERT_SRC, _SUMI_CURL_SRC);
+  const progVort   = compile(_OIL_VERT_SRC, _SUMI_VORT_SRC);
+  // Oil-specific shaders
+  const progBrush  = compile(_OIL_VERT_SRC, _OIL_BRUSH_SRC);
+  const progSettle = compile(_OIL_VERT_SRC, _OIL_SETTLE_SRC);
+  const progDisp   = compile(_OIL_VERT_SRC, _OIL_DISPLAY_SRC);
+  if(!progAdvect || !progDiv || !progPress || !progGrad || !progCurl || !progVort
+     || !progBrush || !progSettle || !progDisp){
+    return null;
+  }
+
+  const quad = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1,  -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+
+  function makeFBO(w, h){
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, linear);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, linear);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, dataType, null);
+    const fbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    if(gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) return null;
+    gl.viewport(0, 0, w, h);
+    gl.clearColor(0,0,0,0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    return { tex, fbo, w, h };
+  }
+  function makeDouble(w, h){
+    const r = makeFBO(w, h), wr = makeFBO(w, h);
+    if(!r || !wr) return null;
+    return {
+      read: r, write: wr,
+      swap(){ const t = this.read; this.read = this.write; this.write = t; },
+    };
+  }
+
+  const velocity   = makeDouble(SIM_W, SIM_H);
+  const pressure   = makeDouble(SIM_W, SIM_H);
+  const divergence = makeFBO(SIM_W, SIM_H);
+  const curl       = makeFBO(SIM_W, SIM_H);
+  // dye = active paint (RGB color + alpha thickness), runs at DYE res for detail
+  const dye        = makeDouble(DYE_W, DYE_H);
+  // settled paint = paint that has dried in place
+  const settled    = makeDouble(DYE_W, DYE_H);
+  if(!velocity || !pressure || !divergence || !curl || !dye || !settled){
+    console.warn('[oil-fluid] FBO creation failed; oil-painting mode falls back');
+    return null;
+  }
+
+  return {
+    gl, canvas: c,
+    SIM_W, SIM_H, DYE_W, DYE_H,
+    quad,
+    progAdvect, progDiv, progPress, progGrad, progCurl, progVort,
+    progBrush, progSettle, progDisp,
+    velocity, pressure, divergence, curl, dye, settled,
+    simTexel:  [1/SIM_W, 1/SIM_H],
+    dyeTexel:  [1/DYE_W, 1/DYE_H],
+    aspect: DYE_W / DYE_H,
+    groundIdx: 0,
+  };
+}
+
+function _oilBindQuad(F, prog){
+  const gl = F.gl;
+  gl.useProgram(prog);
+  const loc = gl.getAttribLocation(prog, 'aPos');
+  gl.bindBuffer(gl.ARRAY_BUFFER, F.quad);
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+}
+function _oilBlit(F, target){
+  const gl = F.gl;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
+  gl.viewport(0, 0, target.w, target.h);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+}
+
+// Paint one brush stroke onto the active dye texture.
+// rgb = paint colour (0..1), thickness 0..1, x01/y01 = centre.
+function _oilBrushStroke(F, x01, y01, dirX, dirY, length, width, rgb, thickness){
+  const gl = F.gl;
+  const dlen = Math.hypot(dirX, dirY) || 1;
+  const ux = dirX / dlen, uy = dirY / dlen;
+  const seed = Math.random() * 50;
+
+  _oilBindQuad(F, F.progBrush);
+  gl.uniform1i(gl.getUniformLocation(F.progBrush, 'uSource'), 0);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, F.dye.read.tex);
+  gl.uniform2f(gl.getUniformLocation(F.progBrush, 'uPoint'), x01, 1 - y01);
+  gl.uniform2f(gl.getUniformLocation(F.progBrush, 'uDir'), ux, -uy);
+  gl.uniform4f(gl.getUniformLocation(F.progBrush, 'uColor'), rgb[0], rgb[1], rgb[2], thickness);
+  gl.uniform1f(gl.getUniformLocation(F.progBrush, 'uLength'), length);
+  gl.uniform1f(gl.getUniformLocation(F.progBrush, 'uWidth'),  width);
+  gl.uniform1f(gl.getUniformLocation(F.progBrush, 'uAspect'), F.aspect);
+  gl.uniform1f(gl.getUniformLocation(F.progBrush, 'uSeed'),   seed);
+  _oilBlit(F, F.dye.write);
+  F.dye.swap();
+}
+
+function _oilStep(F, dt){
+  const gl = F.gl;
+  // ── Curl (low) + light vorticity for very slow swirl ──
+  _oilBindQuad(F, F.progCurl);
+  gl.uniform1i(gl.getUniformLocation(F.progCurl, 'uVelocity'), 0);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, F.velocity.read.tex);
+  gl.uniform2f(gl.getUniformLocation(F.progCurl, 'uTexel'), F.simTexel[0], F.simTexel[1]);
+  _oilBlit(F, F.curl);
+
+  _oilBindQuad(F, F.progVort);
+  gl.uniform1i(gl.getUniformLocation(F.progVort, 'uVelocity'), 0);
+  gl.uniform1i(gl.getUniformLocation(F.progVort, 'uCurl'), 1);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, F.velocity.read.tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, F.curl.tex);
+  gl.uniform2f(gl.getUniformLocation(F.progVort, 'uTexel'), F.simTexel[0], F.simTexel[1]);
+  gl.uniform1f(gl.getUniformLocation(F.progVort, 'uCurlAmount'), 6);   // very low — paint barely swirls
+  gl.uniform1f(gl.getUniformLocation(F.progVort, 'uDt'), dt);
+  _oilBlit(F, F.velocity.write); F.velocity.swap();
+
+  // ── Divergence + pressure solve ──
+  _oilBindQuad(F, F.progDiv);
+  gl.uniform1i(gl.getUniformLocation(F.progDiv, 'uVelocity'), 0);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, F.velocity.read.tex);
+  gl.uniform2f(gl.getUniformLocation(F.progDiv, 'uTexel'), F.simTexel[0], F.simTexel[1]);
+  _oilBlit(F, F.divergence);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, F.pressure.read.fbo);
+  gl.viewport(0, 0, F.pressure.read.w, F.pressure.read.h);
+  gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT);
+  _oilBindQuad(F, F.progPress);
+  gl.uniform1i(gl.getUniformLocation(F.progPress, 'uPressure'), 0);
+  gl.uniform1i(gl.getUniformLocation(F.progPress, 'uDivergence'), 1);
+  gl.uniform2f(gl.getUniformLocation(F.progPress, 'uTexel'), F.simTexel[0], F.simTexel[1]);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, F.divergence.tex);
+  for(let i = 0; i < 18; i++){
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, F.pressure.read.tex);
+    _oilBlit(F, F.pressure.write); F.pressure.swap();
+  }
+
+  _oilBindQuad(F, F.progGrad);
+  gl.uniform1i(gl.getUniformLocation(F.progGrad, 'uPressure'), 0);
+  gl.uniform1i(gl.getUniformLocation(F.progGrad, 'uVelocity'), 1);
+  gl.uniform2f(gl.getUniformLocation(F.progGrad, 'uTexel'), F.simTexel[0], F.simTexel[1]);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, F.pressure.read.tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, F.velocity.read.tex);
+  _oilBlit(F, F.velocity.write); F.velocity.swap();
+
+  // ── Advect velocity (very fast decay → paint quickly stops moving) ──
+  _oilBindQuad(F, F.progAdvect);
+  gl.uniform1i(gl.getUniformLocation(F.progAdvect, 'uVelocity'), 0);
+  gl.uniform1i(gl.getUniformLocation(F.progAdvect, 'uSource'), 1);
+  gl.uniform2f(gl.getUniformLocation(F.progAdvect, 'uTexel'), F.simTexel[0], F.simTexel[1]);
+  gl.uniform1f(gl.getUniformLocation(F.progAdvect, 'uDt'), dt);
+  gl.uniform1f(gl.getUniformLocation(F.progAdvect, 'uDissipation'), 0.965);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, F.velocity.read.tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, F.velocity.read.tex);
+  _oilBlit(F, F.velocity.write); F.velocity.swap();
+
+  // ── Advect dye (slow drift — paint mostly stays put) ──
+  // dye runs at DYE res, but the advect shader uses uTexel for the velocity
+  // sample position which lives at SIM res. To advect correctly, we sample
+  // velocity at sim-texel coords. We use sim-texel for both; sampling velocity
+  // at dye UV gives natural bilinear interpolation.
+  gl.uniform2f(gl.getUniformLocation(F.progAdvect, 'uTexel'), F.dyeTexel[0], F.dyeTexel[1]);
+  gl.uniform1f(gl.getUniformLocation(F.progAdvect, 'uDissipation'), 0.998);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, F.velocity.read.tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, F.dye.read.tex);
+  _oilBlit(F, F.dye.write); F.dye.swap();
+
+  // ── Settle: integrate active dye into settled paint ──
+  _oilBindQuad(F, F.progSettle);
+  gl.uniform1i(gl.getUniformLocation(F.progSettle, 'uSettled'), 0);
+  gl.uniform1i(gl.getUniformLocation(F.progSettle, 'uActive'), 1);
+  gl.uniform1f(gl.getUniformLocation(F.progSettle, 'uRate'), 0.022);
+  gl.uniform1f(gl.getUniformLocation(F.progSettle, 'uDecay'), 0.9996);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, F.settled.read.tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, F.dye.read.tex);
+  _oilBlit(F, F.settled.write); F.settled.swap();
+}
+
+function _oilRenderToCanvas(F, grain, vignette, impasto){
+  const gl = F.gl;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, F.canvas.width, F.canvas.height);
+  _oilBindQuad(F, F.progDisp);
+  gl.uniform1i(gl.getUniformLocation(F.progDisp, 'uActive'), 0);
+  gl.uniform1i(gl.getUniformLocation(F.progDisp, 'uSettled'), 1);
+  gl.uniform2f(gl.getUniformLocation(F.progDisp, 'uTexel'), F.dyeTexel[0], F.dyeTexel[1]);
+  gl.uniform1f(gl.getUniformLocation(F.progDisp, 'uGrain'),    grain);
+  gl.uniform1f(gl.getUniformLocation(F.progDisp, 'uVignette'), vignette);
+  gl.uniform1f(gl.getUniformLocation(F.progDisp, 'uImpasto'),  impasto);
+  const ground = _OIL_GROUND_RGB[F.groundIdx];
+  gl.uniform3f(gl.getUniformLocation(F.progDisp, 'uGround'), ground[0], ground[1], ground[2]);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, F.dye.read.tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, F.settled.read.tex);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+}
+
+// Pick a paint colour from the active palette window, normalised to 0..1
+function _pickOilRgb01(){
+  const region = _oilActivePalette[(Math.random()*_oilActivePalette.length)|0];
+  const arr = OIL_PALETTE[region];
+  const rgb255 = arr[(Math.random()*arr.length)|0];
+  return [rgb255[0]/255, rgb255[1]/255, rgb255[2]/255];
+}
+
+// Emit one brush — region picks position + size + angle bias
+function _oilEmitBrush(F, kind, forceX, forceY){
+  let x01, y01, length, width, thickness;
+  // Vertical position by kind — far top, mid middle, fore bottom
+  let yLow, yHigh;
+  if(kind === 'far')      { yLow = 0.02; yHigh = 0.42; }
+  else if(kind === 'mid') { yLow = 0.28; yHigh = 0.78; }
+  else                    { yLow = 0.55; yHigh = 0.98; }    // fore + impasto
+  if(forceX != null && forceY != null){ x01 = forceX; y01 = forceY; }
+  else {
+    x01 = Math.random();
+    y01 = yLow + Math.random() * (yHigh - yLow);
+  }
+  // Size by kind — far smaller / softer, fore bigger / heavier
+  if(kind === 'far'){
+    length = 0.024 + Math.random() * 0.012;
+    width  = 0.005 + Math.random() * 0.002;
+    thickness = 0.45 + Math.random() * 0.20;
+  } else if(kind === 'mid'){
+    length = 0.030 + Math.random() * 0.016;
+    width  = 0.006 + Math.random() * 0.003;
+    thickness = 0.65 + Math.random() * 0.25;
+  } else if(kind === 'fore'){
+    length = 0.026 + Math.random() * 0.018;
+    width  = 0.007 + Math.random() * 0.004;
+    thickness = 0.80 + Math.random() * 0.20;
+  } else if(kind === 'impasto'){
+    length = 0.020 + Math.random() * 0.010;
+    width  = 0.010 + Math.random() * 0.005;
+    thickness = 1.00 + Math.random() * 0.30;
+  } else if(kind === 'long'){
+    length = 0.080 + Math.random() * 0.04;
+    width  = 0.006 + Math.random() * 0.003;
+    thickness = 0.75 + Math.random() * 0.20;
+  }
+  // Angle — biased by global flow field + central swirl tangent
+  const dxF = x01 - 0.5;
+  const dyF = y01 - 0.5;
+  const swirlAng = Math.atan2(dyF, dxF) + Math.PI * 0.5;
+  let angle;
+  if(kind === 'fore'){
+    angle = -Math.PI/2 + Math.sin(_oilFlowAngle) * 0.6 + (Math.random()-0.5) * 0.5;
+  } else if(kind === 'far'){
+    angle = swirlAng * _oilFlowSwirl + _oilFlowAngle * (1 - _oilFlowSwirl) + (Math.random()-0.5) * 0.45;
+  } else {
+    angle = _oilFlowAngle + (Math.random()-0.5) * 0.7;
+  }
+  const rgb = _pickOilRgb01();
+  _oilBrushStroke(F, x01, y01, Math.cos(angle), Math.sin(angle), length, width, rgb, thickness);
+}
+
+// Paint initial composition so the canvas reads "80% painted" at first enable
+function _oilPaintInitial(F){
+  // Roll a fresh palette window so each enable starts with a different mood
+  const allRegions = ['far', 'mid', 'fore'];
+  _oilActivePalette = [
+    allRegions[(Math.random()*3)|0],
+    allRegions[(Math.random()*3)|0],
+    allRegions[(Math.random()*3)|0],
+    allRegions[(Math.random()*3)|0],
+  ];
+  for(let i = 0; i < 280; i++) _oilEmitBrush(F, 'far');
+  for(let i = 0; i < 360; i++) _oilEmitBrush(F, 'mid');
+  for(let i = 0; i < 220; i++) _oilEmitBrush(F, 'fore');
+  for(let i = 0; i < 30;  i++) _oilEmitBrush(F, 'impasto');
+}
+
+// Expose so Random can roll a new ground/palette
+window._oilPickNewGround = function(){
+  if(_oilFluid){
+    _oilFluid.groundIdx = (_oilFluid.groundIdx + 1 + ((Math.random()*3)|0)) % _OIL_GROUND_RGB.length;
+  }
+};
+
 function _pickOilColor(palette){
   const arr = OIL_PALETTE[palette];
   return arr[(Math.random() * arr.length) | 0];
@@ -4363,122 +4869,131 @@ function _paintOilInitial(cg){
   for(let i = 0; i < 240; i++) _spawnOilStroke(cg, 'fore');
 }
 
-// VJ-mode canvas grounds — when re-init the canvas, pick from a varied palette
-// instead of always cream. Allows Random to roll a new ground each time.
-const _OIL_GROUNDS = [
-  '#e8dcc2',   // warm ivory (default)
-  '#1a1a22',   // near-black charcoal
-  '#2a2438',   // deep indigo night
-  '#3a2418',   // burnt umber
-  '#c8b890',   // raw linen
-  '#a89070',   // dusty kraft
-  '#1a3a3a',   // deep teal
-  '#682838',   // dried blood maroon
-  '#d8d0c0',   // pale stone
-  '#0a1a30',   // midnight blue
-];
-let _oilGroundIdx = 0;
-function _oilPickNewGround(){
-  _oilGroundIdx = (_oilGroundIdx + 1 + Math.floor(Math.random()*3)) % _OIL_GROUNDS.length;
-  _oilCanvasKey = '';   // force rebuild on next draw
-}
-if(typeof window !== 'undefined') window._oilPickNewGround = _oilPickNewGround;
-
 function drawImpressionist(g, dt, T){
-  // ── Init persistent canvas + initial composition ──
-  const key = cv.width + 'x' + cv.height + '|' + _oilGroundIdx;
-  const ground = _OIL_GROUNDS[_oilGroundIdx];
-  if(!_oilCanvasCv || _oilCanvasKey !== key){
-    _oilCanvasCv = document.createElement('canvas');
-    _oilCanvasCv.width = cv.width;
-    _oilCanvasCv.height = cv.height;
-    const cg0 = _oilCanvasCv.getContext('2d');
-    cg0.setTransform(state.pixelRatio, 0, 0, state.pixelRatio, 0, 0);
-    cg0.fillStyle = ground;
-    cg0.fillRect(0, 0, W, H);
-    _paintOilInitial(cg0);
-    _oilCanvasKey = key;
+  // ── Lazy init WebGL oil sim + initial composition ──
+  if(!_oilFluid && !_oilFluidFailed){
+    _oilFluid = _initOilFluid();
+    if(_oilFluid){
+      _oilPaintInitial(_oilFluid);
+    } else {
+      _oilFluidFailed = true;
+      console.warn('[oil-fluid] WebGL unavailable; Impressionist mode shows ground only');
+    }
   }
-  const cg = _oilCanvasCv.getContext('2d');
-  cg.setTransform(state.pixelRatio, 0, 0, state.pixelRatio, 0, 0);
+  if(_oilFluidFailed) return;
+  const F = _oilFluid;
 
-  // ── Breathing wash — uses the current ground colour so dark grounds stay dark ──
-  cg.globalCompositeOperation = 'source-over';
-  cg.globalAlpha = 0.005;
-  cg.fillStyle = ground;
-  cg.fillRect(0, 0, W, H);
-  cg.globalAlpha = 1;
+  const dts = Math.min(0.033, dt / 1000);
+  const bass    = reactor.bass    || 0;
+  const vol     = reactor.vol     || 0;
+  const mid     = reactor.mid     || 0;
+  const treble  = reactor.treble  || 0;
+  const mScale  = (window._songMood && window._songMood.intensityScale) || 1;
 
-  // ── Flow field state — Van Gogh "writing" direction drifts slowly so the
-  //    painting reads as a coherent swirling composition over time.
+  // ── Flow field drift (every 8-14s pick a new global bias) ──
   _oilFlowDriftT += dt;
-  if(_oilFlowDriftT > 8000 + Math.random()*6000){     // every 8-14s pick new bias
+  if(_oilFlowDriftT > 8000 + Math.random()*6000){
     _oilFlowDriftT = 0;
     _oilFlowAngle = Math.random() * Math.PI * 2;
-    _oilFlowSwirl = 0.3 + Math.random() * 0.6;          // some scenes more swirly
+    _oilFlowSwirl = 0.3 + Math.random() * 0.6;
   } else {
-    _oilFlowAngle += (Math.random() - 0.5) * 0.008;     // very gentle wandering
-  }
-  _oilWindAngle += (Math.random() - 0.5) * 0.02;
-  _oilWindStrength *= 0.97;
-  const bass = reactor.bass || 0;
-  const vol  = reactor.vol  || 0;
-  const mid  = reactor.mid  || 0;
-
-  // ── Baseline spawn — slow + audio-reactive ──
-  _oilSpawnT += dt;
-  const spawnRate = 8 + vol * 30 + state.motionSpeed * 6;   // strokes / sec
-  let safety = 60;
-  while(_oilSpawnT > 1000 / Math.max(1, spawnRate) && safety-- > 0){
-    _oilSpawnT -= 1000 / Math.max(1, spawnRate);
-    _spawnOilStroke(cg);
+    _oilFlowAngle += (Math.random() - 0.5) * 0.008;
   }
 
-  // ── Bass = wind gust: cluster of strokes along wind angle ──
+  // ── Palette window shift every 20-45s — fresh tone group ──
+  _oilPaletteShiftT += dt;
+  if(_oilPaletteShiftT > 20000 + Math.random()*25000){
+    _oilPaletteShiftT = 0;
+    const regions = ['far','mid','fore'];
+    _oilActivePalette = [
+      regions[(Math.random()*3)|0],
+      regions[(Math.random()*3)|0],
+      regions[(Math.random()*3)|0],
+      regions[(Math.random()*3)|0],
+    ];
+  }
+
+  // ── Small brush spawns — every 0.8-2.5s emit 2-5 small brushes ──
+  _oilSmallSpawnT += dt;
+  const smallInt = 800 + Math.random() * 1700 - vol * 600;     // vol shortens interval
+  if(_oilSmallSpawnT > smallInt * mScale){
+    _oilSmallSpawnT = 0;
+    const N = 2 + ((Math.random() * 4)|0);
+    for(let i = 0; i < N; i++){
+      const kind = Math.random() < 0.25 ? 'far' : (Math.random() < 0.7 ? 'mid' : 'fore');
+      _oilEmitBrush(F, kind);
+    }
+  }
+
+  // ── Long directional brush every 4-10s ──
+  _oilLongSpawnT += dt;
+  const longInt = 4000 + Math.random() * 6000;
+  if(_oilLongSpawnT > longInt){
+    _oilLongSpawnT = 0;
+    _oilEmitBrush(F, 'long');
+  }
+
+  // ── Local impasto cluster every 10-24s ──
+  _oilImpastoSpawnT += dt;
+  const impInt = 10000 + Math.random() * 14000;
+  if(_oilImpastoSpawnT > impInt){
+    _oilImpastoSpawnT = 0;
+    // 6-10 thick brushes clustered at one canvas point
+    const cx = 0.20 + Math.random() * 0.60;
+    const cy = 0.20 + Math.random() * 0.60;
+    const N = 6 + ((Math.random() * 5)|0);
+    for(let i = 0; i < N; i++){
+      const x = cx + (Math.random() - 0.5) * 0.06;
+      const y = cy + (Math.random() - 0.5) * 0.06;
+      _oilEmitBrush(F, 'impasto', x, y);
+    }
+  }
+
+  // ── Bass beat: wider, heavier "wind gust" of strokes ──
   if(bass > 0.55 && state.beatFlash > 0.5){
-    if(!_oilCanvasCv._lastBeat || (state.beatCount || 0) > _oilCanvasCv._lastBeat){
-      _oilCanvasCv._lastBeat = state.beatCount || ((_oilCanvasCv._lastBeat || 0) + 1);
-      _oilWindAngle = (Math.random() - 0.5) * 0.6;          // mostly horizontal gust
-      _oilWindStrength = 1;
-      for(let i = 0; i < 18; i++) _spawnOilStroke(cg, 'mid', _oilWindAngle);
-      // Also a few fresh flower accents
-      for(let i = 0; i < 5; i++) _spawnOilStroke(cg, 'fore');
+    if(_oilLastBeat !== (state.beatCount || 0)){
+      _oilLastBeat = state.beatCount || (_oilLastBeat + 1);
+      const burstAngle = Math.random() * Math.PI * 2;
+      const oldFlowAngle = _oilFlowAngle;
+      _oilFlowAngle = burstAngle;          // momentarily align strokes
+      for(let i = 0; i < 14; i++) _oilEmitBrush(F, 'mid');
+      for(let i = 0; i < 4; i++)  _oilEmitBrush(F, 'fore');
+      _oilFlowAngle = oldFlowAngle;
     }
   }
 
-  // ── Mid = pollen light sparkles (small bright dabs in upper-mid region) ──
-  if(mid > 0.45){
-    for(let i = 0; i < 3; i++){
-      const x = Math.random() * W;
-      const y = (0.15 + Math.random() * 0.5) * H;
-      const rgb = [245 + (Math.random() * 10 | 0), 225 + (Math.random() * 15 | 0), 165 + (Math.random() * 20 | 0)];
-      _paintOilStroke(cg, x, y, Math.random() * TAU, 8 * SCALE, 5 * SCALE, rgb, 0.55);
+  // ── Treble: small fine highlight brushes (pollen / star sparkle feel) ──
+  if(treble > 0.45 && Math.random() < 0.10){
+    for(let i = 0; i < 2; i++){
+      const rgb = [0.96 + Math.random()*0.04, 0.86 + Math.random()*0.10, 0.55 + Math.random()*0.20];
+      const x = Math.random();
+      const y = 0.10 + Math.random() * 0.55;
+      _oilBrushStroke(F, x, y, Math.cos(Math.random()*TAU), Math.sin(Math.random()*TAU),
+        0.012 + Math.random()*0.008, 0.004 + Math.random()*0.002, rgb, 0.55);
     }
   }
 
-  // ── Composite the persistent oil canvas onto main ──
+  // ── Mid: occasional velocity injection so paint very slowly wanders ──
+  if(mid > 0.50 && Math.random() < 0.04){
+    // Tiny velocity push at a random point — barely moves paint but adds life
+    // We don't have a velocity-only splat program, so we splat a transparent
+    // brush stroke that won't add paint but will register through the sim.
+    // Skipped for simplicity — palette+flow drift already gives motion sense.
+  }
+
+  // ── Step the sim and settle ──
+  _oilStep(F, Math.min(0.018, dts));
+
+  // ── Render to WebGL canvas ──
+  // Map existing global params to display uniforms
+  const grain    = 0.30 + (state.grain || 0.5) * 1.4;        // 0..2
+  const vignette = 0.10 + (state.vignette || 0.4) * 1.4;     // 0..1.5
+  const impasto  = 0.55 + (state.glow || 0.5) * 0.6;          // 0.5..1.1
+  _oilRenderToCanvas(F, grain, vignette, impasto);
+
+  // ── Composite onto main canvas ──
   g.save();
   g.globalCompositeOperation = 'source-over';
-  g.drawImage(_oilCanvasCv, 0, 0, W, H);
-
-  // ── Slow drifting warm light overlay — "sun behind clouds" ──
-  _oilLightT += dt * 0.00018;
-  const lx = (Math.sin(_oilLightT) * 0.4 + 0.5) * W;
-  const ly = (Math.cos(_oilLightT * 0.7) * 0.3 + 0.3) * H;
-  const grad = g.createRadialGradient(lx, ly, 0, lx, ly, Math.min(W, H) * 0.75);
-  grad.addColorStop(0,   'rgba(252, 230, 178, 0.08)');
-  grad.addColorStop(0.5, 'rgba(252, 230, 178, 0.04)');
-  grad.addColorStop(1,   'rgba(252, 230, 178, 0)');
-  g.globalCompositeOperation = 'lighter';
-  g.fillStyle = grad;
-  g.fillRect(0, 0, W, H);
-
-  // ── Soft edge vignette so foreground reads ──
-  const vg = g.createRadialGradient(W/2, H * 0.6, Math.min(W, H) * 0.45, W/2, H * 0.6, Math.hypot(W, H) * 0.7);
-  vg.addColorStop(0, 'rgba(40, 30, 20, 0)');
-  vg.addColorStop(1, 'rgba(40, 30, 20, 0.18)');
-  g.globalCompositeOperation = 'source-over';
-  g.fillStyle = vg;
-  g.fillRect(0, 0, W, H);
+  g.drawImage(F.canvas, 0, 0, W, H);
   g.restore();
 }
