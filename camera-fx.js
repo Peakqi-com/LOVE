@@ -2043,6 +2043,201 @@ function drawHandAR(g, T){
         });
         break;
       }
+      case 'palmistry': {
+        // 手相 — palm reading chart overlay. Approximates the main palm lines
+        // from hand-landmark positions + labels finger-base palaces (子女 /
+        // 妻妾 / 官祿 / 財帛), centre palace (命宮 / 明堂), 5 trigram zones
+        // (兌 / 震 / 乾 / 坎 / 艮), and the major lines (生命線 / 感情線 /
+        // 智慧線 / 事業線 / 成功線 / 婚姻線).
+        // Tradition: 男左女右. We have no gender info so just label whichever
+        // hand is shown, with a "男左女右" hint in the top corner.
+        //
+        // Hand landmarks (MediaPipe HandLandmarker, 21 points):
+        //   0 wrist
+        //   1-4 thumb (CMC, MCP, IP, TIP)
+        //   5-8 index (MCP, PIP, DIP, TIP)
+        //   9-12 middle, 13-16 ring, 17-20 pinky (same structure)
+        //
+        // Screen positions for key landmarks:
+        const P = i => N2S(hand[i].x, hand[i].y);
+        const [ix0, iy0] = P(5);    // index MCP (財帛)
+        const [mx0, my0] = P(9);    // middle MCP (官祿)
+        const [rx0, ry0] = P(13);   // ring MCP (妻妾)
+        const [px0, py0] = P(17);   // pinky MCP (子女)
+        const [tx1, ty1] = P(1);    // thumb CMC (life line origin)
+        const [tx2, ty2] = P(2);    // thumb MCP
+        // wx,wy = wrist (already computed above as wx, wy from hand[0])
+        // Palm centre — average of MCPs + wrist (skip thumb so centre isn't biased)
+        const cx = (ix0 + mx0 + rx0 + px0 + wx) / 5;
+        const cy = (iy0 + my0 + ry0 + py0 + wy) / 5;
+        // Palm scale in pixels — distance from wrist to middle MCP
+        const palmH = Math.hypot(mx0 - wx, my0 - wy);
+        // Lateral axis (across palm, from index side to pinky side)
+        const lx = px0 - ix0, ly = py0 - iy0;
+        const lLen = Math.hypot(lx, ly) || 1;
+        const ux = lx / lLen, uy = ly / lLen;   // unit vector index→pinky
+        // Up axis (from wrist toward middle MCP)
+        const upx = mx0 - wx, upy = my0 - wy;
+        const upLen = Math.hypot(upx, upy) || 1;
+        const vx = upx / upLen, vy = upy / upLen;
+        // Helper: place point at (a along lateral, b along up) from palm centre
+        const pp = (a, b) => [cx + ux * a + vx * b, cy + uy * a + vy * b];
+        // Lateral palm width estimate
+        const palmW = lLen * 1.05;
+
+        // ── Stroke styles ──
+        const lineStroke = `hsla(${baseHue}, 60%, 75%, ${0.80 * k})`;
+        const lineThin   = `hsla(${baseHue}, 50%, 65%, ${0.55 * k})`;
+        const labelFill  = `hsla(${baseHue}, 30%, 95%, ${0.95 * k})`;
+        const palaceFill = `hsla(${baseHue}, 70%, 82%, ${0.95 * k})`;
+        const trigFill   = `hsla(${baseHue}, 40%, 88%, ${0.88 * k})`;
+        const dotFill    = `hsla(${baseHue}, 80%, 80%, ${0.95 * k})`;
+        const lineWmaj = Math.max(1.0, palmH * 0.018);
+        const lineWmin = Math.max(0.7, palmH * 0.012);
+        const fontPalace = `${Math.max(10, palmH * 0.075)}px "Noto Serif TC", "Songti TC", "PMingLiU", serif`;
+        const fontLabel  = `${Math.max(9, palmH * 0.060)}px "Noto Serif TC", "Songti TC", "PMingLiU", serif`;
+        const fontHint   = `${Math.max(9, palmH * 0.055)}px "Noto Serif TC", "Songti TC", "PMingLiU", serif`;
+
+        // ── Helper: stroke a 3-point quadratic ──
+        const drawQuad = (a, c, b) => {
+          g.beginPath();
+          g.moveTo(a[0], a[1]);
+          g.quadraticCurveTo(c[0], c[1], b[0], b[1]);
+          g.stroke();
+        };
+
+        // ════════════════════════════════════════════════════════════
+        //  主要手相線（major palm lines）
+        // ════════════════════════════════════════════════════════════
+        g.strokeStyle = lineStroke;
+        g.lineWidth = lineWmaj;
+        g.lineCap = 'round';
+
+        //  ◆ 生命線 — curve around the thumb base from index MCP edge to wrist
+        const lifeA = pp(-palmW * 0.45,  palmH * 0.10);   // start near index/thumb crook
+        const lifeC = pp(-palmW * 0.55, -palmH * 0.20);   // bowing out around thumb
+        const lifeB = pp(-palmW * 0.20, -palmH * 0.55);   // ending near wrist on thumb side
+        drawQuad(lifeA, lifeC, lifeB);
+
+        //  ◆ 感情線 — horizontal-ish arc near top of palm
+        const heartA = pp( palmW * 0.55,  palmH * 0.20);   // pinky-side start
+        const heartC = pp( 0,             palmH * 0.30);   // slight upward arc
+        const heartB = pp(-palmW * 0.35,  palmH * 0.18);   // ending between index + middle base
+        drawQuad(heartA, heartC, heartB);
+
+        //  ◆ 智慧線 — sloping from same origin as 生命線, going across
+        const headA = pp(-palmW * 0.40,  palmH * 0.05);
+        const headC = pp(-palmW * 0.05, -palmH * 0.08);
+        const headB = pp( palmW * 0.45, -palmH * 0.15);
+        drawQuad(headA, headC, headB);
+
+        //  ◆ 事業線 — vertical from wrist center up to middle MCP
+        g.strokeStyle = lineThin;
+        g.lineWidth = lineWmin;
+        const careerA = pp(0, -palmH * 0.55);
+        const careerC = pp(0, -palmH * 0.10);
+        const careerB = pp(0,  palmH * 0.30);
+        drawQuad(careerA, careerC, careerB);
+
+        //  ◆ 成功線 — short vertical under ring finger
+        const sucA = pp(palmW * 0.18, -palmH * 0.05);
+        const sucB = pp(palmW * 0.18,  palmH * 0.20);
+        g.beginPath(); g.moveTo(sucA[0], sucA[1]); g.lineTo(sucB[0], sucB[1]); g.stroke();
+
+        //  ◆ 婚姻線 — 2 short horizontal strokes on pinky outer edge above 感情線
+        const marrPos = pp(palmW * 0.50, palmH * 0.28);
+        for(let m = 0; m < 2; m++){
+          const yo = (m - 0.5) * palmH * 0.06;
+          g.beginPath();
+          g.moveTo(marrPos[0] + ux * palmW * 0.10, marrPos[1] + uy * palmW * 0.10 + yo);
+          g.lineTo(marrPos[0] - ux * palmW * 0.04, marrPos[1] - uy * palmW * 0.04 + yo);
+          g.stroke();
+        }
+
+        // ════════════════════════════════════════════════════════════
+        //  Line labels — point to each line with a thin arrow
+        // ════════════════════════════════════════════════════════════
+        g.font = fontLabel;
+        g.fillStyle = labelFill;
+        g.textBaseline = 'middle';
+
+        const labelLine = (point, text, dirX, dirY) => {
+          const off = Math.max(14, palmH * 0.18);
+          const lx2 = point[0] + dirX * off;
+          const ly2 = point[1] + dirY * off;
+          g.strokeStyle = lineThin;
+          g.lineWidth = 0.7;
+          g.beginPath(); g.moveTo(point[0], point[1]); g.lineTo(lx2, ly2); g.stroke();
+          g.textAlign = dirX < 0 ? 'right' : 'left';
+          g.fillText(text, lx2 + dirX * 3, ly2);
+        };
+        labelLine(lifeA,   '生命線', 1.0, 0.2);     // arrow goes into palm
+        labelLine(heartC,  '感情線', -1.0, 0);
+        labelLine(headC,   '智慧線', 1.0, -0.3);
+        labelLine(careerC, '事業線', -1.0, 0);
+        labelLine(sucA,    '成功線', 1.0, -0.4);
+        labelLine(marrPos, '婚姻線', 1.0, 0);
+
+        // ════════════════════════════════════════════════════════════
+        //  指根四宮 — palaces at the finger bases (above 感情線)
+        // ════════════════════════════════════════════════════════════
+        g.font = fontPalace;
+        g.fillStyle = palaceFill;
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        const fingerPalaces = [
+          [ix0, iy0, '財帛'],   // index base
+          [mx0, my0, '官祿'],   // middle base
+          [rx0, ry0, '妻妾'],   // ring base
+          [px0, py0, '子女'],   // pinky base
+        ];
+        // small connector to keep labels just BELOW the finger MCP
+        for(const [px, py, label] of fingerPalaces){
+          const lx2 = px + vx * palmH * 0.10;   // shift INTO palm (vy points away from wrist)
+          const ly2 = py + vy * palmH * 0.10;
+          // marker
+          g.fillStyle = dotFill;
+          g.beginPath(); g.arc(lx2, ly2, 2.5, 0, TAU); g.fill();
+          g.fillStyle = palaceFill;
+          g.fillText(label, lx2, ly2 + palmH * 0.045);
+        }
+
+        // ════════════════════════════════════════════════════════════
+        //  Centre — 命宮 / 明堂
+        // ════════════════════════════════════════════════════════════
+        g.font = fontPalace;
+        g.fillStyle = palaceFill;
+        g.fillText('命宮', cx, cy - palmH * 0.04);
+        g.fillText('明堂', cx, cy + palmH * 0.07);
+
+        // ════════════════════════════════════════════════════════════
+        //  五個八卦 — 兌 震 乾 坎 艮 (lower palm zones)
+        // ════════════════════════════════════════════════════════════
+        g.font = fontPalace;
+        g.fillStyle = trigFill;
+        const trigrams = [
+          [pp( palmW * 0.30, -palmH * 0.05), '兌'],     // pinky-side middle (Mount of Mercury area)
+          [pp(-palmW * 0.30, -palmH * 0.05), '震'],     // thumb-side middle (Mount of Mars area)
+          [pp( palmW * 0.30, -palmH * 0.40), '乾'],     // pinky-side lower (Mount of Moon)
+          [pp( 0,             -palmH * 0.45), '坎'],     // bottom-centre (above wrist)
+          [pp(-palmW * 0.30, -palmH * 0.40), '艮'],     // thumb-side lower (Mount of Venus base)
+        ];
+        for(const [pt, label] of trigrams){
+          g.fillText(label, pt[0], pt[1]);
+        }
+
+        // ════════════════════════════════════════════════════════════
+        //  Top-corner hint — 男左 女右
+        // ════════════════════════════════════════════════════════════
+        g.font = fontHint;
+        g.textAlign = 'left';
+        g.fillStyle = `hsla(${baseHue}, 30%, 92%, ${0.7 * k})`;
+        const hint = '男左 · 女右 · 36 歲以後相反手';
+        const hintPos = pp(-palmW * 0.55,  palmH * 0.70);
+        g.fillText(hint, hintPos[0], hintPos[1]);
+
+        break;
+      }
     }
     g.restore();
   });
