@@ -1041,9 +1041,21 @@
                 <input type="range" min="0" max="200" value="100" id="camFilterAmt" />
               </div>
             </div>
-            <!-- Face AR section removed temporarily — 3D crown/glasses etc. weren't tracking
-                 head pose well enough. cam.ar still defaults to 'none' in camera-fx.js and the
-                 click handler is guarded so the missing UI doesn't break anything. -->
+            <!-- Face AR — currently only 面相 (Physiognomy) is exposed. The older
+                 3D options (crown/glasses/cat/etc.) renderers still exist in
+                 camera-fx.js but aren't listed here; they tracked head pose poorly. -->
+            <div>
+              <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Face AR <em style="font-family:var(--serif);font-style:italic;text-transform:none;letter-spacing:0;color:var(--ink-faint);font-size:11.5px;margin-left:4px">臉部分析 · 偵測五官</em></span>
+              <div class="live-grid" id="camArGrid">
+                <button data-ar="none" class="on">None<em>無 None</em></button>
+                <button data-ar="physiognomy">Physiognomy<em>面相 · 五官標示 + 三停</em></button>
+              </div>
+            </div>
+            <div class="ctrl"><span class="label">Face AR intensity 強度</span><span class="val" id="camArAmtVal">1.0×</span>
+              <div class="slider"><div class="track"></div><div class="fill" id="camArAmtFill"></div><div class="thumb" id="camArAmtThumb"></div>
+                <input type="range" min="0" max="200" value="100" id="camArAmt" />
+              </div>
+            </div>
             <div>
               <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Hand AR <em style="font-family:var(--serif);font-style:italic;text-transform:none;letter-spacing:0;color:var(--ink-faint);font-size:11.5px;margin-left:4px">手部貼圖 · 跟手指動</em></span>
               <div class="live-grid" id="camHandArGrid">

@@ -246,11 +246,11 @@ $$('#camArGrid button').forEach(b => b.addEventListener('click', () => {
     }
   }
 }));
-// camArAmt slider was wired here. Removed when Face AR UI was hidden — the
-// element no longer exists in HTML and wireCamSlider was throwing on
-// null.addEventListener, which stopped the rest of camera-fx.js from
-// executing (detectLoop never started, bg removal toggle never wired,
-// motion controls never wired, etc.). Single-line removal restores everything.
+// Face AR intensity slider — Face AR UI was restored for the 面相 mode.
+// Guard the wire so re-removing the UI doesn't break camera-fx.js again.
+if(document.getElementById('camArAmt')){
+  wireCamSlider('camArAmt','camArAmtFill','camArAmtThumb','camArAmtVal','arIntensity', v => (v/100).toFixed(1)+'×', v => v/100);
+}
 
 // Hand AR — independent of Face AR (uses hand track)
 $$('#camHandArGrid button').forEach(b => b.addEventListener('click', () => {
@@ -1544,6 +1544,121 @@ function drawWebcamFX(g, dt, T){
             g.fillStyle = ['#ff3366','#33ccff','#ffcc33','#9c33ff','#33ff99'][i];
             g.beginPath(); g.arc(x, -ch*0.2, ch*0.10, 0, TAU); g.fill();
           }
+          break;
+        }
+        case 'physiognomy': {
+          // 面相分析 — outlines all five-sense organs + 三停 dividers +
+          // central axis + key 面相 reference points (天庭/印堂/山根/準頭/人中/地閣).
+          // No fill, thin elegant strokes — reads like an anatomy illustration
+          // overlay rather than a costume.
+          const stroke    = `hsla(${baseHue}, 55%, 75%, ${0.85 * k})`;
+          const fineStr   = `hsla(${baseHue}, 45%, 65%, ${0.55 * k})`;
+          const dashStr   = `hsla(${baseHue}, 45%, 75%, ${0.45 * k})`;
+          const pointFill = `hsla(${baseHue}, 80%, 78%, ${0.95 * k})`;
+          const labelFill = `hsla(${baseHue}, 35%, 92%, ${0.95 * k})`;
+          const lineW     = Math.max(1.1, eyeDist * 0.015);
+          const fineW     = Math.max(0.7, eyeDist * 0.010);
+
+          // ── Helper: stroke an open polyline through landmark indices ──
+          const strokePath = (indices, closed) => {
+            g.beginPath();
+            for(let i = 0; i < indices.length; i++){
+              const p = lm[indices[i]];
+              if(!p) continue;
+              const [px, py] = N2S(p.x, p.y);
+              if(i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+            }
+            if(closed) g.closePath();
+            g.stroke();
+          };
+
+          g.lineWidth = lineW;
+          g.strokeStyle = stroke;
+
+          // ── Eyebrows ──
+          strokePath([70, 63, 105, 66, 107, 55, 65, 52, 53, 46], true);     // right
+          strokePath([300, 293, 334, 296, 336, 285, 295, 282, 283, 276], true); // left
+
+          // ── Eyes ──
+          strokePath([33,246,161,160,159,158,157,173,133,155,154,153,145,144,163,7], true);
+          strokePath([263,466,388,387,386,385,384,398,362,382,381,380,374,373,390,249], true);
+
+          // ── Nose: bridge + tip + wings as one continuous outline ──
+          // Bridge down the middle:
+          strokePath([168, 6, 197, 195, 5, 4, 1], false);
+          // Right wing:
+          strokePath([4, 49, 64, 98, 97, 2, 326, 327, 294, 279, 4], true);
+
+          // ── Outer lips ──
+          strokePath([61,146,91,181,84,17,314,405,321,375,291,409,270,269,267,0,37,39,40,185], true);
+
+          // ── Face oval (jaw + forehead contour) — fine stroke ──
+          g.strokeStyle = fineStr;
+          g.lineWidth = fineW;
+          strokePath([10,338,297,332,284,251,389,356,454,323,361,288,397,365,379,378,400,377,152,148,176,149,150,136,172,58,132,93,234,127,162,21,54,103,67,109], true);
+
+          // ── 中軸 (central axis) from 天庭 to 地閣 ──
+          if(lm[10] && lm[152]){
+            g.strokeStyle = dashStr;
+            g.lineWidth = 1;
+            g.setLineDash([6, 4]);
+            const [tx, ty] = N2S(lm[10].x, lm[10].y);
+            const [bx, by] = N2S(lm[152].x, lm[152].y);
+            g.beginPath(); g.moveTo(tx, ty); g.lineTo(bx, by); g.stroke();
+            g.setLineDash([]);
+          }
+
+          // ── 三停 dividers — horizontal dashed lines at 印堂 & 鼻底 ──
+          const drawHLine = (lmIdx, label) => {
+            const p = lm[lmIdx];
+            if(!p) return;
+            const [cxLine, cyLine] = N2S(p.x, p.y);
+            const halfW = faceH * 0.40;
+            g.strokeStyle = dashStr;
+            g.lineWidth = 0.9;
+            g.setLineDash([4, 4]);
+            g.beginPath();
+            g.moveTo(cxLine - halfW, cyLine);
+            g.lineTo(cxLine + halfW, cyLine);
+            g.stroke();
+            g.setLineDash([]);
+            // Label
+            g.font = `${Math.max(10, eyeDist * 0.13)}px "Noto Serif TC", "Songti TC", serif`;
+            g.textBaseline = 'middle';
+            g.textAlign = 'left';
+            g.fillStyle = labelFill;
+            g.fillText(label, cxLine + halfW + 4, cyLine);
+          };
+          drawHLine(9,   '印堂');     // between eyebrows
+          drawHLine(2,   '鼻底');     // nose base
+
+          // ── Key 面相 reference points labelled along the axis ──
+          const keyPoints = [
+            [10,  '天庭'],   // upper forehead
+            [9,   '印堂'],   // glabella (between brows)
+            [168, '山根'],   // nose root
+            [4,   '年壽'],   // mid-bridge
+            [1,   '準頭'],   // nose tip
+            [13,  '人中'],   // philtrum (above upper lip — landmark 0 is upper lip)
+            [152, '地閣'],   // chin point
+          ];
+          g.font = `${Math.max(10, eyeDist * 0.12)}px "Noto Serif TC", "Songti TC", serif`;
+          g.textBaseline = 'middle';
+          for(const [idx, label] of keyPoints){
+            const p = lm[idx];
+            if(!p) continue;
+            const [px, py] = N2S(p.x, p.y);
+            // Marker dot
+            g.fillStyle = pointFill;
+            g.beginPath();
+            g.arc(px, py, 3, 0, TAU);
+            g.fill();
+            // Label to the right of the marker
+            g.textAlign = 'left';
+            g.fillStyle = labelFill;
+            g.fillText(label, px + 8, py);
+          }
+
           break;
         }
         case 'halo': {
