@@ -7234,6 +7234,17 @@ function randomSalt(){
   const existing = getRegisteredUser();
 
   async function bootstrapSession(){
+    // ─── TEMPORARY BYPASS ──────────────────────────────────────────────────
+    // Skip the login / register gate so anyone can use the app directly.
+    // Treat session as fully licensed (no watermark, full panel access).
+    // To restore the auth flow: delete this block + early return.
+    // Everything below this return is the original bootstrap logic, kept
+    // intact for easy restoration.
+    hideGate();
+    applyLicense({ licensed:true, name:'Guest', email:'' });
+    if(existing) applyUserChip(existing);
+    return;
+    // ────────────────────────────────────────────────────────────────────────
     if(isProjection){
       hideGate();
       if(existing) applyUserChip(existing);
