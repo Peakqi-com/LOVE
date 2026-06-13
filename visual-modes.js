@@ -2687,6 +2687,58 @@ let _sumiDrops = [];
 let _sumiSpawnT = 0;
 let _sumiFlowT  = 0;
 let _sumiColorIdx = 0;
+let _sumiPaperCv = null;
+let _sumiPaperKey = '';
+
+// One-time paper texture: cream wash + sparse fibre lines + grain + edge
+// vignette. Baked into a cached canvas so each frame is a single drawImage.
+function _buildSumiPaper(){
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  // ── Base cream wash with subtle horizontal banding (uneven dye) ──
+  const base = g.createLinearGradient(0, 0, 0, H);
+  base.addColorStop(0,    '#f2e9d4');
+  base.addColorStop(0.55, '#ede2c6');
+  base.addColorStop(1,    '#e8dcbb');
+  g.fillStyle = base;
+  g.fillRect(0, 0, W, H);
+  // ── Horizontal fibre wash (very faint warm streaks) ──
+  g.globalAlpha = 0.05;
+  for(let y = 0; y < H; y += 2){
+    const v = (Math.sin(y * 0.011) + Math.cos(y * 0.037) + Math.sin(y * 0.09)) / 3;
+    g.fillStyle = v > 0 ? '#c8b78b' : '#b3a072';
+    g.fillRect(0, y, W, 0.7);
+  }
+  // ── Vertical paper fibres (sparse, irregular) ──
+  g.globalAlpha = 0.06;
+  const fibreCount = Math.round(W * 0.08);
+  for(let i = 0; i < fibreCount; i++){
+    const x = Math.random() * W;
+    const yStart = Math.random() * H;
+    const len = 20 + Math.random() * 140;
+    g.fillStyle = Math.random() < 0.5 ? '#9c8957' : '#7a6841';
+    g.fillRect(x, yStart, 0.5, len);
+  }
+  // ── Fine grain (random speckle) ──
+  g.globalAlpha = 0.10;
+  const grainCount = Math.round(W * H * 0.0006);
+  for(let i = 0; i < grainCount; i++){
+    const x = Math.random() * W;
+    const y = Math.random() * H;
+    const v = 110 + Math.random() * 60;
+    g.fillStyle = `rgb(${v},${v - 12},${v - 30})`;
+    g.fillRect(x, y, 1, 1);
+  }
+  g.globalAlpha = 1;
+  // ── Edge vignette (warm, soft) ──
+  const vg = g.createRadialGradient(W/2, H/2, Math.min(W, H) * 0.32, W/2, H/2, Math.hypot(W, H) * 0.62);
+  vg.addColorStop(0, 'rgba(60, 38, 12, 0)');
+  vg.addColorStop(1, 'rgba(60, 38, 12, 0.22)');
+  g.fillStyle = vg;
+  g.fillRect(0, 0, W, H);
+  return c;
+}
 
 function _seedSumiDrop(forceColor){
   // Each drop = concentric thin rings (NOT a filled blob) — that's the wood-
@@ -2747,6 +2799,21 @@ function drawSuminagashi(g, dt, T){
   const dts = dt / 1000;
   _sumiFlowT += dts * 0.18;   // slow flow drift
 
+  // ─── Paper backdrop ───
+  // Suminagashi is a "takeover" mode — when enabled it covers the whole canvas
+  // with cream washi paper so the ink reads correctly. Texture is built once
+  // and reused; rebuild only on canvas size change.
+  const paperKey = W + 'x' + H;
+  if(!_sumiPaperCv || _sumiPaperKey !== paperKey){
+    _sumiPaperCv = _buildSumiPaper();
+    _sumiPaperKey = paperKey;
+  }
+  g.save();
+  g.globalCompositeOperation = 'source-over';
+  g.globalAlpha = 1;
+  g.drawImage(_sumiPaperCv, 0, 0, W, H);
+  g.restore();
+
   // Spawn rate — gentle baseline + bass pushes more drops
   const bass = (reactor.bass || 0);
   const vol  = (reactor.vol  || 0);
@@ -2778,9 +2845,9 @@ function drawSuminagashi(g, dt, T){
   if(_sumiDrops.length > 18) _sumiDrops.splice(0, _sumiDrops.length - 18);
 
   g.save();
-  // Stroke-only rendering — multiply on light paper (proper sumi feel),
-  // 'source-over' on dark so dark lines stay visible without lightening.
-  g.globalCompositeOperation = state.lightMode ? 'multiply' : 'source-over';
+  // Always multiply — paper is cream, ink colors are dark, multiply gives the
+  // "ink dyed into paper" look that matches the reference exactly.
+  g.globalCompositeOperation = 'multiply';
   g.lineJoin = 'round';
   g.lineCap = 'round';
 
@@ -2817,7 +2884,7 @@ function drawSuminagashi(g, dt, T){
 
       // Slightly fade outer rings (older edge of the drop) so the core reads cleaner
       const ringFade = 1 - (ri / (d.rings.length * 1.4));
-      const lineAlpha = (state.lightMode ? 0.75 : 0.85) * fade * ringFade;
+      const lineAlpha = 0.78 * fade * ringFade;
       g.strokeStyle = `rgba(${d.color}, ${lineAlpha})`;
       g.lineWidth = (0.7 + (ri === 0 ? 0.4 : 0)) * SCALE;
 
