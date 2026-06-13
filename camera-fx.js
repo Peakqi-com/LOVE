@@ -1641,51 +1641,51 @@ function drawWebcamFX(g, dt, T){
           };
 
           // ════════════════════════════════════════════════════════════
-          //  軸點 (axial reference points) — 沿中軸標示
+          //  軸點 (axial reference points) — along central axis only.
+          //  Removed 印堂 + 山根 here — they overlap with 命宮 + 疾厄 below,
+          //  which are the proper 面相 palace names for those positions.
           // ════════════════════════════════════════════════════════════
           labelAt(10,  '天庭', 0, -0.95, { fill: axisFill, font: labelFontMd });
-          labelAt(9,   '印堂', 1.4,  0,   { fill: axisFill });
-          labelAt(168, '山根', 1.4,  0,   { fill: axisFill });
           labelAt(1,   '準頭', 1.4,  0,   { fill: axisFill });
-          labelAt(13,  '人中', 1.4,  0,   { fill: axisFill });
+          labelMid(2, 0, '人中', 1.4, 0,  { fill: axisFill });   // philtrum = midpoint between subnasale + upper lip
           labelAt(152, '地閣', 0,    1.0, { fill: axisFill, font: labelFontMd });
 
           // ════════════════════════════════════════════════════════════
-          //  十二宮 (twelve palaces) — note left/right are SUBJECT's
-          //  (viewer's right = subject's left, etc.)
+          //  十二宮 (twelve palaces) — left/right are SUBJECT's; in mirror
+          //  mode (default selfie) subject's right shows on viewer's right.
           // ════════════════════════════════════════════════════════════
-          //  ◆ 遷移宮 — outer top temples (left + right)
-          labelAt(103, '遷移', -1.4, -0.4);   // subject's right temple
-          labelAt(332, '遷移',  1.4, -0.4);   // subject's left temple
-          //  ◆ 官祿宮 — center forehead (above 命宮)
-          labelMid(10, 9, '官祿', 1.6, -0.2);
-          //  ◆ 父母宮 — left/right of upper forehead
-          labelAt(67,  '父', -1.0, -0.5);
-          labelAt(297, '母',  1.0, -0.5);
-          //  ◆ 福德宮 — eyebrow tail outer area
-          labelAt(46,  '福德', -1.2, 0);
-          labelAt(276, '福德',  1.2, 0);
-          //  ◆ 兄弟宮 — eyebrow body
-          labelAt(105, '兄弟', 0, -0.95);
-          labelAt(334, '兄弟', 0, -0.95);
-          //  ◆ 命宮 — between eyebrows (印堂上)
-          //     already covered by 印堂 axial label — skip double-up
-          //  ◆ 田宅宮 — upper eyelid mid
-          labelAt(159, '田宅', 0, -0.95);
-          labelAt(386, '田宅', 0, -0.95);
-          //  ◆ 夫妻宮 — outer eye corners (魚尾 area)
-          labelAt(33,  '夫妻', -1.2, 0);
-          labelAt(263, '夫妻',  1.2, 0);
-          //  ◆ 疾厄宮 — nose bridge between eyes (山根 below)
-          labelAt(6,   '疾厄', 1.5, 0);
+          //  ◆ 遷移宮 — OUTER temples (not near eyebrow). True temple corner.
+          labelAt(21,  '遷移', -1.2, 0);
+          labelAt(251, '遷移',  1.2, 0);
+          //  ◆ 官祿宮 — center forehead, above 命宮
+          labelMid(10, 9, '官祿', 1.6, -0.15);
+          //  ◆ 父母宮 — flanking 官祿 across upper forehead
+          labelAt(67,  '父', -1.1, -0.5);
+          labelAt(297, '母',  1.1, -0.5);
+          //  ◆ 福德宮 — ABOVE eyebrow tail (pushed up so it doesn't sit on brow)
+          labelAt(46,  '福德', -1.0, -1.4);
+          labelAt(276, '福德',  1.0, -1.4);
+          //  ◆ 兄弟宮 — eyebrow body proper (the eyebrow IS the palace)
+          labelAt(105, '兄弟', 0, -0.85);
+          labelAt(334, '兄弟', 0, -0.85);
+          //  ◆ 命宮 — between eyebrows (replaces 印堂 axial label)
+          labelAt(9,   '命宮', 1.4, 0);
+          //  ◆ 田宅宮 — upper eyelid; push label HIGH so it clears the eye
+          labelAt(159, '田宅', 0, -2.6);
+          labelAt(386, '田宅', 0, -2.6);
+          //  ◆ 夫妻宮 — outer eye corners (魚尾); push label further outward
+          labelAt(33,  '夫妻', -2.0, 0);
+          labelAt(263, '夫妻',  2.0, 0);
+          //  ◆ 疾厄宮 — nose root area (replaces 山根 axial; same position)
+          labelAt(168, '疾厄', 1.4, 0);
           //  ◆ 子女宮 — under-eye / tear trough
           labelAt(145, '子女', 0, 1.0);
           labelAt(374, '子女', 0, 1.0);
-          //  ◆ 財帛宮 — at nose tip (mostly overlaps 準頭, label below)
-          labelAt(4,   '財帛', -1.5, 0);
-          //  ◆ 奴僕宮 — lower jaw / outer chin
-          labelAt(172, '奴僕', -1.3, 0.2);   // subject right
-          labelAt(397, '奴僕',  1.3, 0.2);   // subject left
+          //  ◆ 財帛宮 — nose wings (蘭台 廷尉) flanking the tip, not on tip itself
+          labelAt(49,  '財帛', -1.4, 0);
+          //  ◆ 奴僕宮 — lower cheek INSIDE face oval (pull labels inward)
+          labelAt(172, '奴僕',  0.6, 0.3);   // subject's right; label points inward (left of marker)
+          labelAt(397, '奴僕', -0.6, 0.3);   // subject's left; label points inward (right of marker)
 
           break;
         }
