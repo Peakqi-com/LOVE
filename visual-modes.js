@@ -2740,80 +2740,51 @@ function _buildSumiPaper(){
   return c;
 }
 
+// Persistent offscreen ink canvas — all particle dots draw onto this, NEVER
+// cleared. Each frame a very low-alpha paper-cream fill slowly dims old marks
+// so the canvas keeps "breathing" instead of saturating. This is what gives
+// real flow trails + stain accumulation for free.
+let _sumiInkCv = null;
+let _sumiInkKey = '';
+
+// "Particle splash" = each drop = ~150 tiny ink particles emitted in a cluster.
+// Each particle follows the global curl-noise flow field independently, leaving
+// its own trail of dots onto _sumiInkCv. That's where the real motion comes
+// from — not from a polygon morphing in place.
 function _seedSumiDrop(forceColor){
-  // Each drop = a cluster of MANY small cauliflower sub-blobs scattered around
-  // a center. Many overlapping irregular polygons give true fractal-finger
-  // edges + uneven interior tone variation. Each sub-blob has its own seed
-  // (so it morphs differently) and its own alpha multiplier (some darker, some
-  // lighter → the "有深有淺" the user wants).
-  const cx = (0.08 + Math.random()*0.84) * W;
-  const cy = (0.08 + Math.random()*0.84) * H;
+  const cx = (0.10 + Math.random()*0.80) * W;
+  const cy = (0.10 + Math.random()*0.80) * H;
   let color;
   if(forceColor != null) color = SUMI_COLORS[forceColor % SUMI_COLORS.length];
   else {
     _sumiColorIdx = (_sumiColorIdx + 1 + (Math.random()<0.3 ? 1 : 0)) % SUMI_COLORS.length;
     color = SUMI_COLORS[_sumiColorIdx];
   }
-  // Build sub-blob cluster — many small blobs scattered radially
-  const SUB_N = 22;
-  const subs = [];
-  for(let i = 0; i < SUB_N; i++){
-    // Mostly near center, a few far out → natural density falloff
-    const dist01 = Math.pow(Math.random(), 0.7);   // bias toward center
-    const angle  = Math.random() * TAU;
-    subs.push({
-      angle,
-      dist01,                                       // 0..1 of target radius
-      seed: Math.random() * 1000,
-      sizeMul: 0.18 + Math.random() * 0.38,         // sub-blob size vs main
-      alphaMul: 0.55 + Math.random() * 0.95,        // interior tone variation
-      tPhase: Math.random() * 100,                  // each sub morphs at own rhythm
-    });
-  }
-  // A few "core" sub-blobs near dead center (denser ink)
-  for(let i = 0; i < 4; i++){
-    subs.push({
-      angle: Math.random() * TAU,
-      dist01: Math.random() * 0.15,                 // very close to center
-      seed: Math.random() * 1000,
-      sizeMul: 0.32 + Math.random() * 0.25,
-      alphaMul: 1.1 + Math.random() * 0.4,           // darker
-      tPhase: Math.random() * 100,
-    });
+  const N = 150;
+  const particles = new Array(N);
+  for(let i = 0; i < N; i++){
+    // Compact cluster: gaussian-ish distribution near (cx,cy)
+    const rEmit = Math.pow(Math.random(), 0.6) * 14 * SCALE;
+    const aEmit = Math.random() * TAU;
+    // Tiny outward velocity bias for the initial splash
+    const vMag = (Math.random()*0.5) * 8;
+    particles[i] = {
+      x:  cx + Math.cos(aEmit) * rEmit,
+      y:  cy + Math.sin(aEmit) * rEmit,
+      vx: Math.cos(aEmit) * vMag,
+      vy: Math.sin(aEmit) * vMag,
+      life: 0,
+      maxLife: 4 + Math.random() * 5,        // sec
+      r: 0.9 + Math.random() * 1.4,           // dot radius in css px
+    };
   }
   return {
-    cx, cy, color, subs,
-    vx: (Math.random()-0.5) * 5,
-    vy: (Math.random()-0.5) * 5,
-    life: 0,
-    rTarget:    (75 + Math.random()*170) * SCALE,
-    growSpeed:  0.35 + Math.random()*0.4,
-    fadeStart:  11 + Math.random()*9,
-    fadeDuration: 13 + Math.random()*10,
+    cx, cy, color, particles,
+    age: 0,
+    flowSeed: Math.random()*1000,
+    flowScale: 0.0021 + Math.random()*0.0014,
+    flowStrength: 60 + Math.random()*40,     // px/s peak — driving the motion
   };
-}
-
-// Draw one sub-blob with cauliflower edges. Few verts (less geometry), high-
-// freq noise, shadowBlur for the feathered "soaking into paper" feel.
-function _drawSumiSubBlob(g, cx, cy, r, alpha, color, seed, tMorph){
-  if(r < 0.5) return;
-  const N = 28;
-  g.fillStyle = `rgba(${color}, ${alpha})`;
-  g.beginPath();
-  for(let i = 0; i <= N; i++){
-    const a = (i / N) * TAU;
-    const ca = Math.cos(a), sa = Math.sin(a);
-    // Higher-freq noise = finer cauliflower fingers
-    const n1 = noise2(ca*2.0 + seed,       sa*2.0 + tMorph);
-    const n2 = noise2(ca*6.5 + seed*0.7,   sa*6.5 + tMorph*1.4);
-    const n3 = noise2(ca*18  + seed*1.3,   sa*18  + tMorph*1.9);
-    const dist = r * (1 + n1*0.42 + n2*0.26 + n3*0.16);
-    const x = cx + ca * dist;
-    const y = cy + sa * dist;
-    if(i === 0) g.moveTo(x, y); else g.lineTo(x, y);
-  }
-  g.closePath();
-  g.fill();
 }
 
 function drawSuminagashi(g, dt, T){
@@ -2865,46 +2836,89 @@ function drawSuminagashi(g, dt, T){
 
   if(_sumiDrops.length > 18) _sumiDrops.splice(0, _sumiDrops.length - 18);
 
-  g.save();
-  g.globalCompositeOperation = 'multiply';
-  // Soft shadowBlur feathers the polygon edges — that's the missing
-  // "soaking into paper fibres" softness. Cheap on Canvas 2D.
-  g.shadowColor = 'rgba(40,30,20,0.35)';
-  g.shadowBlur = 6 * SCALE;
+  // ── Persistent ink canvas — particles accumulate trails on this. NO shadowBlur
+  //    anywhere (that was the perf killer). Real flow comes from advecting many
+  //    independent particles through curl noise + leaving dots that pile up.
+  const inkKey = cv.width + 'x' + cv.height;
+  if(!_sumiInkCv || _sumiInkKey !== inkKey){
+    _sumiInkCv = document.createElement('canvas');
+    _sumiInkCv.width = cv.width;
+    _sumiInkCv.height = cv.height;
+    // Initial fill = paper-cream so multiply over main paper is a no-op until
+    // particles arrive. Without this, an empty canvas (rgba 0,0,0,0) would
+    // multiply to black everywhere.
+    const initG = _sumiInkCv.getContext('2d');
+    initG.fillStyle = '#f0e6d1';
+    initG.fillRect(0, 0, _sumiInkCv.width, _sumiInkCv.height);
+    _sumiInkKey = inkKey;
+  }
+  const ig = _sumiInkCv.getContext('2d');
+  ig.setTransform(state.pixelRatio, 0, 0, state.pixelRatio, 0, 0);
 
-  const morphRate = 1 + mid*1.4 + bass*0.6;
+  // Slow ivory wash: ~3-4 sec for full fade. Old marks linger as染痕.
+  ig.globalCompositeOperation = 'source-over';
+  ig.globalAlpha = 0.008;
+  ig.fillStyle = '#f0e6d1';
+  ig.fillRect(0, 0, W, H);
+  ig.globalAlpha = 1;
+
+  // Mid + bass amplify particle motion through the flow field
+  const flowBoost = 1 + mid*1.6 + bass*0.7;
 
   for(let di = _sumiDrops.length-1; di >= 0; di--){
     const d = _sumiDrops[di];
-    d.life += dts;
-    const totalLife = d.fadeStart + d.fadeDuration;
-    if(d.life > totalLife){ _sumiDrops.splice(di, 1); continue; }
+    d.age += dts;
 
-    d.cx += d.vx * dts;
-    d.cy += d.vy * dts;
+    // Advect + render each particle. Particles that die get nulled out;
+    // when ALL particles dead, the drop is removed.
+    let aliveCount = 0;
+    const ps = d.particles;
+    for(let pi = 0; pi < ps.length; pi++){
+      const p = ps[pi];
+      if(!p) continue;
+      p.life += dts;
+      if(p.life > p.maxLife){ ps[pi] = null; continue; }
+      aliveCount++;
 
-    const fade = d.life < d.fadeStart
-      ? Math.min(1, d.life / 0.7)
-      : 1 - (d.life - d.fadeStart) / d.fadeDuration;
-    if(fade <= 0) continue;
+      // Curl flow field — divergence-free → real swirls instead of expanding circle
+      const f = _sumiCurl(p.x, p.y, d.flowScale, _sumiFlowT + d.flowSeed);
+      p.vx += f.vx * d.flowStrength * dts * flowBoost;
+      p.vy += f.vy * d.flowStrength * dts * flowBoost;
+      // Water damping (so it doesn't fly away)
+      p.vx *= 0.96;
+      p.vy *= 0.96;
+      p.x  += p.vx * dts;
+      p.y  += p.vy * dts;
 
-    const grow = 1 - Math.exp(-d.life * d.growSpeed);
-    const mainR = d.rTarget * grow;
-    const baseT = _sumiFlowT * morphRate;
+      // Fade in fast, fade out slow → particle sits in canvas for a while
+      const t01 = p.life / p.maxLife;
+      const a = (t01 < 0.1 ? t01/0.1 : 1 - t01) * 0.32;
+      if(a <= 0) continue;
 
-    // ── Render each sub-blob: positioned at offset + small cauliflower ──
-    for(let si = 0; si < d.subs.length; si++){
-      const s = d.subs[si];
-      const offR = s.dist01 * mainR * 0.85;
-      const sx = d.cx + Math.cos(s.angle) * offR;
-      const sy = d.cy + Math.sin(s.angle) * offR;
-      const subR = mainR * s.sizeMul;
-      const a = Math.min(0.55, 0.16 * fade * s.alphaMul);
-      _drawSumiSubBlob(g, sx, sy, subR, a, d.color, s.seed, baseT + s.tPhase);
+      ig.fillStyle = `rgba(${d.color}, ${a})`;
+      ig.beginPath();
+      ig.arc(p.x, p.y, p.r * SCALE, 0, TAU);
+      ig.fill();
     }
+    if(aliveCount === 0){ _sumiDrops.splice(di, 1); continue; }
   }
 
-  g.shadowBlur = 0;
+  // ── Composite ink canvas onto main with multiply: paper × ink = dyed paper ──
+  g.save();
+  g.globalCompositeOperation = 'multiply';
+  // Convert "ink density" (additive on white) to "paper multiplier" via the
+  // existing rgba dots — already in the right form since they're dark colors
+  // painted onto the (initially white) ink canvas, and multiply leaves the rest
+  // of the paper untouched where ink alpha is low.
+  g.drawImage(_sumiInkCv, 0, 0, W, H);
+  g.restore();
+
+  // Re-render any extra subtle paper grain on top so heavily-dyed areas still
+  // show paper texture (subtle — keeps wash from looking like flat color).
+  g.save();
+  g.globalCompositeOperation = 'overlay';
+  g.globalAlpha = 0.18;
+  g.drawImage(_sumiPaperCv, 0, 0, W, H);
   g.restore();
 }
 
