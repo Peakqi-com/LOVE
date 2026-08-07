@@ -679,8 +679,11 @@ const _TOON_COMPOSITE_SRC = `
   varying vec2 vUV;
   uniform sampler2D uTex;    // pass-1 (flattened) result
   uniform vec2  uTexel;      // 1 / output size
-  uniform float uLevels;     // cel bands in the value channel
-  uniform float uPhiQ;       // quantisation edge hardness (tanh soft threshold)
+  uniform float uHueSteps;   // how many hues the whole picture may use
+  uniform float uSatSteps;   // saturation stops
+  uniform float uValSteps;   // value stops
+  uniform float uHueRot;     // rotates the hue stops, shifting the palette
+  uniform float uFlat;       // 0 = photographic, 1 = fully snapped to palette
   uniform float uSat;        // saturation gain
   uniform float uSatGamma;   // <1 lifts muted colours — the "vivid" control
   uniform float uContrast;
@@ -708,6 +711,29 @@ const _TOON_COMPOSITE_SRC = `
   float tanh1(float x){
     float e = exp(2.0 * clamp(x, -8.0, 8.0));
     return (e - 1.0) / (e + 1.0);
+  }
+
+  // Snap one colour onto the limited palette. Pulled out as a function so the
+  // caller can supersample it — a hard snap has no anti-aliasing of its own, so
+  // evaluated once per pixel it leaves visibly stepped region borders.
+  vec3 palettize(vec3 rgb, float skin){
+    vec3 hsv = rgb2hsv(rgb);
+    hsv.y = clamp(pow(hsv.y, uSatGamma) * uSat, 0.0, 1.0);
+    hsv.z = clamp((hsv.z - 0.5) * uContrast + 0.5, 0.0, 1.0);
+
+    float hq    = (hsv.x - uHueRot) * uHueSteps;
+    float hSnap = (floor(hq) + 0.5) / uHueSteps + uHueRot;
+    // Hue is meaningless in near-grey pixels — snapping it there would swing a
+    // neutral wall to a random colour.
+    hsv.x = mix(hsv.x, fract(hSnap + 1.0), uFlat * smoothstep(0.06, 0.20, hsv.y));
+    hsv.y = mix(hsv.y, floor(hsv.y * uSatSteps + 0.5) / uSatSteps, uFlat);
+    hsv.z = mix(hsv.z, floor(hsv.z * uValSteps + 0.5) / uValSteps, uFlat);
+
+    // Skin last so the flat character colour is exact, not a palette stop.
+    hsv.x = mix(hsv.x, 0.133, skin);
+    hsv.y = mix(hsv.y, max(hsv.y, 0.88), skin);
+    hsv.z = mix(hsv.z, max(hsv.z, 0.86), skin);
+    return hsv2rgb(hsv);
   }
 
   void main(){
@@ -753,22 +779,25 @@ const _TOON_COMPOSITE_SRC = `
       * smoothstep(0.12,  0.24,  hsv.y) * (1.0 - smoothstep(0.62,  0.86,  hsv.y))
       * smoothstep(0.16,  0.30,  hsv.z) * (1.0 - smoothstep(0.86,  0.97,  hsv.z))) * uSkin;
 
-    // Vividness: the gamma lift is what turns washed-out camera colour into
-    // poster colour — a plain multiply only saturates what was already saturated.
-    hsv.y = clamp(pow(hsv.y, uSatGamma) * uSat, 0.0, 1.0);
-    hsv.z = clamp((hsv.z - 0.5) * uContrast + 0.5, 0.0, 1.0);
-
-    // Soft cel bands (Winnemöller's tanh quantiser — smoother in motion than a
-    // hard floor(), which strobes as pixels cross a band edge).
-    float qn = floor(hsv.z * uLevels + 0.5) / uLevels;
-    hsv.z = qn + (0.5 / uLevels) * tanh1(uPhiQ * (hsv.z - qn));
-
-    // Skin applied after quantisation so the flat yellow is exact.
-    hsv.x = mix(hsv.x, 0.133, skin);
-    hsv.y = mix(hsv.y, max(hsv.y, 0.88), skin);
-    hsv.z = mix(hsv.z, max(hsv.z, 0.86), skin);
-
-    vec3 col = hsv2rgb(hsv);
+    // ── Limited palette, supersampled ──
+    // This is the step that separates "an illustration" from "a processed
+    // photograph": a photo holds thousands of distinct colours, a drawing is
+    // built from a handful. Each channel snaps to a small set of fixed stops,
+    // capping the whole frame at a few dozen colours while still deriving them
+    // from the real scene, so it stays legible.
+    //
+    // The snap is hard, not eased — softening the band edges is exactly what
+    // reintroduces the continuous gradients that read as photographic. But a
+    // hard snap aliases, so it is evaluated on a rotated 4-tap grid and averaged.
+    // That anti-aliases the region borders the way a vector renderer would,
+    // without softening the interiors.
+    vec3 col = palettize(base, skin);
+    vec2 ss = uTexel * 0.42;
+    col += palettize(texture2D(uTex, vUV + vec2( ss.x,  ss.y * 0.5)).rgb, skin);
+    col += palettize(texture2D(uTex, vUV + vec2(-ss.x, -ss.y * 0.5)).rgb, skin);
+    col += palettize(texture2D(uTex, vUV + vec2( ss.x * 0.5, -ss.y)).rgb, skin);
+    col += palettize(texture2D(uTex, vUV + vec2(-ss.x * 0.5,  ss.y)).rgb, skin);
+    col *= 0.2;
     col = mix(col, uInk, ink);
 
     gl_FragColor = vec4(col, src0.a);
@@ -859,7 +888,7 @@ function _initToonGL(){
     gl, canvas: cv, quad, srcTex, kTexA, kTexB, kFboA, kFboB, kW: 0, kH: 0,
     progK, progC,
     uK: uniforms(progK, ['tex','texel','radius','hardness','sharpness','varFloor']),
-    uC: uniforms(progC, ['tex','texel','levels','phiQ','sat','satGamma','contrast',
+    uC: uniforms(progC, ['tex','texel','hueSteps','satSteps','valSteps','hueRot','flat','sat','satGamma','contrast',
                          'line','edge0','edge1','skin','ink']),
   };
   return _toonGL;
@@ -882,10 +911,11 @@ function _toonRender(src, vw, vh, k, skinAmt){
   if(t.canvas.width !== ow || t.canvas.height !== oh){
     t.canvas.width = ow; t.canvas.height = oh;
   }
-  // Pass 1 runs at ~60% — the flattened output has no high-frequency detail to
-  // lose, and the 49-tap × 8-sector kernel is the whole cost of the effect.
-  const kw = Math.max(2, Math.round(ow * 0.6));
-  const kh = Math.max(2, Math.round(oh * 0.6));
+  // Pass 1 runs at 85%. It was 60%, but the upsample back to full res softened
+  // every region boundary, and soft boundaries are precisely what makes an image
+  // read as a photograph instead of a drawing. There is ample GPU headroom.
+  const kw = Math.max(2, Math.round(ow * 0.85));
+  const kh = Math.max(2, Math.round(oh * 0.85));
   if(t.kW !== kw || t.kH !== kh){
     gl.bindTexture(gl.TEXTURE_2D, t.kTexA);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, kw, kh, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
@@ -943,8 +973,14 @@ function _toonRender(src, vw, vh, k, skinAmt){
   const px = Math.max(0.8, ow / 900);
   gl.uniform1i(t.uC.tex, 0);
   gl.uniform2f(t.uC.texel, 1 / ow, 1 / oh);
-  gl.uniform1f(t.uC.levels,   Math.max(3.0, 7.0 - k * 2.0));
-  gl.uniform1f(t.uC.phiQ,     3.0 + k * 3.0);
+  // Palette size: the whole frame is limited to hueSteps x satSteps x valSteps
+  // possible colours. At k=1 that is 7 x 3 x 4 = 84 — already firmly graphic;
+  // pushing the slider up walks it toward a poster print.
+  gl.uniform1f(t.uC.hueSteps, Math.max(7.0, Math.round(14.0 - k * 3.0)));
+  gl.uniform1f(t.uC.satSteps, Math.max(2.0, Math.round(4.0 - k * 1.0)));
+  gl.uniform1f(t.uC.valSteps, Math.max(3.0, Math.round(6.0 - k * 1.5)));
+  gl.uniform1f(t.uC.hueRot,   0.0);
+  gl.uniform1f(t.uC.flat,     Math.min(1.0, 0.55 + k * 0.45));
   gl.uniform1f(t.uC.sat,      1.25 + k * 0.55);
   gl.uniform1f(t.uC.satGamma, 0.75 - k * 0.15);   // <1 lifts washed-out colour
   gl.uniform1f(t.uC.contrast, 1.10 + k * 0.22);
