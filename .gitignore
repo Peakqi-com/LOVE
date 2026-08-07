@@ -19,3 +19,4 @@ Thumbs.db
 # Sketch / scratch HTML
 *.tmp.html
 old/scratch/
+.gstack/

@@ -68,12 +68,18 @@
 <link rel="stylesheet" href="styles.css?v=22y" />
 </head>
 <body>
-  <!-- Registration gate — two-stage:
-       1. Welcome view: app description + Try preview / Register CTAs
-       2. Register view: name/email/profession form (acts as login too — email match
-          re-applies license automatically). Returning users skip both.
-       Projection windows (?silent=1) auto-bypass. -->
-  <div class="gate-overlay" id="gateOverlay">
+  <!-- Registration gate — DISABLED. See AUTH_DISABLED in the script below.
+       The markup is kept (inert) so the login/licensing flow can be restored by
+       flipping that one flag, but it ships with `hidden` ON THE ELEMENT ITSELF.
+       That matters: .gate-overlay is position:fixed / inset:0 / z-index:9999, and
+       this div is the first node in <body>. Without a static `hidden` the wall is
+       painted from first paint and only comes down once JS reaches hideGate() —
+       ~5900 lines into the inline script. Any throw before that point, or JS being
+       disabled/blocked at all, would leave the whole app as an undismissable login
+       wall (there is no <noscript> fallback). Do not remove this class.
+       Original two-stage flow: 1. Welcome (Try preview / Register CTAs)
+       2. Register/login form. Projection windows (?silent=1) auto-bypassed. -->
+  <div class="gate-overlay hidden" id="gateOverlay">
 
     <!-- Stage 1: Welcome -->
     <div class="gate-card" id="gateWelcome">
@@ -756,6 +762,8 @@
               <button data-imgfilter="scanlines">Scanlines<em>CRT 掃描線</em></button>
               <button data-imgfilter="halftone">Halftone<em>網點半色調 · 較重</em></button>
               <button data-imgfilter="sketch">Sketch<em>素描線稿</em></button>
+              <button data-imgfilter="cartoon">Cartoon<em>卡通動畫 · 平塗+墨線</em></button>
+              <button data-imgfilter="simpson">Simpson<em>辛普森 · 黃膚卡通</em></button>
             </div>
           </div>
           <div class="ctrl" style="margin-top:4px"><span class="label">Filter intensity 濾鏡強度</span><span class="val" id="imgFilterAmtVal">1.0×</span>
@@ -1034,6 +1042,8 @@
                 <button data-filter="scanlines">Scanlines<em>CRT 掃描線</em></button>
                 <button data-filter="halftone">Halftone<em>網點半色調 · 較重</em></button>
                 <button data-filter="sketch">Sketch<em>素描線稿</em></button>
+                <button data-filter="cartoon">Cartoon<em>卡通動畫 · 平塗+墨線</em></button>
+                <button data-filter="simpson">Simpson<em>辛普森 · 黃膚卡通</em></button>
               </div>
             </div>
             <div class="ctrl"><span class="label">Filter intensity 濾鏡強度</span><span class="val" id="camFilterAmtVal">1.0×</span>
@@ -5502,9 +5512,11 @@ function randomizeAll(){
     // Background removal — REMOVED from Random pool. User toggles it manually so
     // Random doesn't keep turning it off mid-performance. cam.removeBg stays at
     // whatever the user last set.
-    // Filter — original 14. New filters (noir/cyberpunk/etc) caused freezing on
-    // some sources, pulled from UI + Random for performance.
-    const filterPool = ['none','none','none','8bit','mosaic','chroma','glitch','threshold','invert','vapor','sepia','mono','edge','scanlines','sketch','halftone'];
+    // Filter — original 14 + the two GPU toon filters. New CPU filters
+    // (noir/cyberpunk/etc) caused freezing on some sources, pulled from UI +
+    // Random for performance; cartoon/simpson run in a WebGL shader so they're
+    // safe to include.
+    const filterPool = ['none','none','none','8bit','mosaic','chroma','glitch','threshold','invert','vapor','sepia','mono','edge','scanlines','sketch','halftone','cartoon','simpson'];
     cam.filter = filterPool[Math.floor(Math.random()*filterPool.length)];
     cam.filterIntensity = 0.6 + Math.random()*1.1;   // 0.6 .. 1.7
     // Face AR removed temporarily — keep cam.ar = 'none' so drawWebcamFX skips it.
@@ -7147,6 +7159,31 @@ document.querySelectorAll('.lock-sub-caret').forEach(caret => {
 // if yes, sets state.noWatermark so saves/recordings come out clean.
 // Projection windows (?silent=1) automatically skip since the operator already registered
 // in the same browser (shared localStorage).
+// ═══════════════════════════════════════════════════════════════════════════
+// AUTH_DISABLED — master switch for the whole login / registration / licensing
+// flow. While true:
+//   · the gate never appears (it also ships `hidden` in the markup, so this does
+//     not depend on any JS running — see the comment on #gateOverlay)
+//   · every session is treated as fully licensed: no watermark, 1080p/4K unlocked
+//   · preview mode can never engage, so the panel is never locked
+//   · no /api/auth/* request is ever made, so the app works fully offline
+// The auth code below is left intact but unreachable.
+//
+// TO RESTORE THE LOGIN FLOW: set this to false. That is the only edit needed for
+// the flow itself — but understand the one thing it does NOT undo. #gateOverlay
+// ships `hidden` in the static markup, and that class is deliberately not behind
+// this flag (it is what guarantees no wall can ever paint while auth is off, even
+// if this script never runs). With the flag false the gate is therefore raised by
+// JS instead of by the markup: setupGate removes the class synchronously just
+// before bootstrapSession() so the wall still covers the app during the session
+// check. The residual difference from the original build: if JS is disabled or the
+// inline script throws before setupGate, no wall appears at all — where the
+// original painted one. That is acceptable because the app is a canvas renderer
+// and is entirely non-functional without JS, so there is nothing to gate. If you
+// ever need the original paint-first behaviour back, also drop `hidden` from the
+// #gateOverlay markup.
+const AUTH_DISABLED = true;
+
 const GATE_KEY    = 'iw-user-v1';     // legacy cache of the logged-in user
 const LICENSE_KEY = 'iw-license-v1';  // legacy cache of license probe result
 const TOKEN_KEY   = 'iw-token-v1';    // server-side session token (HMAC-signed by Vercel function)
@@ -7176,6 +7213,16 @@ async function apiFetch(path, body){
 }
 
 function applyLicense(lic){
+  if(AUTH_DISABLED){
+    // Unconditionally licensed — keeps watermark off and 1080p/4K unlocked no
+    // matter what any leftover code path passes in (e.g. a stale sign-out).
+    state.noWatermark = true;
+    state.licenseInfo = { email: '', name: 'Guest', admin: false };
+    if(typeof window._onLicenseChange === 'function'){
+      try { window._onLicenseChange(); } catch(_){}
+    }
+    return;
+  }
   if(lic && lic.licensed){
     state.noWatermark = true;
     state.licenseInfo = { email: lic.email, name: lic.name, admin: !!lic.admin };
@@ -7227,6 +7274,21 @@ function randomSalt(){
   const switchLogin    = document.getElementById('gateSwitchLogin');
   const switchRegister = document.getElementById('gateSwitchRegister');
   const previewCta = document.getElementById('previewCta');
+
+  if(AUTH_DISABLED){
+    // Structurally inert, not just "hidden on boot": we return before ANY view
+    // function, click delegation, form handler or previewCta listener is wired,
+    // so there is no code left that can raise the wall — not a stale token, not
+    // a 401, not a mis-click. bootstrapSession() never runs either, so the app
+    // makes zero /api/auth/* requests and works with no network at all.
+    if(overlay) overlay.classList.add('hidden');
+    if(previewCta) previewCta.classList.add('hidden');
+    state.previewMode = false;
+    applyLicense(null);                 // AUTH_DISABLED branch → full license
+    window._openRegisterGate = () => {};   // no-op for the leftover call sites
+    return;
+  }
+
   if(!overlay || !form) return;
 
   function hideAllViews(){
@@ -7282,17 +7344,9 @@ function randomSalt(){
   const existing = getRegisteredUser();
 
   async function bootstrapSession(){
-    // ─── TEMPORARY BYPASS ──────────────────────────────────────────────────
-    // Skip the login / register gate so anyone can use the app directly.
-    // Treat session as fully licensed (no watermark, full panel access).
-    // To restore the auth flow: delete this block + early return.
-    // Everything below this return is the original bootstrap logic, kept
-    // intact for easy restoration.
-    hideGate();
-    applyLicense({ licensed:true, name:'Guest', email:'' });
-    if(existing) applyUserChip(existing);
-    return;
-    // ────────────────────────────────────────────────────────────────────────
+    // (The old inline "TEMPORARY BYPASS" that used to sit here is gone — the
+    // AUTH_DISABLED early-return above supersedes it. Leaving it in would have
+    // meant flipping AUTH_DISABLED back to false still bypassed the gate.)
     if(isProjection){
       hideGate();
       if(existing) applyUserChip(existing);
@@ -7314,6 +7368,14 @@ function randomSalt(){
     // The Sign in button auto-routes to login form (with email prefilled) if local data exists.
     showWelcome();
   }
+  // Raise the wall SYNCHRONOUSLY before the async session check. #gateOverlay now
+  // ships `hidden` in the markup (so the disabled build never flashes a gate), which
+  // means the wall no longer paints by itself the way it did originally — without
+  // this line a returning user with a stale token would get a fully interactive app
+  // for the whole /api/auth/me round trip, and forever if that request stalls rather
+  // than rejects. Removing the class here restores the original fail-closed paint:
+  // covered first, uncovered only once the session actually verifies.
+  overlay.classList.remove('hidden');
   bootstrapSession();
 
   // ——— Forgot password view ———
@@ -7496,6 +7558,12 @@ function clearUserChip(){
 }
 // Wire user-chip account menu + change password
 (function(){
+  // No accounts while auth is off — don't wire the chip, the account menu, the
+  // change-password modal, or the always-on document click listener below.
+  // (This also removes the sign-out button, which would otherwise clear the
+  // license mid-session and bring the recording watermark back.)
+  if(AUTH_DISABLED) return;
+
   const chip       = document.getElementById('userChip');
   const menuBtn    = document.getElementById('userMenuBtn');
   const menu       = document.getElementById('userMenu');
@@ -7586,6 +7654,11 @@ function clearUserChip(){
 // Anything outside the panel (canvas, FAB buttons including Present, footer,
 // hotkey help) stays free in preview mode.
 (function setupPreviewInterceptor(){
+  // With auth off there is no preview mode to enforce, and nothing else in the
+  // app reads state.previewMode — so skip installing the four document-level
+  // capture listeners entirely rather than leaving them armed on a boolean.
+  if(AUTH_DISABLED) return;
+
   // Inside the panel, ONLY these may be touched while in preview:
   const PANEL_ALLOW_SELECTORS = [
     '#qaRandomTop',          // Random

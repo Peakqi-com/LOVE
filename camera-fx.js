@@ -23,7 +23,7 @@ const cam = {
   fxSize: 1.0,
   mirror: true,
   // Video filter (independent from face/hand FX particles)
-  filter: 'none',          // 'none'|'8bit'|'mosaic'|'chroma'|'glitch'|'threshold'|'invert'|'vapor'|'sepia'|'mono'|'edge'|'scanlines'|'halftone'|'sketch'
+  filter: 'none',          // 'none'|'8bit'|'mosaic'|'chroma'|'glitch'|'threshold'|'invert'|'vapor'|'sepia'|'mono'|'edge'|'scanlines'|'halftone'|'sketch'|'cartoon'|'simpson'
   filterIntensity: 1.0,    // 0..2 — multiplier for filter strength
   // AR overlays (face-landmark driven; independent of Effect particles + Filter)
   ar: 'none',              // 'none'|'mesh'|'glasses'|'sunglasses'|'cat'|'crown'|'halo'|'tears'|'laserEyes'|'thirdEye'|'mask'|'aura'
@@ -462,6 +462,254 @@ const _imgFilterCtx = _imgFilterCv.getContext('2d');
 const _imgFilterAuxCv  = document.createElement('canvas');
 const _imgFilterAuxCtx = _imgFilterAuxCv.getContext('2d');
 let _filterFrameCounter = 0;
+
+// ————————————————————————————————————————————————————————————————————
+// Cartoon / Simpsons — single-pass WebGL toon shader.
+// The 2D-canvas filters above all cost CPU; a cel-shading look needs
+// edge-preserving smoothing + colour quantisation + a Sobel outline, which is
+// far too much per-pixel work for getImageData at 60fps (that's what made the
+// noir/cyberpunk batch freeze). One fragment shader does all three on the GPU,
+// so this stays cheap enough to leave out of the frame-skip throttle.
+// Shared by cam + img modes — the result is copied into the caller's 2D
+// scratch buffer immediately, so serial reuse within one frame is safe.
+// ————————————————————————————————————————————————————————————————————
+const _TOON_VERT_SRC = `
+  attribute vec2 aPos;
+  varying vec2 vUV;
+  void main(){
+    vUV = aPos * 0.5 + 0.5;
+    gl_Position = vec4(aPos, 0.0, 1.0);
+  }`;
+
+const _TOON_FRAG_SRC = `
+  precision mediump float;
+  varying vec2 vUV;
+  uniform sampler2D uTex;
+  uniform vec2  uTexel;     // 1 / output size
+  uniform float uLevels;    // value posterisation steps
+  uniform float uHueBands;  // hue quantisation bands
+  uniform float uSmooth;    // smoothing radius scale
+  uniform float uLine;      // outline sample radius (px)
+  uniform float uThresh;    // outline gradient threshold
+  uniform float uSat;       // saturation boost
+  uniform float uSkin;      // 0..1 — skin -> Simpsons yellow
+
+  vec3 rgb2hsv(vec3 c){
+    vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
+    vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+    vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+    float d = q.x - min(q.w, q.y);
+    return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + 1.0e-10)), d / (q.x + 1.0e-10), q.x);
+  }
+  vec3 hsv2rgb(vec3 c){
+    vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+  }
+  float lum(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }
+
+  void main(){
+    vec4 src0 = texture2D(uTex, vUV);
+    vec3 c0 = src0.rgb;
+
+    // ── Edge-preserving smooth (3 rings × 6 taps) ──
+    // Range weight kills the blur across strong colour steps, so skin/wall/hair
+    // flatten into paintable areas but their borders stay sharp for the outline.
+    // 18 taps rather than 12: sensor noise has to be averaged well below the
+    // posterisation step width or the flat areas dither instead of flattening.
+    // Per-pixel phase so the fixed ring angles don't align into a moiré swirl
+    // across smooth gradients (stage glows are exactly that shape).
+    float phase = fract(sin(dot(vUV, vec2(12.9898, 78.233))) * 43758.5453) * 6.2831853;
+    vec3  sum  = c0;
+    float wsum = 1.0;
+    for(int i = 0; i < 18; i++){
+      float fi   = float(i);
+      float ring = floor(fi / 6.0);              // 0, 1, 2
+      float a    = phase + fi * 1.0471976 + ring * 0.3490659;
+      float r    = (1.6 + ring * 1.7) * uSmooth;
+      vec3  s    = texture2D(uTex, vUV + vec2(cos(a), sin(a)) * r * uTexel).rgb;
+      float d    = distance(s, c0);
+      float w    = exp(-d * d * 10.0) / (1.0 + ring * 0.45);
+      sum  += s * w;
+      wsum += w;
+    }
+    vec3 base = sum / wsum;
+
+    // ── Palette ──
+    vec3 hsv0 = rgb2hsv(base);
+    // Skin mask, measured before quantisation so it doesn't chatter on a band
+    // edge. Gated on hue (red-orange), mid saturation and enough light, so warm
+    // walls / dark clothing don't all turn yellow.
+    float skin = smoothstep(0.30, 0.70,
+        smoothstep(0.004, 0.030, hsv0.x) * (1.0 - smoothstep(0.095, 0.150, hsv0.x))
+      * smoothstep(0.12,  0.24,  hsv0.y) * (1.0 - smoothstep(0.74,  0.94,  hsv0.y))
+      * smoothstep(0.17,  0.31,  hsv0.z)) * uSkin;
+
+    vec3 hsv = hsv0;
+    hsv.y = clamp(hsv.y * uSat, 0.0, 1.0);
+    // Cel bands with softened edges. A hard floor() on a noisy gradient dithers
+    // into salt-and-pepper speckle (camera sensor noise sits right on the band
+    // boundaries), so ease across each step instead of snapping.
+    float vq = hsv.z * uLevels;
+    hsv.z = (floor(vq) + smoothstep(0.35, 0.65, fract(vq))) / uLevels;
+    float sq = hsv.y * (uLevels + 2.0);
+    hsv.y = (floor(sq) + smoothstep(0.35, 0.65, fract(sq))) / (uLevels + 2.0);
+    // Hue banding only where there's real colour — hue is meaningless in
+    // near-grey pixels, and banding it makes flat walls crawl with colour.
+    // Wide transition here on purpose: value posterisation + the ink line carry
+    // the cartoon read, so hue only needs a nudge, and a hard hue step contours
+    // badly across big soft colour washes.
+    float hq = hsv.x * uHueBands;
+    hsv.x = mix(hsv.x, (floor(hq) + smoothstep(0.20, 0.80, fract(hq))) / uHueBands,
+                smoothstep(0.10, 0.26, hsv.y));
+
+    // Skin → Simpsons yellow, applied after quantisation so the flat yellow
+    // isn't knocked into orange by a hue band edge at high intensity.
+    hsv.x = mix(hsv.x, 0.133, skin);
+    hsv.y = mix(hsv.y, max(hsv.y, 0.82), skin);
+    hsv.z = mix(hsv.z, max(hsv.z, 0.84), skin);
+    vec3 col = hsv2rgb(hsv);
+
+    // ── Ink outline (Sobel on luminance) ──
+    vec2 e = uTexel * uLine;
+    float tl = lum(texture2D(uTex, vUV + vec2(-e.x,  e.y)).rgb);
+    float tc = lum(texture2D(uTex, vUV + vec2( 0.0,  e.y)).rgb);
+    float tr = lum(texture2D(uTex, vUV + vec2( e.x,  e.y)).rgb);
+    float ml = lum(texture2D(uTex, vUV + vec2(-e.x,  0.0)).rgb);
+    float mr = lum(texture2D(uTex, vUV + vec2( e.x,  0.0)).rgb);
+    float bl = lum(texture2D(uTex, vUV + vec2(-e.x, -e.y)).rgb);
+    float bc = lum(texture2D(uTex, vUV + vec2( 0.0, -e.y)).rgb);
+    float br = lum(texture2D(uTex, vUV + vec2( e.x, -e.y)).rgb);
+    float gx = (tl + 2.0 * ml + bl) - (tr + 2.0 * mr + br);
+    float gy = (tl + 2.0 * tc + tr) - (bl + 2.0 * bc + br);
+    float ink = smoothstep(uThresh, uThresh + 0.20, sqrt(gx * gx + gy * gy));
+    col = mix(col, vec3(0.05, 0.04, 0.06), ink);
+
+    gl_FragColor = vec4(col, src0.a);
+  }`;
+
+let _toonGL = null;
+let _toonDead = false;      // set after a hard failure so we stop retrying every frame
+function _initToonGL(){
+  if(_toonGL) return _toonGL;
+  if(_toonDead) return null;
+  const cv = document.createElement('canvas');
+  cv.width = 2; cv.height = 2;
+  const gl = cv.getContext('webgl', { alpha: true, premultipliedAlpha: false, depth: false, stencil: false, antialias: false })
+          || cv.getContext('experimental-webgl', { alpha: true, premultipliedAlpha: false, depth: false, stencil: false });
+  if(!gl){ _toonDead = true; console.warn('[toon] no WebGL — cartoon filter falls back to 2D'); return null; }
+
+  function compile(type, src, label){
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src); gl.compileShader(sh);
+    if(!gl.getShaderParameter(sh, gl.COMPILE_STATUS)){
+      console.error('[toon] ' + label + ':', gl.getShaderInfoLog(sh));
+      return null;
+    }
+    return sh;
+  }
+  const vs = compile(gl.VERTEX_SHADER,   _TOON_VERT_SRC, 'vs');
+  const fs = compile(gl.FRAGMENT_SHADER, _TOON_FRAG_SRC, 'fs');
+  if(!vs || !fs){ _toonDead = true; return null; }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, vs); gl.attachShader(prog, fs);
+  gl.linkProgram(prog);
+  if(!gl.getProgramParameter(prog, gl.LINK_STATUS)){
+    console.error('[toon] link:', gl.getProgramInfoLog(prog));
+    _toonDead = true; return null;
+  }
+
+  const quad = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1,  -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  // NPOT video frames — clamp + linear, no mipmaps
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  // Match 2D-canvas orientation + straight (non-premultiplied) alpha so the
+  // background-removal cutout survives the round trip.
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+
+  const aPos = gl.getAttribLocation(prog, 'aPos');
+  gl.enableVertexAttribArray(aPos);
+  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+  gl.useProgram(prog);
+  gl.uniform1i(gl.getUniformLocation(prog, 'uTex'), 0);
+
+  cv.addEventListener('webglcontextlost', e => { e.preventDefault(); _toonGL = null; }, false);
+
+  _toonGL = {
+    gl, canvas: cv, prog, quad, tex,
+    u: {
+      texel:    gl.getUniformLocation(prog, 'uTexel'),
+      levels:   gl.getUniformLocation(prog, 'uLevels'),
+      hueBands: gl.getUniformLocation(prog, 'uHueBands'),
+      smooth:   gl.getUniformLocation(prog, 'uSmooth'),
+      line:     gl.getUniformLocation(prog, 'uLine'),
+      thresh:   gl.getUniformLocation(prog, 'uThresh'),
+      sat:      gl.getUniformLocation(prog, 'uSat'),
+      skin:     gl.getUniformLocation(prog, 'uSkin'),
+    },
+  };
+  return _toonGL;
+}
+
+// Renders `src` (video element or canvas) toon-shaded. Returns the GL canvas,
+// or null if WebGL is unavailable — callers must have a 2D fallback.
+// k = filter intensity 0..2, skinAmt = 0..1 Simpsons-yellow strength.
+function _toonRender(src, vw, vh, k, skinAmt){
+  const t = _initToonGL();
+  if(!t) return null;
+  const gl = t.gl;
+  if(gl.isContextLost && gl.isContextLost()){ _toonGL = null; return null; }
+
+  // Cap output — lines read the same at 1280 and the upscale is free.
+  const MAXD = 1280;
+  const s  = Math.min(1, MAXD / Math.max(vw, vh));
+  const ow = Math.max(2, Math.round(vw * s));
+  const oh = Math.max(2, Math.round(vh * s));
+  if(t.canvas.width !== ow || t.canvas.height !== oh){
+    t.canvas.width = ow; t.canvas.height = oh;
+  }
+
+  gl.useProgram(t.prog);
+  gl.bindBuffer(gl.ARRAY_BUFFER, t.quad);
+  const aPos = gl.getAttribLocation(t.prog, 'aPos');
+  gl.enableVertexAttribArray(aPos);
+  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, t.tex);
+  try {
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
+  } catch(err){
+    // tainted canvas / not-yet-decodable video frame — skip this frame
+    return null;
+  }
+
+  // Higher intensity = fewer colour steps, fatter lines, more punch.
+  gl.uniform2f(t.u.texel, 1 / ow, 1 / oh);
+  gl.uniform1f(t.u.levels,   Math.max(3, 8 - k * 2.6));
+  gl.uniform1f(t.u.hueBands, Math.max(6, 20 - k * 6));
+  gl.uniform1f(t.u.smooth,   (0.9 + k * 0.8) * Math.max(0.85, ow / 720));
+  gl.uniform1f(t.u.line,     (1.0 + k * 0.9) * Math.max(1, ow / 720));
+  gl.uniform1f(t.u.thresh,   Math.max(0.06, 0.30 - k * 0.09));
+  gl.uniform1f(t.u.sat,      1 + k * 0.45);
+  gl.uniform1f(t.u.skin,     skinAmt || 0);
+
+  gl.viewport(0, 0, ow, oh);
+  gl.disable(gl.BLEND);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+  return t.canvas;
+}
+
 // Generic filter — handles both webcam (mode='cam') and image (mode='img') sources.
 // Uses separate scratch buffers per mode so they don't collide within a frame.
 function applyVideoFilter(src, vw, vh, mode){
@@ -471,7 +719,9 @@ function applyVideoFilter(src, vw, vh, mode){
   if(f === 'none') return src;
   // Adaptive throttle — both cam and image filters now skip frames under stacked load.
   _filterFrameCounter++;
-  const heavyFilters = new Set(['glitch','halftone','sketch','edge','8bit','mosaic','chroma']);
+  // cartoon/simpson do their work on the GPU, but the texture upload + canvas
+  // copy still costs at full res — worth halving when other sources stack up.
+  const heavyFilters = new Set(['glitch','halftone','sketch','edge','8bit','mosaic','chroma','cartoon','simpson']);
   const videoItemActive = (typeof imgState !== 'undefined') && imgState.images && imgState.images.some(e => e && e.isVideo);
   const imgFxActive = (typeof imgState !== 'undefined') && imgState.modes && Object.values(imgState.modes).filter(Boolean).length > 1;
   const arActive = cam.ar && cam.ar !== 'none';
@@ -693,6 +943,52 @@ function applyVideoFilter(src, vw, vh, mode){
       c.filter = `grayscale(1) brightness(${2 + k}) contrast(${3 + k*2}) invert(1)`;
       c.drawImage(_cv, 0, 0, vw, vh);
       c.filter = 'none';
+      break;
+    }
+    case 'cartoon':
+    case 'simpson': {
+      // Cel-shaded animation look: flat colour areas + black ink outlines.
+      // 'simpson' additionally pushes skin tones to the Simpsons yellow.
+      const skinAmt = (f === 'simpson') ? Math.min(1, 0.55 + k * 0.30) : 0;
+      const toon = _toonRender(src, vw, vh, k, skinAmt);
+      if(toon){
+        c.drawImage(toon, 0, 0, vw, vh);
+      } else {
+        // 2D fallback — flatten with blur+saturate+contrast, then multiply an
+        // inverted edge pass on top for the outlines. Coarser, but same read.
+        if(_auxCv.width !== vw || _auxCv.height !== vh){ _auxCv.width = vw; _auxCv.height = vh; }
+        _auxCtx.setTransform(1,0,0,1,0,0);
+        _auxCtx.globalAlpha = 1; _auxCtx.globalCompositeOperation = 'source-over';
+        _auxCtx.clearRect(0,0,vw,vh);
+        _auxCtx.filter = `blur(${1.2 + k*0.8}px)`;
+        _auxCtx.drawImage(src, 0, 0, vw, vh);
+        _auxCtx.filter = 'none';
+        _auxCtx.globalCompositeOperation = 'difference';
+        _auxCtx.drawImage(src, 0, 0, vw, vh);
+        _auxCtx.globalCompositeOperation = 'source-over';
+        _auxCtx.filter = `grayscale(1) brightness(${2.4 + k}) contrast(${5 + k*3}) invert(1)`;
+        _auxCtx.drawImage(_auxCv, 0, 0, vw, vh);
+        _auxCtx.filter = 'none';
+        // flat colour base
+        c.filter = `blur(${0.8 + k*0.6}px) saturate(${1.5 + k*0.6}) contrast(${1.35 + k*0.35}) brightness(1.05)`;
+        c.drawImage(src, 0, 0, vw, vh);
+        c.filter = 'none';
+        if(skinAmt > 0){
+          // crude Simpsons tint — warm yellow wash over the midtones
+          c.globalCompositeOperation = 'overlay';
+          c.globalAlpha = 0.35 * skinAmt;
+          c.fillStyle = '#ffd90f';
+          c.fillRect(0, 0, vw, vh);
+          c.globalAlpha = 1;
+        }
+        c.globalCompositeOperation = 'multiply';
+        c.drawImage(_auxCv, 0, 0, vw, vh);
+        // multiply paints opaque over transparent pixels — re-apply the source
+        // alpha so a background-removal cutout isn't filled in with the ink pass
+        c.globalCompositeOperation = 'destination-in';
+        c.drawImage(src, 0, 0, vw, vh);
+        c.globalCompositeOperation = 'source-over';
+      }
       break;
     }
     case 'noir': {
