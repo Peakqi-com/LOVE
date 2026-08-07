@@ -23,7 +23,7 @@ const cam = {
   fxSize: 1.0,
   mirror: true,
   // Video filter (independent from face/hand FX particles)
-  filter: 'none',          // 'none'|'8bit'|'mosaic'|'chroma'|'glitch'|'threshold'|'invert'|'vapor'|'sepia'|'mono'|'edge'|'scanlines'|'halftone'|'sketch'|'cartoon'|'simpson'
+  filter: 'none',          // 'none'|'8bit'|'mosaic'|'chroma'|'glitch'|'threshold'|'invert'|'vapor'|'sepia'|'mono'|'edge'|'scanlines'|'halftone'|'sketch'|'cartoon'|'simpson'|'lineart'
   filterIntensity: 1.0,    // 0..2 — multiplier for filter strength
   // AR overlays (face-landmark driven; independent of Effect particles + Filter)
   ar: 'none',              // 'none'|'mesh'|'glasses'|'sunglasses'|'cat'|'crown'|'halo'|'tears'|'laserEyes'|'thirdEye'|'mask'|'aura'
@@ -803,6 +803,205 @@ const _TOON_COMPOSITE_SRC = `
     gl_FragColor = vec4(col, src0.a);
   }`;
 
+/* ── Coherent Line Drawing (Kang, Lee & Chui, NPAR 2007) ──
+   Used by the 'lineart' filter for the drawn linework.
+
+   The reason the earlier attempts here produced either scratchy noise or no
+   line at all: a difference-of-Gaussians response measured at a single point is
+   weak, so any threshold that catches a real edge also catches grain. Kang's
+   insight is to measure the DoG ACROSS the edge but then integrate it ALONG the
+   edge. A faint but continuous contour accumulates into a strong line; grain,
+   having no continuity, averages to nothing. That is what makes the strokes
+   look drawn rather than detected.
+
+   Three passes: gradient → smoothed structure tensor (the flow field) → DoG
+   across the flow → accumulation along the flow. The paper builds the flow with
+   an iterative vector-smoothing kernel; the smoothed structure tensor gives the
+   same field in closed form, which is what makes it affordable per frame.
+   Paper defaults kept: sigma_c 1.0, sigma_m 3.0, rho 0.997, tau ~0.8. */
+
+// Pass L1 — per-pixel gradient of the flattened image, stored for the tensor pass.
+const _TOON_GRAD_SRC = `
+  precision highp float;
+  varying vec2 vUV;
+  uniform sampler2D uTex;
+  uniform vec2 uTexel;
+  float luma(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }
+  void main(){
+    float tl = luma(texture2D(uTex, vUV + vec2(-uTexel.x,  uTexel.y)).rgb);
+    float tc = luma(texture2D(uTex, vUV + vec2( 0.0,       uTexel.y)).rgb);
+    float tr = luma(texture2D(uTex, vUV + vec2( uTexel.x,  uTexel.y)).rgb);
+    float ml = luma(texture2D(uTex, vUV + vec2(-uTexel.x,  0.0)).rgb);
+    float mr = luma(texture2D(uTex, vUV + vec2( uTexel.x,  0.0)).rgb);
+    float bl = luma(texture2D(uTex, vUV + vec2(-uTexel.x, -uTexel.y)).rgb);
+    float bc = luma(texture2D(uTex, vUV + vec2( 0.0,      -uTexel.y)).rgb);
+    float br = luma(texture2D(uTex, vUV + vec2( uTexel.x, -uTexel.y)).rgb);
+    float gx = (tr + 2.0 * mr + br) - (tl + 2.0 * ml + bl);
+    float gy = (tl + 2.0 * tc + tr) - (bl + 2.0 * bc + br);
+    // packed to unsigned; the tensor pass unpacks
+    gl_FragColor = vec4(gx, gy, 0.0, 1.0);
+  }`;
+
+// Pass L2 — smoothed structure tensor → edge tangent flow + anisotropy.
+const _TOON_FLOW_SRC = `
+  precision highp float;
+  varying vec2 vUV;
+  uniform sampler2D uTex;      // gradient field from L1
+  uniform vec2  uTexel;
+  uniform float uRadius;
+  void main(){
+    float Jxx = 0.0, Jyy = 0.0, Jxy = 0.0, wsum = 0.0;
+    // Smoothing the TENSOR rather than the vectors is what keeps the field
+    // continuous across an edge: tensors are sign-agnostic, so two opposite
+    // gradients reinforce instead of cancelling.
+    for(int i = 0; i < 13; i++){
+      float fi = float(i);
+      vec2 off = vec2(0.0);
+      if(i > 0){
+        float ring = floor((fi - 1.0) / 6.0);           // 0, 1
+        float a    = mod(fi - 1.0, 6.0) * 1.0471976 + ring * 0.5235988;
+        off = vec2(cos(a), sin(a)) * (1.0 + ring) * uRadius;
+      }
+      vec2  g = texture2D(uTex, vUV + off * uTexel).rg;
+      float w = exp(-dot(off, off) / (2.0 * uRadius * uRadius + 1e-4));
+      Jxx += g.x * g.x * w;  Jyy += g.y * g.y * w;  Jxy += g.x * g.y * w;
+      wsum += w;
+    }
+    Jxx /= wsum; Jyy /= wsum; Jxy /= wsum;
+
+    float d  = sqrt(max(0.0, (Jxx - Jyy) * (Jxx - Jyy) + 4.0 * Jxy * Jxy));
+    float l1 = 0.5 * (Jxx + Jyy + d);
+    float l2 = 0.5 * (Jxx + Jyy - d);
+    vec2  ev = vec2(l1 - Jyy, Jxy);                     // gradient direction
+    ev = (length(ev) < 1e-6) ? vec2(1.0, 0.0) : normalize(ev);
+    vec2  t  = vec2(-ev.y, ev.x);                       // edge tangent = flow
+    float A  = (l1 + l2 > 1e-6) ? (l1 - l2) / (l1 + l2) : 0.0;
+    gl_FragColor = vec4(t, A, 1.0);
+  }`;
+
+// Pass L3 — DoG measured ACROSS the flow (Kang's gradient-direction pass).
+const _TOON_DOG_SRC = `
+  precision highp float;
+  varying vec2 vUV;
+  uniform sampler2D uTex;      // flattened colour
+  uniform sampler2D uFlow;     // edge tangent flow from L2
+  uniform vec2  uTexel;
+  uniform float uSigmaC;
+  uniform float uRho;
+  float luma(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }
+  void main(){
+    vec2 t = texture2D(uFlow, vUV).rg;
+    vec2 n = vec2(t.y, -t.x);                           // across the edge
+    float sC = uSigmaC, sS = uSigmaC * 1.6;
+    float accC = 0.0, accS = 0.0, wC = 0.0, wS = 0.0;
+    for(int i = -6; i <= 6; i++){
+      float s  = float(i) * sC * 0.6;
+      float l  = luma(texture2D(uTex, vUV + n * s * uTexel).rgb);
+      float wc = exp(-s * s / (2.0 * sC * sC));
+      float ws = exp(-s * s / (2.0 * sS * sS));
+      accC += l * wc; wC += wc;
+      accS += l * ws; wS += ws;
+    }
+    // rho near 1 keeps flat areas at ~0 so only real contours survive
+    float dog = (accC / wC) - uRho * (accS / wS);
+    gl_FragColor = vec4(dog, 0.0, 0.0, 1.0);
+  }`;
+
+// Pass L4 — integrate the DoG ALONG the flow, then composite over the colour
+// blocks. This accumulation is the whole trick: it is what turns a weak,
+// noise-level per-pixel response into a continuous drawn stroke.
+const _TOON_LINE_SRC = `
+  precision highp float;
+  varying vec2 vUV;
+  uniform sampler2D uTex;      // flattened colour (colour blocks)
+  uniform sampler2D uFlow;
+  uniform sampler2D uDog;
+  uniform vec2  uTexel;
+  uniform float uSigmaM;       // how far the stroke integrates along the edge
+  uniform float uTau;          // ink cutoff
+  uniform float uSharp;        // stroke edge hardness
+  uniform float uHueSteps;
+  uniform float uSatSteps;
+  uniform float uValSteps;
+  uniform float uFlat;
+  uniform float uSat;
+  uniform float uSatGamma;
+  uniform float uContrast;
+  uniform float uSkin;
+  uniform vec3  uInk;
+  uniform float uPaper;        // 0 = ink over the scene, 1 = ink on flat paper
+  uniform vec3  uPaperCol;
+
+  vec3 rgb2hsv(vec3 c){
+    vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
+    vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+    vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+    float d = q.x - min(q.w, q.y);
+    return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + 1.0e-10)), d / (q.x + 1.0e-10), q.x);
+  }
+  vec3 hsv2rgb(vec3 c){
+    vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+  }
+  float tanh1(float x){
+    float e = exp(2.0 * clamp(x, -8.0, 8.0));
+    return (e - 1.0) / (e + 1.0);
+  }
+  float dogAt(vec2 uv){ return texture2D(uDog, uv).r; }
+  vec2  flowAt(vec2 uv){ return texture2D(uFlow, uv).rg; }
+
+  vec3 palettize(vec3 rgb, float skin){
+    vec3 hsv = rgb2hsv(rgb);
+    hsv.y = clamp(pow(hsv.y, uSatGamma) * uSat, 0.0, 1.0);
+    hsv.z = clamp((hsv.z - 0.5) * uContrast + 0.5, 0.0, 1.0);
+    float hSnap = (floor(hsv.x * uHueSteps) + 0.5) / uHueSteps;
+    hsv.x = mix(hsv.x, hSnap, uFlat * smoothstep(0.06, 0.20, hsv.y));
+    hsv.y = mix(hsv.y, floor(hsv.y * uSatSteps + 0.5) / uSatSteps, uFlat);
+    hsv.z = mix(hsv.z, floor(hsv.z * uValSteps + 0.5) / uValSteps, uFlat);
+    hsv.x = mix(hsv.x, 0.133, skin);
+    hsv.y = mix(hsv.y, max(hsv.y, 0.88), skin);
+    hsv.z = mix(hsv.z, max(hsv.z, 0.86), skin);
+    return hsv2rgb(hsv);
+  }
+
+  void main(){
+    vec4 src0 = texture2D(uTex, vUV);
+
+    // ── Integrate the DoG along the edge tangent, both directions ──
+    float acc = dogAt(vUV);
+    float wsum = 1.0;
+    vec2 posF = vUV, posB = vUV;
+    for(int i = 1; i <= 10; i++){
+      float fi = float(i);
+      float w  = exp(-fi * fi / (2.0 * uSigmaM * uSigmaM));
+      // step along the local flow, re-reading it each step so the stroke
+      // follows curves instead of shooting off in a straight line
+      vec2 tF = flowAt(posF); posF += tF * uTexel;
+      vec2 tB = flowAt(posB); posB -= tB * uTexel;
+      acc  += (dogAt(posF) + dogAt(posB)) * w;
+      wsum += 2.0 * w;
+    }
+    acc /= wsum;
+
+    // Kang's soft threshold: positive response is not an edge at all; negative
+    // response becomes ink, eased by tanh so the stroke has a soft shoulder
+    // instead of a jagged binary border.
+    float e   = (acc > 0.0) ? 1.0 : 1.0 + tanh1(uSharp * acc);
+    float ink = 1.0 - smoothstep(uTau - 0.18, uTau + 0.18, e);
+
+    vec3 hsvS = rgb2hsv(src0.rgb);
+    float skin = smoothstep(0.30, 0.70,
+        smoothstep(0.006, 0.032, hsvS.x) * (1.0 - smoothstep(0.090, 0.140, hsvS.x))
+      * smoothstep(0.12,  0.24,  hsvS.y) * (1.0 - smoothstep(0.62,  0.86,  hsvS.y))
+      * smoothstep(0.16,  0.30,  hsvS.z) * (1.0 - smoothstep(0.86,  0.97,  hsvS.z))) * uSkin;
+
+    vec3 col = palettize(src0.rgb, skin);
+    col = mix(col, uPaperCol, uPaper);          // optional flat-paper ground
+    col = mix(col, uInk, clamp(ink, 0.0, 1.0));
+    gl_FragColor = vec4(col, src0.a);
+  }`;
+
 let _toonGL = null;
 let _toonDead = false;      // set after a hard failure so we stop retrying every frame
 function _initToonGL(){
@@ -841,6 +1040,13 @@ function _initToonGL(){
   const progK = link(_TOON_KUWAHARA_SRC,  'kuwahara');
   const progC = link(_TOON_COMPOSITE_SRC, 'composite');
   if(!progK || !progC){ _toonDead = true; return null; }
+  // Coherent-line-drawing chain. Failure here disables only the 'lineart'
+  // filter — cartoon/simpson keep working on their own two passes.
+  const progG = link(_TOON_GRAD_SRC, 'grad');
+  const progF = link(_TOON_FLOW_SRC, 'flow');
+  const progD = link(_TOON_DOG_SRC,  'dog');
+  const progL = link(_TOON_LINE_SRC, 'line');
+  let cldOk = !!(progG && progF && progD && progL);
 
   const quad = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, quad);
@@ -859,6 +1065,15 @@ function _initToonGL(){
     return t;
   }
 
+  // The line-art chain stores a gradient field and a signed DoG response in
+  // intermediate textures. In 8-bit those quantise to a couple of levels in
+  // flat areas, and the structure tensor built from them comes out as pure
+  // noise — which makes the flow field random and the stroke integration
+  // average the contour away to nothing. Half-float keeps the small values.
+  const _hf = gl.getExtension('OES_texture_half_float');
+  gl.getExtension('OES_texture_half_float_linear');
+  const fieldType = _hf ? _hf.HALF_FLOAT_OES : gl.UNSIGNED_BYTE;
+
   const srcTex = makeTex();          // uploaded camera/image frame
   // Two flatten targets so the Kuwahara pass can ping-pong: one iteration is
   // not enough on real footage (skin texture, hair, fabric all survive it and
@@ -869,7 +1084,33 @@ function _initToonGL(){
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, kTexA, 0);
   gl.bindFramebuffer(gl.FRAMEBUFFER, kFboB);
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, kTexB, 0);
+  // Line-art intermediates: gradient, edge tangent flow, DoG response.
+  const gTex = makeTex(), fTex = makeTex(), dTex = makeTex();
+  const gFbo = gl.createFramebuffer(), fFbo = gl.createFramebuffer(), dFbo = gl.createFramebuffer();
+  const attach = (fbo, tex) => {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  };
+  attach(gFbo, gTex); attach(fFbo, fTex); attach(dFbo, dTex);
+  // Having the extension is not the same as being able to RENDER to the format.
+  // Probe once with a real allocation; if it fails, disable line-art rather than
+  // shipping a filter that silently draws noise.
+  if(cldOk){
+    if(!_hf){
+      cldOk = false;
+      console.warn('[toon] no half-float textures — lineart disabled (8-bit fields make the flow field noise)');
+    } else {
+      gl.bindTexture(gl.TEXTURE_2D, gTex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 4, 4, 0, gl.RGBA, fieldType, null);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, gFbo);
+      if(gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE){
+        cldOk = false;
+        console.warn('[toon] half-float render target unsupported — lineart disabled');
+      }
+    }
+  }
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  if(!cldOk) console.warn('[toon] line-art chain unavailable; lineart falls back to the cartoon path');
 
   // Match 2D-canvas orientation + straight (non-premultiplied) alpha so a
   // background-removal cutout survives the round trip.
@@ -886,7 +1127,14 @@ function _initToonGL(){
 
   _toonGL = {
     gl, canvas: cv, quad, srcTex, kTexA, kTexB, kFboA, kFboB, kW: 0, kH: 0,
-    progK, progC,
+    gTex, fTex, dTex, gFbo, fFbo, dFbo, cldOk, fieldType, halfFloat: !!_hf,
+    progK, progC, progG, progF, progD, progL,
+    uG: cldOk ? uniforms(progG, ['tex','texel']) : null,
+    uF: cldOk ? uniforms(progF, ['tex','texel','radius']) : null,
+    uD: cldOk ? uniforms(progD, ['tex','flow','texel','sigmaC','rho']) : null,
+    uL: cldOk ? uniforms(progL, ['tex','flow','dog','texel','sigmaM','tau','sharp',
+                                 'hueSteps','satSteps','valSteps','flat','sat','satGamma',
+                                 'contrast','skin','ink','paper','paperCol']) : null,
     uK: uniforms(progK, ['tex','texel','radius','hardness','sharpness','varFloor']),
     uC: uniforms(progC, ['tex','texel','hueSteps','satSteps','valSteps','hueRot','flat','sat','satGamma','contrast',
                          'line','edge0','edge1','skin','ink']),
@@ -897,7 +1145,7 @@ function _initToonGL(){
 // Renders `src` (video element or canvas) toon-shaded. Returns the GL canvas,
 // or null if WebGL is unavailable — callers must have a 2D fallback.
 // k = filter intensity 0..2, skinAmt = 0..1 Simpsons-yellow strength.
-function _toonRender(src, vw, vh, k, skinAmt){
+function _toonRender(src, vw, vh, k, skinAmt, mode){
   const t = _initToonGL();
   if(!t) return null;
   const gl = t.gl;
@@ -917,10 +1165,15 @@ function _toonRender(src, vw, vh, k, skinAmt){
   const kw = Math.max(2, Math.round(ow * 0.85));
   const kh = Math.max(2, Math.round(oh * 0.85));
   if(t.kW !== kw || t.kH !== kh){
-    gl.bindTexture(gl.TEXTURE_2D, t.kTexA);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, kw, kh, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-    gl.bindTexture(gl.TEXTURE_2D, t.kTexB);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, kw, kh, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    for(const tex of [t.kTexA, t.kTexB]){
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, kw, kh, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    }
+    for(const tex of [t.gTex, t.fTex, t.dTex]){
+      if(!tex) continue;
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, kw, kh, 0, gl.RGBA, t.fieldType, null);
+    }
     t.kW = kw; t.kH = kh;
   }
 
@@ -962,6 +1215,64 @@ function _toonRender(src, vw, vh, k, skinAmt){
     gl.uniform1f(t.uK.radius, (it === 0 ? (2.6 + k * 1.8) : (3.0 + k * 2.0)) * kScale);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+
+  // ── Line-art branch · coherent line drawing over the colour blocks ──
+  if(mode === 'lineart' && t.cldOk){
+    const kt = [1 / kw, 1 / kh];
+    const runPass = (prog, fbo, binds) => {
+      gl.useProgram(prog);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.viewport(0, 0, fbo ? kw : ow, fbo ? kh : oh);
+      for(let i = 0; i < binds.length; i++){
+        gl.activeTexture(gl.TEXTURE0 + i);
+        gl.bindTexture(gl.TEXTURE_2D, binds[i]);
+      }
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+    };
+
+    // L1 gradient of the flattened image
+    gl.useProgram(t.progG);
+    gl.uniform1i(t.uG.tex, 0); gl.uniform2f(t.uG.texel, kt[0], kt[1]);
+    runPass(t.progG, t.gFbo, [t.kTexB]);
+
+    // L2 smoothed structure tensor → edge tangent flow
+    gl.useProgram(t.progF);
+    gl.uniform1i(t.uF.tex, 0); gl.uniform2f(t.uF.texel, kt[0], kt[1]);
+    gl.uniform1f(t.uF.radius, 1.6 + k * 1.2);
+    runPass(t.progF, t.fFbo, [t.gTex]);
+
+    // L3 DoG across the flow
+    gl.useProgram(t.progD);
+    gl.uniform1i(t.uD.tex, 0); gl.uniform1i(t.uD.flow, 1);
+    gl.uniform2f(t.uD.texel, kt[0], kt[1]);
+    gl.uniform1f(t.uD.sigmaC, 1.5 + k * 1.1);
+    gl.uniform1f(t.uD.rho,    0.997);            // paper default
+    runPass(t.progD, t.dFbo, [t.kTexB, t.fTex]);
+
+    // L4 integrate along the flow + palette + composite → canvas
+    gl.useProgram(t.progL);
+    gl.uniform1i(t.uL.tex, 0); gl.uniform1i(t.uL.flow, 1); gl.uniform1i(t.uL.dog, 2);
+    gl.uniform2f(t.uL.texel, kt[0], kt[1]);
+    gl.uniform1f(t.uL.sigmaM,   3.0 + k * 2.0);   // stroke length along the edge
+    gl.uniform1f(t.uL.tau,      0.94 - k * 0.12);
+    gl.uniform1f(t.uL.sharp,    28.0 + k * 30.0);
+    gl.uniform1f(t.uL.hueSteps, Math.max(7.0, Math.round(14.0 - k * 3.0)));
+    gl.uniform1f(t.uL.satSteps, Math.max(2.0, Math.round(4.0 - k * 1.0)));
+    gl.uniform1f(t.uL.valSteps, Math.max(3.0, Math.round(6.0 - k * 1.5)));
+    gl.uniform1f(t.uL.flat,     Math.min(1.0, 0.60 + k * 0.40));
+    gl.uniform1f(t.uL.sat,      1.25 + k * 0.55);
+    gl.uniform1f(t.uL.satGamma, 0.75 - k * 0.15);
+    gl.uniform1f(t.uL.contrast, 1.10 + k * 0.22);
+    gl.uniform1f(t.uL.skin,     skinAmt || 0);
+    gl.uniform3f(t.uL.ink,      0.06, 0.05, 0.08);
+    gl.uniform1f(t.uL.paper,    0.0);
+    gl.uniform3f(t.uL.paperCol, 0.97, 0.95, 0.90);
+    runPass(t.progL, null, [t.kTexB, t.fTex, t.dTex]);
+
+    gl.activeTexture(gl.TEXTURE0);
+    return t.canvas;
   }
 
   // ── Pass 2 · ink + palette → canvas ──
@@ -1237,11 +1548,12 @@ function applyVideoFilter(src, vw, vh, mode){
       break;
     }
     case 'cartoon':
-    case 'simpson': {
+    case 'simpson':
+    case 'lineart': {
       // Cel-shaded animation look: flat colour areas + black ink outlines.
       // 'simpson' additionally pushes skin tones to the Simpsons yellow.
       const skinAmt = (f === 'simpson') ? Math.min(1, 0.55 + k * 0.30) : 0;
-      const toon = _toonRender(src, vw, vh, k, skinAmt);
+      const toon = _toonRender(src, vw, vh, k, skinAmt, f);
       if(toon){
         c.drawImage(toon, 0, 0, vw, vh);
       } else {
