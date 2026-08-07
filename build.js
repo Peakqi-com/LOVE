@@ -146,7 +146,7 @@ async function build() {
   // module ends up in the same lexical script — same as if we never
   // split).  Module load order is preserved.  styles.css stays external.
   // ────────────────────────────────────────────────────────────────────
-  const JS_MODULES_TO_INLINE = ['visual-modes.js', 'camera-fx.js', 'typography.js', 'media-library.js', 'ar-3d.js'];
+  const JS_MODULES_TO_INLINE = ['visual-modes.js', 'camera-fx.js', 'typography.js', 'media-library.js', 'ar-3d.js', 'avatar.js'];
   // Read + minify each module
   const moduleSources = [];
   for(const name of JS_MODULES_TO_INLINE){
@@ -200,6 +200,7 @@ async function build() {
     'typography.js',
     'media-library.js',
     'ar-3d.js',
+    'avatar.js',
   ];
   for(const name of STATIC_ASSETS){
     const src = path.join(ROOT, name);

@@ -35,8 +35,16 @@ const cam = {
   // Hand AR — separate from face AR (uses 2D hand landmarks)
   handAr: 'none',          // 'none'|'rings'|'energyBall'|'spiderweb'|'wand'|'lightning'|'fireball'|'butterflies'
   handArIntensity: 1.0,
+  // Avatar — replaces the filmed person with a drawn character driven by the
+  // face/pose trackers. Independent of Filter (which styles the background).
+  avatar: 'none',          // 'none'|'simpson'|... (character style id)
+  avatarIntensity: 1.0,
   // latest detection
   faceLandmarks: null,
+  faceBlendshapes: null,   // [{categoryName, score}] — expression channel
+  poseLandmarks: null,     // 33 body points, drives shoulders/arms
+  poseLM: null,
+  poseLoading: false,
   handLandmarks: null,
   // mediapipe instances
   faceLM: null,
@@ -67,15 +75,31 @@ async function loadMediaPipe(which){
       return null;
     }
   }
-  const { FaceLandmarker, HandLandmarker, ImageSegmenter, FilesetResolver } = window._mpVision;
+  const { FaceLandmarker, HandLandmarker, PoseLandmarker, ImageSegmenter, FilesetResolver } = window._mpVision;
   const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.10/wasm');
   if(which === 'face' && !cam.faceLM){
     cam.faceLoading = true;
     cam.faceLM = await FaceLandmarker.createFromOptions(vision, {
       baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task', delegate:'GPU' },
-      runningMode: 'VIDEO', numFaces: 1, outputFaceBlendshapes: false, outputFacialTransformationMatrixes: true,
+      // Blendshapes are the avatar's expression channel — 52 ARKit-style
+      // coefficients (eyeBlink, jawOpen, mouthSmile, browInnerUp, …). They cost
+      // nothing extra to compute here; the model already produces them.
+      runningMode: 'VIDEO', numFaces: 1, outputFaceBlendshapes: true, outputFacialTransformationMatrixes: true,
     });
     cam.faceLoading = false;
+  }
+  if(which === 'pose' && !cam.poseLM && PoseLandmarker){
+    cam.poseLoading = true;
+    try {
+      cam.poseLM = await PoseLandmarker.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task', delegate:'GPU' },
+        runningMode: 'VIDEO', numPoses: 1, outputSegmentationMasks: false,
+      });
+    } catch(e){
+      console.warn('[IW][pose] load failed — avatar body falls back to a static rig', e);
+      cam.poseLM = null;
+    }
+    cam.poseLoading = false;
   }
   if(which === 'hand' && !cam.handLM){
     cam.handLoading = true;
@@ -230,6 +254,30 @@ $$('#camFilterGrid button').forEach(b => b.addEventListener('click', () => {
 }));
 wireCamSlider('camFilterAmt','camFilterAmtFill','camFilterAmtThumb','camFilterAmtVal','filterIntensity', v => (v/100).toFixed(1)+'×', v => v/100);
 
+// Avatar grid — replaces the filmed person with a drawn character.
+// Needs three models: face (placement + expression), pose (shoulders/arms) and
+// the segmenter (to cut the real person out). They load lazily on first use.
+$$('#camAvatarGrid button').forEach(b => b.addEventListener('click', () => {
+  $$('#camAvatarGrid button').forEach(x => x.classList.remove('on'));
+  b.classList.add('on');
+  cam.avatar = b.dataset.avatar;
+  if(typeof resetAvatarRig === 'function') resetAvatarRig();
+  if(cam.avatar !== 'none'){
+    ensureMode('webcamFX', true);
+    if(cam.ready){
+      loadMediaPipe('face').catch(()=>{});
+      loadMediaPipe('pose').catch(()=>{});
+      // The cut-out needs a mask. Load the segmenter without touching
+      // cam.removeBg — that toggle stays the user's, per the Live-tab rule that
+      // Random/automation never flips background removal mid-performance.
+      if(!cam.segLM) loadMediaPipe('seg').catch(()=>{});
+    }
+  }
+}));
+if(document.getElementById('camAvatarAmt')){
+  wireCamSlider('camAvatarAmt','camAvatarAmtFill','camAvatarAmtThumb','camAvatarAmtVal','avatarIntensity', v => (v/100).toFixed(1)+'×', v => v/100);
+}
+
 // AR overlays grid — face-landmark driven, independent of Filter + Effect
 $$('#camArGrid button').forEach(b => b.addEventListener('click', () => {
   $$('#camArGrid button').forEach(x => x.classList.remove('on'));
@@ -339,11 +387,20 @@ async function detectLoop(){
   _detectLastT = now;
   if(v.readyState >= 2){
     try{
-      if(cam.track === 'face' && cam.faceLM){
+      const avatarOn = cam.avatar && cam.avatar !== 'none';
+      // The avatar needs the face tracker regardless of which track the user
+      // picked for Effect particles — it is the character's whole drive signal.
+      if((cam.track === 'face' || avatarOn) && cam.faceLM){
         const r = cam.faceLM.detectForVideo(v, now);
         cam.faceLandmarks = (r.faceLandmarks && r.faceLandmarks[0]) || null;
         cam.faceTransformMatrix = (r.facialTransformationMatrixes && r.facialTransformationMatrixes[0] && r.facialTransformationMatrixes[0].data) || null;
-      } else if(cam.track === 'hand' && cam.handLM){
+        cam.faceBlendshapes = (r.faceBlendshapes && r.faceBlendshapes[0] && r.faceBlendshapes[0].categories) || null;
+      }
+      if(avatarOn && cam.poseLM){
+        const p = cam.poseLM.detectForVideo(v, now);
+        cam.poseLandmarks = (p.landmarks && p.landmarks[0]) || null;
+      }
+      if(cam.track === 'hand' && cam.handLM){
         const r = cam.handLM.detectForVideo(v, now);
         cam.handLandmarks = (r.landmarks && r.landmarks.length) ? r.landmarks : null;
       }
@@ -423,6 +480,39 @@ function rebuildSegMaskCanvas(){
 // Cached offscreen for masked video output (background removal)
 const _segVidCv = document.createElement('canvas');
 const _segVidCtx = _segVidCv.getContext('2d');
+// Inverse of getMaskedVideo: erase the PERSON and keep the room. This is what
+// the avatar mode composites against — the drawn character stands in the real
+// space, and without cutting the filmed body out first you would see the real
+// person peeking around the edges of the character.
+// Uses its own scratch canvas: getMaskedVideo's buffer may be in use for the
+// person layer in the same frame.
+const _noPersonCv  = document.createElement('canvas');
+const _noPersonCtx = _noPersonCv.getContext('2d');
+function getPersonRemovedVideo(rawVideo, vw, vh){
+  if(!cam.segMaskData) return rawVideo;
+  if(_noPersonCv.width !== vw || _noPersonCv.height !== vh){
+    _noPersonCv.width = vw; _noPersonCv.height = vh;
+  }
+  _noPersonCtx.globalCompositeOperation = 'source-over';
+  _noPersonCtx.filter = 'none';
+  _noPersonCtx.clearRect(0, 0, vw, vh);
+  _noPersonCtx.drawImage(rawVideo, 0, 0, vw, vh);
+  const maskCv = rebuildSegMaskCanvas();
+  if(maskCv){
+    _noPersonCtx.imageSmoothingEnabled = true;
+    _noPersonCtx.imageSmoothingQuality = 'high';
+    // Grow the cut slightly (blur the mask) so no rim of the real person
+    // survives around the character's silhouette.
+    const blur = 1.2 + (cam.bgFeather || 0) * 2.5;
+    if(_noPersonCtx.filter !== undefined) _noPersonCtx.filter = `blur(${blur.toFixed(2)}px)`;
+    _noPersonCtx.globalCompositeOperation = 'destination-out';
+    _noPersonCtx.drawImage(maskCv, 0, 0, vw, vh);
+    _noPersonCtx.filter = 'none';
+    _noPersonCtx.globalCompositeOperation = 'source-over';
+  }
+  return _noPersonCv;
+}
+
 function getMaskedVideo(rawVideo, vw, vh){
   if(!cam.removeBg || !cam.segMaskData) return rawVideo;
   if(_segVidCv.width !== vw || _segVidCv.height !== vh){
@@ -464,14 +554,30 @@ const _imgFilterAuxCtx = _imgFilterAuxCv.getContext('2d');
 let _filterFrameCounter = 0;
 
 // ————————————————————————————————————————————————————————————————————
-// Cartoon / Simpsons — single-pass WebGL toon shader.
-// The 2D-canvas filters above all cost CPU; a cel-shading look needs
-// edge-preserving smoothing + colour quantisation + a Sobel outline, which is
-// far too much per-pixel work for getImageData at 60fps (that's what made the
-// noir/cyberpunk batch freeze). One fragment shader does all three on the GPU,
-// so this stays cheap enough to leave out of the frame-skip throttle.
-// Shared by cam + img modes — the result is copied into the caller's 2D
-// scratch buffer immediately, so serial reuse within one frame is safe.
+// Cartoon / Simpsons — two-pass WebGL toon pipeline.
+//
+// Follows Winnemöller et al., "Real-Time Video Abstraction" (SIGGRAPH 2006):
+// flatten first, then draw lines, then quantise — in that order, because every
+// step downstream is only as clean as the flattening.
+//
+//   Pass 1  Generalised Kuwahara (8 sectors). For each pixel it splits the
+//           neighbourhood into 8 angular sectors, and keeps the sector with the
+//           LOWEST colour variance. That is what makes a face collapse into
+//           genuine flat areas while the boundary between areas stays sharp —
+//           a bilateral/Gaussian blur can only ever soften, so it produces mush
+//           with soft edges instead of cel shading. Runs at reduced resolution:
+//           the output is flat by construction, so the detail is not missed and
+//           the 49-tap × 8-sector kernel stays affordable.
+//
+//   Pass 2  XDoG ink lines + vivid quantisation + skin recolour, at full res.
+//           Lines come from a difference-of-Gaussians on the ALREADY-FLATTENED
+//           image with a tanh soft threshold, so they follow real shape borders
+//           instead of tracing sensor noise the way a raw Sobel does.
+//
+// Sector-weighted Kuwahara after Kyprianidis/Kuwahara as implemented in
+// GarrettGunnell/Post-Processing; XDoG after Winnemöller 2012. Soft (variance-
+// weighted) sector blending rather than hard argmin is deliberate: hard
+// selection pops between frames on video, soft blending is temporally stable.
 // ————————————————————————————————————————————————————————————————————
 const _TOON_VERT_SRC = `
   attribute vec2 aPos;
@@ -481,18 +587,108 @@ const _TOON_VERT_SRC = `
     gl_Position = vec4(aPos, 0.0, 1.0);
   }`;
 
-const _TOON_FRAG_SRC = `
-  precision mediump float;
+// ── Pass 1 — generalised Kuwahara ──
+const _TOON_KUWAHARA_SRC = `
+  precision highp float;
   varying vec2 vUV;
   uniform sampler2D uTex;
-  uniform vec2  uTexel;     // 1 / output size
-  uniform float uLevels;    // value posterisation steps
-  uniform float uHueBands;  // hue quantisation bands
-  uniform float uSmooth;    // smoothing radius scale
-  uniform float uLine;      // outline sample radius (px)
-  uniform float uThresh;    // outline gradient threshold
-  uniform float uSat;       // saturation boost
-  uniform float uSkin;      // 0..1 — skin -> Simpsons yellow
+  uniform vec2  uTexel;      // 1 / pass-1 render size
+  uniform float uRadius;     // kernel radius in pass-1 pixels
+  uniform float uHardness;   // how decisively the lowest-variance sector wins
+  uniform float uSharpness;  // angular tightness of each sector lobe
+  uniform float uVarFloor;   // variance below this is treated as sensor noise
+
+  float luma(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }
+
+  void main(){
+    vec4 src0 = texture2D(uTex, vUV);
+
+    vec3  mSum[8];
+    float lSum[8];
+    float l2Sum[8];
+    float wSum[8];
+    for(int k = 0; k < 8; k++){
+      mSum[k]  = vec3(0.0);
+      lSum[k]  = 0.0;
+      l2Sum[k] = 0.0;
+      wSum[k]  = 0.0;
+    }
+
+    // The centre tap belongs to every sector equally.
+    vec3  c0 = src0.rgb;
+    float l0 = luma(c0);
+    for(int k = 0; k < 8; k++){
+      mSum[k]  += c0;
+      lSum[k]  += l0;
+      l2Sum[k] += l0 * l0;
+      wSum[k]  += 1.0;
+    }
+
+    // 7×7 grid scaled by uRadius — fixed tap count (GLSL ES 1.0 needs constant
+    // loop bounds) with a run-time radius.
+    for(int y = -3; y <= 3; y++){
+      for(int x = -3; x <= 3; x++){
+        if(x == 0 && y == 0) continue;
+        vec2  o  = vec2(float(x), float(y)) / 3.0;
+        float rr = length(o);
+        if(rr > 1.0) continue;                       // clip the square to a disc
+        vec2  off = o * uRadius;
+        vec3  c   = texture2D(uTex, vUV + off * uTexel).rgb;
+        float l   = luma(c);
+        // Radial falloff so the sector means are dominated by nearby pixels.
+        float rw  = exp(-rr * rr * 2.0);
+        vec2  dir = o / max(rr, 1e-5);
+        for(int k = 0; k < 8; k++){
+          float a  = float(k) * 0.7853982;           // 2π/8
+          float dp = max(0.0, dir.x * cos(a) + dir.y * sin(a));
+          float w  = pow(dp, uSharpness) * rw;
+          mSum[k]  += c * w;
+          lSum[k]  += l * w;
+          l2Sum[k] += l * l * w;
+          wSum[k]  += w;
+        }
+      }
+    }
+
+    // Blend sectors by inverse variance — the flattest sector dominates.
+    vec3  acc = vec3(0.0);
+    float accW = 0.0;
+    for(int k = 0; k < 8; k++){
+      float iw   = 1.0 / max(wSum[k], 1e-5);
+      vec3  mean = mSum[k] * iw;
+      float lm   = lSum[k] * iw;
+      // Floor the variance at sensor-noise level. Without it, in a flat but
+      // grainy area (a dim wall) the sector variances differ only by noise, a
+      // different sector wins at each pixel, and the region breaks into a
+      // blotchy patchwork. Flooring makes every sector tie there, so the result
+      // collapses to the plain disc average — smooth — while a sector that
+      // genuinely straddles an edge still has variance far above the floor and
+      // is still rejected.
+      float var  = max(uVarFloor, l2Sum[k] * iw - lm * lm);
+      float f    = 1.0 / (1.0 + pow(uHardness * var, 4.0));
+      acc  += mean * f;
+      accW += f;
+    }
+
+    gl_FragColor = vec4(acc / max(accW, 1e-5), src0.a);
+  }`;
+
+// ── Pass 2 — XDoG lines + vivid cel quantisation + skin recolour ──
+const _TOON_COMPOSITE_SRC = `
+  precision highp float;
+  varying vec2 vUV;
+  uniform sampler2D uTex;    // pass-1 (flattened) result
+  uniform vec2  uTexel;      // 1 / output size
+  uniform float uLevels;     // cel bands in the value channel
+  uniform float uPhiQ;       // quantisation edge hardness (tanh soft threshold)
+  uniform float uSat;        // saturation gain
+  uniform float uSatGamma;   // <1 lifts muted colours — the "vivid" control
+  uniform float uContrast;
+  uniform float uLine;       // ink half-width, in output pixels
+  uniform float uEdge0;      // colour step where ink starts
+  uniform float uEdge1;      // colour step where ink is solid
+  uniform float uSkin;       // 0..1 skin -> Simpsons yellow
+  uniform vec3  uInk;
 
   vec3 rgb2hsv(vec3 c){
     vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
@@ -506,84 +702,74 @@ const _TOON_FRAG_SRC = `
     vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
     return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
   }
-  float lum(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }
+  float luma(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }
+  // GLSL ES 1.00 has no tanh. Clamped so exp() can't overflow to inf — beyond
+  // |x|>8 the result is 1.0 to float precision anyway.
+  float tanh1(float x){
+    float e = exp(2.0 * clamp(x, -8.0, 8.0));
+    return (e - 1.0) / (e + 1.0);
+  }
 
   void main(){
     vec4 src0 = texture2D(uTex, vUV);
-    vec3 c0 = src0.rgb;
+    vec3 base = src0.rgb;
 
-    // ── Edge-preserving smooth (3 rings × 6 taps) ──
-    // Range weight kills the blur across strong colour steps, so skin/wall/hair
-    // flatten into paintable areas but their borders stay sharp for the outline.
-    // 18 taps rather than 12: sensor noise has to be averaged well below the
-    // posterisation step width or the flat areas dither instead of flattening.
-    // Per-pixel phase so the fixed ring angles don't align into a moiré swirl
-    // across smooth gradients (stage glows are exactly that shape).
-    float phase = fract(sin(dot(vUV, vec2(12.9898, 78.233))) * 43758.5453) * 6.2831853;
-    vec3  sum  = c0;
-    float wsum = 1.0;
-    for(int i = 0; i < 18; i++){
+    // ── Ink lines — morphological colour gradient ──
+    // Pass 1 leaves the image piecewise flat, so the biggest COLOUR distance
+    // inside a small disc is exactly a region boundary. Two things this gets
+    // right that a luminance DoG/Sobel does not: it fires on hue steps that
+    // carry no brightness step (red shirt against green wall), and the line
+    // width is simply 2·uLine instead of falling out of the filter scale — so
+    // the lines are bold and even the way inked animation lines are.
+    // (An XDoG was tried here first; tuned for lines it either vanished into a
+    // flat-region baseline or traced noise, because its soft tanh threshold is
+    // built for sketch hatching, not solid ink.)
+    // Power mean (p=4) rather than a plain max: max is decided by a single tap,
+    // so one noisy sample in a dim area paints a speckle of ink. p=4 still
+    // tracks the largest step closely when several taps agree (a real edge) but
+    // halves the response when only one tap spikes (noise).
+    float gAcc = 0.0;
+    for(int i = 0; i < 16; i++){
       float fi   = float(i);
-      float ring = floor(fi / 6.0);              // 0, 1, 2
-      float a    = phase + fi * 1.0471976 + ring * 0.3490659;
-      float r    = (1.6 + ring * 1.7) * uSmooth;
+      float ring = floor(fi / 8.0);                  // 0, 1
+      float a    = mod(fi, 8.0) * 0.7853982 + ring * 0.3926991;
+      float r    = mix(0.55, 1.0, ring) * uLine;
       vec3  s    = texture2D(uTex, vUV + vec2(cos(a), sin(a)) * r * uTexel).rgb;
-      float d    = distance(s, c0);
-      float w    = exp(-d * d * 10.0) / (1.0 + ring * 0.45);
-      sum  += s * w;
-      wsum += w;
+      float dd   = distance(s, base);
+      gAcc += dd * dd * dd * dd;
     }
-    vec3 base = sum / wsum;
+    float g = pow(gAcc / 16.0, 0.25);
+    float ink = smoothstep(uEdge0, uEdge1, g);
 
     // ── Palette ──
-    vec3 hsv0 = rgb2hsv(base);
-    // Skin mask, measured before quantisation so it doesn't chatter on a band
-    // edge. Gated on hue (red-orange), mid saturation and enough light, so warm
-    // walls / dark clothing don't all turn yellow.
+    vec3 hsv = rgb2hsv(base);
+    // Skin mask read before any grading so it stays stable frame to frame.
+    // The upper bounds matter as much as the lower ones: a warm stage light or
+    // a tungsten wall sits in the same hue band as skin, and without a ceiling
+    // on brightness and saturation the yellow bleeds across the whole set.
+    // Skin is a mid-tone; a lamp is blown out and a gel is heavily saturated.
     float skin = smoothstep(0.30, 0.70,
-        smoothstep(0.004, 0.030, hsv0.x) * (1.0 - smoothstep(0.095, 0.150, hsv0.x))
-      * smoothstep(0.12,  0.24,  hsv0.y) * (1.0 - smoothstep(0.74,  0.94,  hsv0.y))
-      * smoothstep(0.17,  0.31,  hsv0.z)) * uSkin;
+        smoothstep(0.006, 0.032, hsv.x) * (1.0 - smoothstep(0.090, 0.140, hsv.x))
+      * smoothstep(0.12,  0.24,  hsv.y) * (1.0 - smoothstep(0.62,  0.86,  hsv.y))
+      * smoothstep(0.16,  0.30,  hsv.z) * (1.0 - smoothstep(0.86,  0.97,  hsv.z))) * uSkin;
 
-    vec3 hsv = hsv0;
-    hsv.y = clamp(hsv.y * uSat, 0.0, 1.0);
-    // Cel bands with softened edges. A hard floor() on a noisy gradient dithers
-    // into salt-and-pepper speckle (camera sensor noise sits right on the band
-    // boundaries), so ease across each step instead of snapping.
-    float vq = hsv.z * uLevels;
-    hsv.z = (floor(vq) + smoothstep(0.35, 0.65, fract(vq))) / uLevels;
-    float sq = hsv.y * (uLevels + 2.0);
-    hsv.y = (floor(sq) + smoothstep(0.35, 0.65, fract(sq))) / (uLevels + 2.0);
-    // Hue banding only where there's real colour — hue is meaningless in
-    // near-grey pixels, and banding it makes flat walls crawl with colour.
-    // Wide transition here on purpose: value posterisation + the ink line carry
-    // the cartoon read, so hue only needs a nudge, and a hard hue step contours
-    // badly across big soft colour washes.
-    float hq = hsv.x * uHueBands;
-    hsv.x = mix(hsv.x, (floor(hq) + smoothstep(0.20, 0.80, fract(hq))) / uHueBands,
-                smoothstep(0.10, 0.26, hsv.y));
+    // Vividness: the gamma lift is what turns washed-out camera colour into
+    // poster colour — a plain multiply only saturates what was already saturated.
+    hsv.y = clamp(pow(hsv.y, uSatGamma) * uSat, 0.0, 1.0);
+    hsv.z = clamp((hsv.z - 0.5) * uContrast + 0.5, 0.0, 1.0);
 
-    // Skin → Simpsons yellow, applied after quantisation so the flat yellow
-    // isn't knocked into orange by a hue band edge at high intensity.
+    // Soft cel bands (Winnemöller's tanh quantiser — smoother in motion than a
+    // hard floor(), which strobes as pixels cross a band edge).
+    float qn = floor(hsv.z * uLevels + 0.5) / uLevels;
+    hsv.z = qn + (0.5 / uLevels) * tanh1(uPhiQ * (hsv.z - qn));
+
+    // Skin applied after quantisation so the flat yellow is exact.
     hsv.x = mix(hsv.x, 0.133, skin);
-    hsv.y = mix(hsv.y, max(hsv.y, 0.82), skin);
-    hsv.z = mix(hsv.z, max(hsv.z, 0.84), skin);
-    vec3 col = hsv2rgb(hsv);
+    hsv.y = mix(hsv.y, max(hsv.y, 0.88), skin);
+    hsv.z = mix(hsv.z, max(hsv.z, 0.86), skin);
 
-    // ── Ink outline (Sobel on luminance) ──
-    vec2 e = uTexel * uLine;
-    float tl = lum(texture2D(uTex, vUV + vec2(-e.x,  e.y)).rgb);
-    float tc = lum(texture2D(uTex, vUV + vec2( 0.0,  e.y)).rgb);
-    float tr = lum(texture2D(uTex, vUV + vec2( e.x,  e.y)).rgb);
-    float ml = lum(texture2D(uTex, vUV + vec2(-e.x,  0.0)).rgb);
-    float mr = lum(texture2D(uTex, vUV + vec2( e.x,  0.0)).rgb);
-    float bl = lum(texture2D(uTex, vUV + vec2(-e.x, -e.y)).rgb);
-    float bc = lum(texture2D(uTex, vUV + vec2( 0.0, -e.y)).rgb);
-    float br = lum(texture2D(uTex, vUV + vec2( e.x, -e.y)).rgb);
-    float gx = (tl + 2.0 * ml + bl) - (tr + 2.0 * mr + br);
-    float gy = (tl + 2.0 * tc + tr) - (bl + 2.0 * bc + br);
-    float ink = smoothstep(uThresh, uThresh + 0.20, sqrt(gx * gx + gy * gy));
-    col = mix(col, vec3(0.05, 0.04, 0.06), ink);
+    vec3 col = hsv2rgb(hsv);
+    col = mix(col, uInk, ink);
 
     gl_FragColor = vec4(col, src0.a);
   }`;
@@ -595,8 +781,8 @@ function _initToonGL(){
   if(_toonDead) return null;
   const cv = document.createElement('canvas');
   cv.width = 2; cv.height = 2;
-  const gl = cv.getContext('webgl', { alpha: true, premultipliedAlpha: false, depth: false, stencil: false, antialias: false })
-          || cv.getContext('experimental-webgl', { alpha: true, premultipliedAlpha: false, depth: false, stencil: false });
+  const opts = { alpha: true, premultipliedAlpha: false, depth: false, stencil: false, antialias: false };
+  const gl = cv.getContext('webgl', opts) || cv.getContext('experimental-webgl', opts);
   if(!gl){ _toonDead = true; console.warn('[toon] no WebGL — cartoon filter falls back to 2D'); return null; }
 
   function compile(type, src, label){
@@ -608,53 +794,73 @@ function _initToonGL(){
     }
     return sh;
   }
-  const vs = compile(gl.VERTEX_SHADER,   _TOON_VERT_SRC, 'vs');
-  const fs = compile(gl.FRAGMENT_SHADER, _TOON_FRAG_SRC, 'fs');
-  if(!vs || !fs){ _toonDead = true; return null; }
-  const prog = gl.createProgram();
-  gl.attachShader(prog, vs); gl.attachShader(prog, fs);
-  gl.linkProgram(prog);
-  if(!gl.getProgramParameter(prog, gl.LINK_STATUS)){
-    console.error('[toon] link:', gl.getProgramInfoLog(prog));
-    _toonDead = true; return null;
+  function link(fragSrc, label){
+    const vs = compile(gl.VERTEX_SHADER,   _TOON_VERT_SRC, label + '.vs');
+    const fs = compile(gl.FRAGMENT_SHADER, fragSrc,        label + '.fs');
+    if(!vs || !fs) return null;
+    const p = gl.createProgram();
+    gl.attachShader(p, vs); gl.attachShader(p, fs);
+    gl.bindAttribLocation(p, 0, 'aPos');
+    gl.linkProgram(p);
+    if(!gl.getProgramParameter(p, gl.LINK_STATUS)){
+      console.error('[toon] link ' + label + ':', gl.getProgramInfoLog(p));
+      return null;
+    }
+    return p;
   }
+
+  const progK = link(_TOON_KUWAHARA_SRC,  'kuwahara');
+  const progC = link(_TOON_COMPOSITE_SRC, 'composite');
+  if(!progK || !progC){ _toonDead = true; return null; }
 
   const quad = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, quad);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1,  -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
-  const tex = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-  // NPOT video frames — clamp + linear, no mipmaps
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  // Match 2D-canvas orientation + straight (non-premultiplied) alpha so the
+  function makeTex(){
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    // NPOT video frames — clamp + linear, never mipmaps
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return t;
+  }
+
+  const srcTex = makeTex();          // uploaded camera/image frame
+  // Two flatten targets so the Kuwahara pass can ping-pong: one iteration is
+  // not enough on real footage (skin texture, hair, fabric all survive it and
+  // then get traced as ink), two collapses them into paintable areas.
+  const kTexA = makeTex(), kTexB = makeTex();
+  const kFboA = gl.createFramebuffer(), kFboB = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, kFboA);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, kTexA, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, kFboB);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, kTexB, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+  // Match 2D-canvas orientation + straight (non-premultiplied) alpha so a
   // background-removal cutout survives the round trip.
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
   gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
 
-  const aPos = gl.getAttribLocation(prog, 'aPos');
-  gl.enableVertexAttribArray(aPos);
-  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
-  gl.useProgram(prog);
-  gl.uniform1i(gl.getUniformLocation(prog, 'uTex'), 0);
+  function uniforms(prog, names){
+    const u = {};
+    for(const n of names) u[n] = gl.getUniformLocation(prog, 'u' + n[0].toUpperCase() + n.slice(1));
+    return u;
+  }
 
   cv.addEventListener('webglcontextlost', e => { e.preventDefault(); _toonGL = null; }, false);
 
   _toonGL = {
-    gl, canvas: cv, prog, quad, tex,
-    u: {
-      texel:    gl.getUniformLocation(prog, 'uTexel'),
-      levels:   gl.getUniformLocation(prog, 'uLevels'),
-      hueBands: gl.getUniformLocation(prog, 'uHueBands'),
-      smooth:   gl.getUniformLocation(prog, 'uSmooth'),
-      line:     gl.getUniformLocation(prog, 'uLine'),
-      thresh:   gl.getUniformLocation(prog, 'uThresh'),
-      sat:      gl.getUniformLocation(prog, 'uSat'),
-      skin:     gl.getUniformLocation(prog, 'uSkin'),
-    },
+    gl, canvas: cv, quad, srcTex, kTexA, kTexB, kFboA, kFboB, kW: 0, kH: 0,
+    progK, progC,
+    uK: uniforms(progK, ['tex','texel','radius','hardness','sharpness','varFloor']),
+    uC: uniforms(progC, ['tex','texel','levels','phiQ','sat','satGamma','contrast',
+                         'line','edge0','edge1','skin','ink']),
   };
   return _toonGL;
 }
@@ -668,7 +874,7 @@ function _toonRender(src, vw, vh, k, skinAmt){
   const gl = t.gl;
   if(gl.isContextLost && gl.isContextLost()){ _toonGL = null; return null; }
 
-  // Cap output — lines read the same at 1280 and the upscale is free.
+  // Output res cap — lines read the same at 1280 and the upscale is free.
   const MAXD = 1280;
   const s  = Math.min(1, MAXD / Math.max(vw, vh));
   const ow = Math.max(2, Math.round(vw * s));
@@ -676,37 +882,86 @@ function _toonRender(src, vw, vh, k, skinAmt){
   if(t.canvas.width !== ow || t.canvas.height !== oh){
     t.canvas.width = ow; t.canvas.height = oh;
   }
+  // Pass 1 runs at ~60% — the flattened output has no high-frequency detail to
+  // lose, and the 49-tap × 8-sector kernel is the whole cost of the effect.
+  const kw = Math.max(2, Math.round(ow * 0.6));
+  const kh = Math.max(2, Math.round(oh * 0.6));
+  if(t.kW !== kw || t.kH !== kh){
+    gl.bindTexture(gl.TEXTURE_2D, t.kTexA);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, kw, kh, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.bindTexture(gl.TEXTURE_2D, t.kTexB);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, kw, kh, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    t.kW = kw; t.kH = kh;
+  }
 
-  gl.useProgram(t.prog);
-  gl.bindBuffer(gl.ARRAY_BUFFER, t.quad);
-  const aPos = gl.getAttribLocation(t.prog, 'aPos');
-  gl.enableVertexAttribArray(aPos);
-  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
-
+  // Upload the frame
   gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, t.tex);
+  gl.bindTexture(gl.TEXTURE_2D, t.srcTex);
   try {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
   } catch(err){
-    // tainted canvas / not-yet-decodable video frame — skip this frame
-    return null;
+    return null;   // tainted canvas / frame not decodable yet — skip this frame
   }
 
-  // Higher intensity = fewer colour steps, fatter lines, more punch.
-  gl.uniform2f(t.u.texel, 1 / ow, 1 / oh);
-  gl.uniform1f(t.u.levels,   Math.max(3, 8 - k * 2.6));
-  gl.uniform1f(t.u.hueBands, Math.max(6, 20 - k * 6));
-  gl.uniform1f(t.u.smooth,   (0.9 + k * 0.8) * Math.max(0.85, ow / 720));
-  gl.uniform1f(t.u.line,     (1.0 + k * 0.9) * Math.max(1, ow / 720));
-  gl.uniform1f(t.u.thresh,   Math.max(0.06, 0.30 - k * 0.09));
-  gl.uniform1f(t.u.sat,      1 + k * 0.45);
-  gl.uniform1f(t.u.skin,     skinAmt || 0);
-
-  gl.viewport(0, 0, ow, oh);
+  gl.bindBuffer(gl.ARRAY_BUFFER, t.quad);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
   gl.disable(gl.BLEND);
+
+  // ── Pass 1 · Kuwahara, iterated → kTexB ──
+  // Two iterations, not one. On real footage a single pass leaves skin pores,
+  // hair strands and fabric weave intact; the ink stage then traces every one
+  // of them and the result reads as a scratchy engraving instead of flat cel
+  // art. Feeding the flattened result back through collapses those into solid
+  // areas — this is the single biggest lever on how "clean" the output looks.
+  const kScale = Math.max(0.75, kw / 768);
+  gl.useProgram(t.progK);
+  gl.uniform1i(t.uK.tex, 0);
+  gl.uniform2f(t.uK.texel, 1 / kw, 1 / kh);
+  gl.uniform1f(t.uK.hardness,  60.0 + k * 90.0);
+  gl.uniform1f(t.uK.sharpness, 8.0);
+  gl.uniform1f(t.uK.varFloor,  0.0030);
+  gl.clearColor(0, 0, 0, 0);
+  for(let it = 0; it < 2; it++){
+    gl.bindFramebuffer(gl.FRAMEBUFFER, it === 0 ? t.kFboA : t.kFboB);
+    gl.viewport(0, 0, kw, kh);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, it === 0 ? t.srcTex : t.kTexA);
+    // Second pass uses a wider radius: the input is already flat, so it merges
+    // whole regions rather than re-averaging texture.
+    gl.uniform1f(t.uK.radius, (it === 0 ? (2.6 + k * 1.8) : (3.0 + k * 2.0)) * kScale);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+
+  // ── Pass 2 · ink + palette → canvas ──
+  gl.useProgram(t.progC);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, ow, oh);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, t.kTexB);
+  const px = Math.max(0.8, ow / 900);
+  gl.uniform1i(t.uC.tex, 0);
+  gl.uniform2f(t.uC.texel, 1 / ow, 1 / oh);
+  gl.uniform1f(t.uC.levels,   Math.max(3.0, 7.0 - k * 2.0));
+  gl.uniform1f(t.uC.phiQ,     3.0 + k * 3.0);
+  gl.uniform1f(t.uC.sat,      1.25 + k * 0.55);
+  gl.uniform1f(t.uC.satGamma, 0.75 - k * 0.15);   // <1 lifts washed-out colour
+  gl.uniform1f(t.uC.contrast, 1.10 + k * 0.22);
+  // Line half-width in output pixels — higher intensity draws a bolder line.
+  gl.uniform1f(t.uC.line,     (1.1 + k * 1.1) * px);
+  // Ink only at MAJOR boundaries. Inked animation outlines the silhouette and
+  // the big interior shapes, nothing else — at a low threshold every wrinkle,
+  // hair strand and fold gets a line and the face reads as an engraving. These
+  // sit ~3× higher than a "detect every edge" setting on purpose.
+  gl.uniform1f(t.uC.edge0,    Math.max(0.055, 0.155 - k * 0.050));
+  gl.uniform1f(t.uC.edge1,    Math.max(0.15,  0.340 - k * 0.090));
+  gl.uniform1f(t.uC.skin,     skinAmt || 0);
+  gl.uniform3f(t.uC.ink,      0.05, 0.04, 0.06);
   gl.clearColor(0, 0, 0, 0);
   gl.clear(gl.COLOR_BUFFER_BIT);
   gl.drawArrays(gl.TRIANGLES, 0, 6);
+
   return t.canvas;
 }
 
@@ -1273,8 +1528,12 @@ function drawWebcamFX(g, dt, T){
   if(!rawV.videoWidth) return;
   const _motionWrapped = applyWebcamMotion(g, T);
   const vw = rawV.videoWidth, vh = rawV.videoHeight;
-  const _maskedV = getMaskedVideo(rawV, vw, vh);
-  const v = applyVideoFilter(_maskedV, vw, vh);
+  // Avatar mode: cut the filmed person out of the plate so the drawn character
+  // can take their place. Falls back to the normal plate until the segmenter
+  // has produced its first mask, so switching it on never blanks the screen.
+  const _avatarOn = !!(cam.avatar && cam.avatar !== 'none' && typeof drawAvatar === 'function');
+  const _plate = _avatarOn ? getPersonRemovedVideo(rawV, vw, vh) : getMaskedVideo(rawV, vw, vh);
+  const v = applyVideoFilter(_plate, vw, vh);
   // cover-fit: scale video to fill canvas, mirrored if requested
   const sCanvas = Math.max(W/vw, H/vh);
   const dW = vw*sCanvas, dH = vh*sCanvas;
@@ -1330,6 +1589,21 @@ function drawWebcamFX(g, dt, T){
     const x = cam.mirror ? (1-nx) : nx;
     return [ dx + x*dW, dy + ny*dH ];
   };
+
+  // ——— Avatar ———
+  // Drawn at full opacity regardless of cam.videoOpacity: the character is the
+  // subject now, not a ghost over the plate. Uses N2S — the same mapping as the
+  // video plane — so it lands exactly where the real person was, at their scale.
+  if(_avatarOn){
+    const rig = buildAvatarRig(0.45);
+    if(rig){
+      g.save();
+      g.globalAlpha = 1;
+      g.globalCompositeOperation = 'source-over';
+      drawAvatar(g, rig, cam.avatar, cam.avatarIntensity, N2S);
+      g.restore();
+    }
+  }
 
   let points = []; // {x,y,kind,strength}
   if(cam.track === 'face' && cam.faceLandmarks){

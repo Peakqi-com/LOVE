@@ -65,7 +65,7 @@
 <!-- Noto for CJK + Latin typography mode -->
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@300;400;500;700;900&family=Noto+Serif:wght@300;400;500;700;900&family=Noto+Sans+SC:wght@300;400;500;700;900&family=Noto+Serif+SC:wght@300;400;500;700;900&family=Noto+Sans+TC:wght@300;400;500;700;900&family=Noto+Serif+TC:wght@300;400;500;700;900&family=Noto+Sans+JP:wght@300;400;500;700;900&family=Noto+Serif+JP:wght@300;400;500;700;900&family=Noto+Sans+KR:wght@300;400;500;700;900&family=Noto+Serif+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet" />
 <link href="https://fonts.googleapis.com/css2?family=Recursive:slnt,wght@-15..0,300..1000&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="styles.css?v=22y" />
+<link rel="stylesheet" href="styles.css?v=23a" />
 </head>
 <body>
   <!-- Registration gate — DISABLED. See AUTH_DISABLED in the script below.
@@ -1049,6 +1049,20 @@
             <div class="ctrl"><span class="label">Filter intensity 濾鏡強度</span><span class="val" id="camFilterAmtVal">1.0×</span>
               <div class="slider"><div class="track"></div><div class="fill" id="camFilterAmtFill"></div><div class="thumb" id="camFilterAmtThumb"></div>
                 <input type="range" min="0" max="200" value="100" id="camFilterAmt" />
+              </div>
+            </div>
+            <div>
+              <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Avatar <em style="font-family:var(--serif);font-style:italic;text-transform:none;letter-spacing:0;color:var(--ink-faint);font-size:11.5px;margin-left:4px">把人換成卡通角色 · 表情即時驅動</em></span>
+              <div class="live-grid" id="camAvatarGrid">
+                <button data-avatar="none" class="on">None<em>不替換 · 顯示真人</em></button>
+                <button data-avatar="simpson">Simpson<em>辛普森 · 黃皮尖髮</em></button>
+                <button data-avatar="anime">Anime<em>動漫 · 大眼</em></button>
+                <button data-avatar="noir">Noir<em>黑白劇畫</em></button>
+              </div>
+            </div>
+            <div class="ctrl"><span class="label">Avatar size 角色大小</span><span class="val" id="camAvatarAmtVal">1.0×</span>
+              <div class="slider"><div class="track"></div><div class="fill" id="camAvatarAmtFill"></div><div class="thumb" id="camAvatarAmtThumb"></div>
+                <input type="range" min="0" max="200" value="100" id="camAvatarAmt" />
               </div>
             </div>
             <!-- Face AR — currently only 面相 (Physiognomy) is exposed. The older
@@ -4574,6 +4588,7 @@ function applySnapshot(snap, opts){
       filter:'none', filterIntensity:1.0,
       ar:'none', arIntensity:1.0,
       handAr:'none', handArIntensity:1.0,
+      avatar:'none', avatarIntensity:1.0,
       motion:'none', motionIntensity:1.0, motionSpeed:1.0,
     };
     for(const k in camDefaults){
@@ -4584,6 +4599,7 @@ function applySnapshot(snap, opts){
     document.querySelectorAll('#camTrackSeg button').forEach(b => b.classList.toggle('on', b.dataset.track === cam.track));
     document.querySelectorAll('#camFxGrid button').forEach(b => b.classList.toggle('on', b.dataset.fx === cam.fx));
     document.querySelectorAll('#camFilterGrid button').forEach(b => b.classList.toggle('on', b.dataset.filter === cam.filter));
+    document.querySelectorAll('#camAvatarGrid button').forEach(b => b.classList.toggle('on', b.dataset.avatar === cam.avatar));
     document.querySelectorAll('#camArGrid button').forEach(b => b.classList.toggle('on', b.dataset.ar === cam.ar));
     document.querySelectorAll('#camHandArGrid button').forEach(b => b.classList.toggle('on', b.dataset.handar === cam.handAr));
     document.querySelectorAll('#camMotionGrid button').forEach(b => b.classList.toggle('on', b.dataset.motion === cam.motion));
@@ -4593,6 +4609,7 @@ function applySnapshot(snap, opts){
     if(snap.cam.fxSize !== undefined)       _setSlider('camFxSize', snap.cam.fxSize*100);
     if(snap.cam.mirror !== undefined)       _setSlider('camMirror', snap.cam.mirror ? 1 : 0);
     if(snap.cam.filterIntensity !== undefined) _setSlider('camFilterAmt', snap.cam.filterIntensity*100);
+    _setSlider('camAvatarAmt', (snap.cam.avatarIntensity !== undefined ? snap.cam.avatarIntensity : 1.0)*100);
     if(snap.cam.arIntensity !== undefined)  _setSlider('camArAmt', snap.cam.arIntensity*100);
     if(snap.cam.handArIntensity !== undefined) _setSlider('camHandArAmt', snap.cam.handArIntensity*100);
     if(snap.cam.motionIntensity !== undefined) _setSlider('camMotionAmt', snap.cam.motionIntensity*100);
@@ -5211,6 +5228,7 @@ function randomizeAll(){
       videoOpacity: cam.videoOpacity, fxSize: cam.fxSize, mirror: cam.mirror,
       kaleido: cam.kaleido, removeBg: cam.removeBg,
       filter: cam.filter, filterIntensity: cam.filterIntensity,
+      avatar: cam.avatar, avatarIntensity: cam.avatarIntensity,
       ar: cam.ar, arIntensity: cam.arIntensity,
       handAr: cam.handAr, handArIntensity: cam.handArIntensity,
       motion: cam.motion, motionIntensity: cam.motionIntensity, motionSpeed: cam.motionSpeed,
@@ -5519,6 +5537,12 @@ function randomizeAll(){
     const filterPool = ['none','none','none','8bit','mosaic','chroma','glitch','threshold','invert','vapor','sepia','mono','edge','scanlines','sketch','halftone','cartoon','simpson'];
     cam.filter = filterPool[Math.floor(Math.random()*filterPool.length)];
     cam.filterIntensity = 0.6 + Math.random()*1.1;   // 0.6 .. 1.7
+    // Avatar — heavily weighted to 'none'. Swapping the performer for a drawn
+    // character is a deliberate moment, not something Random should spring on
+    // them every few seconds mid-set.
+    const avatarPool = ['none','none','none','none','none','simpson','anime','noir'];
+    cam.avatar = avatarPool[Math.floor(Math.random()*avatarPool.length)];
+    cam.avatarIntensity = 0.85 + Math.random()*0.4;
     // Face AR removed temporarily — keep cam.ar = 'none' so drawWebcamFX skips it.
     cam.ar = 'none';
     cam.arIntensity = 1.0;
@@ -5539,6 +5563,7 @@ function randomizeAll(){
     // Sync all Live UI controls so the change is visible
     document.querySelectorAll('#camFxGrid button').forEach(b => b.classList.toggle('on', b.dataset.fx === cam.fx));
     document.querySelectorAll('#camFilterGrid button').forEach(b => b.classList.toggle('on', b.dataset.filter === cam.filter));
+    document.querySelectorAll('#camAvatarGrid button').forEach(b => b.classList.toggle('on', b.dataset.avatar === cam.avatar));
     document.querySelectorAll('#camArGrid button').forEach(b => b.classList.toggle('on', b.dataset.ar === cam.ar));
     document.querySelectorAll('#camHandArGrid button').forEach(b => b.classList.toggle('on', b.dataset.handar === cam.handAr));
     document.querySelectorAll('#camMotionGrid button').forEach(b => b.classList.toggle('on', b.dataset.motion === cam.motion));
@@ -5699,6 +5724,8 @@ function randomizeAll(){
     }
     if(V.filter){
       cam.filter = snap.cam.filter; cam.filterIntensity = snap.cam.filterIntensity;
+      cam.avatar = snap.cam.avatar !== undefined ? snap.cam.avatar : 'none';
+      cam.avatarIntensity = snap.cam.avatarIntensity !== undefined ? snap.cam.avatarIntensity : 1.0;
     }
     if(V.ar){
       cam.ar = snap.cam.ar; cam.arIntensity = snap.cam.arIntensity;
@@ -8425,6 +8452,7 @@ function snapshotCam(){
     track: cam.track, fx: cam.fx, faceFx: cam.faceFx, handFx: cam.handFx,
     videoOpacity: cam.videoOpacity, fxSize: cam.fxSize, mirror: cam.mirror,
     filter: cam.filter, filterIntensity: cam.filterIntensity,
+      avatar: cam.avatar, avatarIntensity: cam.avatarIntensity,
     ar: cam.ar, arIntensity: cam.arIntensity,
     handAr: cam.handAr, handArIntensity: cam.handArIntensity,
     motion: cam.motion, motionIntensity: cam.motionIntensity, motionSpeed: cam.motionSpeed,
@@ -8473,6 +8501,7 @@ function preserveLayersAround(btnId){
       document.querySelectorAll('#camTrackSeg button').forEach(b => b.classList.toggle('on', b.dataset.track === cam.track));
       document.querySelectorAll('#camFxGrid button').forEach(b => b.classList.toggle('on', b.dataset.fx === cam.fx));
       document.querySelectorAll('#camFilterGrid button').forEach(b => b.classList.toggle('on', b.dataset.filter === cam.filter));
+    document.querySelectorAll('#camAvatarGrid button').forEach(b => b.classList.toggle('on', b.dataset.avatar === cam.avatar));
     }, 0);
   }, true);  // <-- capture phase
 }
@@ -8539,6 +8568,7 @@ function captureSnapshot(){
       kaleido: cam.kaleido,
       removeBg: !!cam.removeBg, bgFeather: cam.bgFeather, bgSmooth: cam.bgSmooth, bgModel: cam.bgModel,
       filter: cam.filter, filterIntensity: cam.filterIntensity,
+      avatar: cam.avatar, avatarIntensity: cam.avatarIntensity,
       ar: cam.ar, arIntensity: cam.arIntensity,
       handAr: cam.handAr, handArIntensity: cam.handArIntensity,
       motion: cam.motion, motionIntensity: cam.motionIntensity, motionSpeed: cam.motionSpeed,
@@ -8699,6 +8729,7 @@ function applyFullSnapshot(snap){
       filter:'none', filterIntensity:1.0,
       ar:'none', arIntensity:1.0,
       handAr:'none', handArIntensity:1.0,
+      avatar:'none', avatarIntensity:1.0,
       motion:'none', motionIntensity:1.0, motionSpeed:1.0,
     };
     for(const k in camDefaults){
@@ -8710,6 +8741,7 @@ function applyFullSnapshot(snap){
     document.querySelectorAll('#camTrackSeg button').forEach(b => b.classList.toggle('on', b.dataset.track === cam.track));
     document.querySelectorAll('#camFxGrid button').forEach(b => b.classList.toggle('on', b.dataset.fx === cam.fx));
     document.querySelectorAll('#camFilterGrid button').forEach(b => b.classList.toggle('on', b.dataset.filter === cam.filter));
+    document.querySelectorAll('#camAvatarGrid button').forEach(b => b.classList.toggle('on', b.dataset.avatar === cam.avatar));
     document.querySelectorAll('#camArGrid button').forEach(b => b.classList.toggle('on', b.dataset.ar === cam.ar));
     document.querySelectorAll('#camHandArGrid button').forEach(b => b.classList.toggle('on', b.dataset.handar === cam.handAr));
     document.querySelectorAll('#camMotionGrid button').forEach(b => b.classList.toggle('on', b.dataset.motion === cam.motion));
@@ -8718,6 +8750,7 @@ function applyFullSnapshot(snap){
     if(snap.cam.fxSize !== undefined) setSlider('camFxSize', snap.cam.fxSize*100);
     if(snap.cam.mirror !== undefined) setSlider('camMirror', snap.cam.mirror ? 1 : 0);
     if(snap.cam.filterIntensity !== undefined) setSlider('camFilterAmt', snap.cam.filterIntensity*100);
+    setSlider('camAvatarAmt', (snap.cam.avatarIntensity !== undefined ? snap.cam.avatarIntensity : 1.0)*100);
     if(snap.cam.arIntensity !== undefined) setSlider('camArAmt', snap.cam.arIntensity*100);
     if(snap.cam.handArIntensity !== undefined) setSlider('camHandArAmt', snap.cam.handArIntensity*100);
     if(snap.cam.motionIntensity !== undefined) setSlider('camMotionAmt', snap.cam.motionIntensity*100);
@@ -9844,11 +9877,12 @@ document.getElementById('kaleidoLink').addEventListener('change', e => {
      (state, imgState, W, H, dominantEmo, $, $$, EMOTIONS, reactor, etc.).
      camera-fx + typography load before media-library + ar-3d because the
      latter touch `cam` / `typo` defined in the former. -->
-<script src="visual-modes.js?v=22y"></script>
-<script src="camera-fx.js?v=22y"></script>
-<script src="typography.js?v=22y"></script>
-<script src="media-library.js?v=22y"></script>
-<script src="ar-3d.js?v=22y"></script>
+<script src="visual-modes.js?v=23a"></script>
+<script src="camera-fx.js?v=23a"></script>
+<script src="typography.js?v=23a"></script>
+<script src="media-library.js?v=23a"></script>
+<script src="ar-3d.js?v=23a"></script>
+<script src="avatar.js?v=23a"></script>
 
 <!-- Floating bottom-right FABs: Random + Present -->
 <div class="floating-fab" id="floatingFab">
