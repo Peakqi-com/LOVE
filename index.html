@@ -756,6 +756,8 @@
               <button data-imgfilter="scanlines">Scanlines<em>CRT 掃描線</em></button>
               <button data-imgfilter="halftone">Halftone<em>網點半色調 · 較重</em></button>
               <button data-imgfilter="sketch">Sketch<em>素描線稿</em></button>
+              <button data-imgfilter="cartoon">Cartoon<em>卡通動畫 · 平塗+墨線</em></button>
+              <button data-imgfilter="simpson">Simpson<em>辛普森 · 黃膚卡通</em></button>
             </div>
           </div>
           <div class="ctrl" style="margin-top:4px"><span class="label">Filter intensity 濾鏡強度</span><span class="val" id="imgFilterAmtVal">1.0×</span>
@@ -1034,6 +1036,8 @@
                 <button data-filter="scanlines">Scanlines<em>CRT 掃描線</em></button>
                 <button data-filter="halftone">Halftone<em>網點半色調 · 較重</em></button>
                 <button data-filter="sketch">Sketch<em>素描線稿</em></button>
+                <button data-filter="cartoon">Cartoon<em>卡通動畫 · 平塗+墨線</em></button>
+                <button data-filter="simpson">Simpson<em>辛普森 · 黃膚卡通</em></button>
               </div>
             </div>
             <div class="ctrl"><span class="label">Filter intensity 濾鏡強度</span><span class="val" id="camFilterAmtVal">1.0×</span>
@@ -5502,9 +5506,11 @@ function randomizeAll(){
     // Background removal — REMOVED from Random pool. User toggles it manually so
     // Random doesn't keep turning it off mid-performance. cam.removeBg stays at
     // whatever the user last set.
-    // Filter — original 14. New filters (noir/cyberpunk/etc) caused freezing on
-    // some sources, pulled from UI + Random for performance.
-    const filterPool = ['none','none','none','8bit','mosaic','chroma','glitch','threshold','invert','vapor','sepia','mono','edge','scanlines','sketch','halftone'];
+    // Filter — original 14 + the two GPU toon filters. New CPU filters
+    // (noir/cyberpunk/etc) caused freezing on some sources, pulled from UI +
+    // Random for performance; cartoon/simpson run in a WebGL shader so they're
+    // safe to include.
+    const filterPool = ['none','none','none','8bit','mosaic','chroma','glitch','threshold','invert','vapor','sepia','mono','edge','scanlines','sketch','halftone','cartoon','simpson'];
     cam.filter = filterPool[Math.floor(Math.random()*filterPool.length)];
     cam.filterIntensity = 0.6 + Math.random()*1.1;   // 0.6 .. 1.7
     // Face AR removed temporarily — keep cam.ar = 'none' so drawWebcamFX skips it.
