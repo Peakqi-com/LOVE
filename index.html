@@ -591,6 +591,7 @@
             <label class="mode-chip"><input type="checkbox" data-mode="stardust" /><span><strong>Stardust</strong><em>星塵 · 飄移微塵</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="cometSwoop" /><span><strong>Comet swoop</strong><em>彗星 · 拖尾劃過</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="mistVeil" /><span><strong>Mist veil</strong><em>霧紗 · 柔軟雲霧</em></span></label>
+            <label class="mode-chip"><input type="checkbox" data-mode="impressionist" /><span><strong>Impressionist</strong><em>印象花園 · 油畫筆觸累積</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="polygon" /><span><strong>Polygon</strong><em>多邊 · wireframe mesh</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="matrix" /><span><strong>Matrix rain</strong><em>數位雨 · 緑の文字</em></span></label>
             <label class="mode-chip"><input type="checkbox" data-mode="eva" /><span><strong>EVA HUD</strong><em>新世紀 · AT-field &amp; warnings</em></span></label>
@@ -1040,9 +1041,21 @@
                 <input type="range" min="0" max="200" value="100" id="camFilterAmt" />
               </div>
             </div>
-            <!-- Face AR section removed temporarily — 3D crown/glasses etc. weren't tracking
-                 head pose well enough. cam.ar still defaults to 'none' in camera-fx.js and the
-                 click handler is guarded so the missing UI doesn't break anything. -->
+            <!-- Face AR — currently only 面相 (Physiognomy) is exposed. The older
+                 3D options (crown/glasses/cat/etc.) renderers still exist in
+                 camera-fx.js but aren't listed here; they tracked head pose poorly. -->
+            <div>
+              <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Face AR <em style="font-family:var(--serif);font-style:italic;text-transform:none;letter-spacing:0;color:var(--ink-faint);font-size:11.5px;margin-left:4px">臉部分析 · 偵測五官</em></span>
+              <div class="live-grid" id="camArGrid">
+                <button data-ar="none" class="on">None<em>無 None</em></button>
+                <button data-ar="physiognomy">Physiognomy<em>面相 · 五官標示 + 三停</em></button>
+              </div>
+            </div>
+            <div class="ctrl"><span class="label">Face AR intensity 強度</span><span class="val" id="camArAmtVal">1.0×</span>
+              <div class="slider"><div class="track"></div><div class="fill" id="camArAmtFill"></div><div class="thumb" id="camArAmtThumb"></div>
+                <input type="range" min="0" max="200" value="100" id="camArAmt" />
+              </div>
+            </div>
             <div>
               <span class="label" style="font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:6px">Hand AR <em style="font-family:var(--serif);font-style:italic;text-transform:none;letter-spacing:0;color:var(--ink-faint);font-size:11.5px;margin-left:4px">手部貼圖 · 跟手指動</em></span>
               <div class="live-grid" id="camHandArGrid">
@@ -1054,6 +1067,7 @@
                 <button data-handar="lightning">Lightning<em>閃電 · 指尖放電</em></button>
                 <button data-handar="fireball">Fireball<em>火球 Fireball</em></button>
                 <button data-handar="butterflies">Butterflies<em>蝴蝶 Butterflies</em></button>
+                <button data-handar="palmistry">Palmistry<em>手相 · 掌紋 + 十二宮</em></button>
               </div>
             </div>
             <div class="ctrl"><span class="label">Hand AR intensity 強度</span><span class="val" id="camHandArAmtVal">1.0×</span>
@@ -1641,6 +1655,7 @@ const state = {
     stardust:     false,   // 星塵 tiny drifting dust everywhere
     cometSwoop:   false,   // 彗星 large arcing motion-blur trails
     mistVeil:     false,   // 霧紗 soft drifting fog patches
+    impressionist:false,   // 印象 oil-painting garden, persistent canvas, auto-evolving
     pixel8:       false,   // 8-bit pixelated post-effect with palette quantization
     popArt:       false,   // 普普藝術 ben-day dots, comic panels, primary slabs
     glitch:       false,   // databend channel split, scan lines, beat-triggered shifts
@@ -4286,7 +4301,7 @@ document.querySelectorAll('[data-preset]').forEach(b=>{
 // ============================================================
 // Auto-cycle: detect music sections and rotate enabled modes
 // ============================================================
-const CYCLE_MODES = ['lineTrace','flowField','curlNoise','attractor','substrate','reaction','sumie','opart','lissajous','voronoi','boids','chladni','dla','spectro','meta','synth','life','lsys','harmono','truchet','nbody','spiro','marbling','hilbert','lenia','pendulum','galaxy','penrose','pwave','mandel','wireworld','mandalaRings','waveform','constellation','spiral','ripples','crystals','ribbons','tunnel','halftone','petals','aurora','inkWash','suminagashi','smokeFlow','vortexPool','windRiver','solarFlare','streamlines','stardust','cometSwoop','mistVeil','popArt','polygon','matrix','glitch','eva'];
+const CYCLE_MODES = ['lineTrace','flowField','curlNoise','attractor','substrate','reaction','sumie','opart','lissajous','voronoi','boids','chladni','dla','spectro','meta','synth','life','lsys','harmono','truchet','nbody','spiro','marbling','hilbert','lenia','pendulum','galaxy','penrose','pwave','mandel','wireworld','mandalaRings','waveform','constellation','spiral','ripples','crystals','ribbons','tunnel','halftone','petals','aurora','inkWash','suminagashi','smokeFlow','vortexPool','windRiver','solarFlare','streamlines','stardust','cometSwoop','mistVeil','impressionist','popArt','polygon','matrix','glitch','eva'];
 let _cycleIdx = 0;
 function maybeAutoCycle(now){
   if(!state.autoCycle) return;
@@ -4373,6 +4388,7 @@ window._drawModes = function(g, dt, T){
   if(state.modes.stardust)      drawStardust(g, dt, T);
   if(state.modes.cometSwoop)    drawCometSwoop(g, dt, T);
   if(state.modes.mistVeil)      drawMistVeil(g, dt, T);
+  if(state.modes.impressionist) drawImpressionist(g, dt, T);
   if(state.modes.popArt)        drawPopArt(g, dt, T);
   if(state.modes.polygon)       drawPolygon(g, dt, T);
   if(state.modes.matrix)        drawMatrix(g, dt, T);
@@ -5124,6 +5140,11 @@ window._perf = perf;
 
 // Top Random button — randomize ALL params except audio source; bias by audio intensity
 function randomizeAll(){
+  // Roll fresh backdrop variants for the texture-based modes (paper, canvas
+  // ground). Each Random click → new ground colour for Suminagashi + Impressionist.
+  if(typeof window._sumiPickNewPaperVariant === 'function') window._sumiPickNewPaperVariant();
+  if(typeof window._oilPickNewGround === 'function') window._oilPickNewGround();
+
   // 1. Detect audio intensity (0..1) — higher = more chaotic/intense visuals
   let intensity = 0.5;
   if(reactor.mode !== 'off'){
@@ -5311,7 +5332,7 @@ function randomizeAll(){
     mandalaRings:1, waveform:1, constellation:1, spiral:2, ripples:1, crystals:2,
     ribbons:2, tunnel:2, petals:1, aurora:2, inkWash:3, suminagashi:3,
     smokeFlow:2, vortexPool:2, windRiver:2, solarFlare:2, streamlines:2,
-    stardust:1, cometSwoop:1, mistVeil:1,
+    stardust:1, cometSwoop:1, mistVeil:1, impressionist:3,
     polygon:2, matrix:3, eva:3,
     // Filters (post-process style overlays)
     opart:2, halftone:2, pixel8:5, popArt:4, glitch:4,
